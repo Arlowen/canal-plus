@@ -23,6 +23,7 @@ import type {
   TableColumn,
   TableInfo,
   TaskExport,
+  TaskCheckpoint,
   TaskOperationResult,
   TaskParameterPatch,
   TaskPreflightReport,
@@ -169,6 +170,9 @@ export const api = {
   },
   taskRevisions(id: string) {
     return request<TaskRevision[]>(`/sync-tasks/${id}/revisions`);
+  },
+  taskCheckpoints(id: string) {
+    return request<TaskCheckpoint[]>(`/sync-tasks/${id}/checkpoints`);
   },
   rollbackTaskRevision(id: string, version: number) {
     return request<TaskOperationResult>(`/sync-tasks/${id}/revisions/${version}/rollback`, { method: "POST" });

@@ -61,6 +61,55 @@ func TestNodeOfflineTriggersLeaseTakeover(t *testing.T) {
 	}
 }
 
+func TestTaskCheckpointsCaptureRuntimeAndFailover(t *testing.T) {
+	store := newTestStore(t)
+	before := store.ClusterSnapshot()
+
+	var activeLease TaskLease
+	for _, lease := range before.Leases {
+		if lease.NodeID != "" {
+			activeLease = lease
+			break
+		}
+	}
+	if activeLease.TaskID == "" {
+		t.Fatalf("expected active lease in snapshot: %#v", before.Leases)
+	}
+
+	initial := store.TaskCheckpoints(activeLease.TaskID)
+	if len(initial) == 0 {
+		t.Fatal("expected initial task checkpoint")
+	}
+	if initial[0].BinlogFile == "" || initial[0].BinlogPosition <= 0 {
+		t.Fatalf("checkpoint missing binlog position: %#v", initial[0])
+	}
+
+	if _, ok, err := store.MarkNodeStatus(activeLease.NodeID, NodeOffline); err != nil || !ok {
+		t.Fatalf("MarkNodeStatus(%q, offline) = ok %v, err %v", activeLease.NodeID, ok, err)
+	}
+
+	checkpoints := store.TaskCheckpoints(activeLease.TaskID)
+	var takeover TaskCheckpoint
+	for _, checkpoint := range checkpoints {
+		if checkpoint.Reason == "failover_takeover" {
+			takeover = checkpoint
+			break
+		}
+	}
+	if takeover.ID == "" {
+		t.Fatalf("expected failover checkpoint, got %#v", checkpoints)
+	}
+	if takeover.PreviousNodeID != activeLease.NodeID {
+		t.Fatalf("expected previous node %q, got %#v", activeLease.NodeID, takeover)
+	}
+	if takeover.NodeID == "" || takeover.NodeID == activeLease.NodeID {
+		t.Fatalf("expected checkpoint to hand off to another node: %#v", takeover)
+	}
+	if takeover.LeaseEpoch <= activeLease.Epoch || takeover.TakeoverCount == 0 {
+		t.Fatalf("expected checkpoint lease epoch and takeover count to advance: %#v", takeover)
+	}
+}
+
 func TestFailoverDrillReturnsTakeoverReport(t *testing.T) {
 	store := newTestStore(t)
 	before := store.ClusterSnapshot()
@@ -811,6 +860,16 @@ func TestResetTaskPositionRequiresStoppedTask(t *testing.T) {
 	}
 	if runtime.BinlogFile != "mysql-bin.000777" || runtime.BinlogPosition != 8821 {
 		t.Fatalf("position not reset: %#v", runtime)
+	}
+	checkpoints := store.TaskCheckpoints(updated.ID)
+	if len(checkpoints) == 0 {
+		t.Fatal("expected manual reset checkpoint")
+	}
+	if checkpoints[0].Reason != "manual_reset" {
+		t.Fatalf("expected latest checkpoint to be manual_reset, got %#v", checkpoints[0])
+	}
+	if checkpoints[0].BinlogFile != "mysql-bin.000777" || checkpoints[0].BinlogPosition != 8821 {
+		t.Fatalf("checkpoint position not reset: %#v", checkpoints[0])
 	}
 }
 

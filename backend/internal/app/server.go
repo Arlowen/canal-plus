@@ -473,6 +473,8 @@ func (s *Server) handleSyncTasks(response http.ResponseWriter, request *http.Req
 		s.exportTask(response, parts[1])
 	case len(parts) == 3 && parts[2] == "revisions" && request.Method == http.MethodGet:
 		s.listTaskRevisions(response, parts[1])
+	case len(parts) == 3 && parts[2] == "checkpoints" && request.Method == http.MethodGet:
+		s.listTaskCheckpoints(response, parts[1])
 	case len(parts) == 5 && parts[2] == "revisions" && parts[4] == "rollback" && request.Method == http.MethodPost:
 		s.rollbackTaskRevision(response, parts[1], parts[3])
 	case len(parts) == 3 && parts[2] == "copy" && request.Method == http.MethodPost:
@@ -671,6 +673,14 @@ func (s *Server) listTaskRevisions(response http.ResponseWriter, id string) {
 		return
 	}
 	writeJSON(response, http.StatusOK, s.store.TaskRevisions(id))
+}
+
+func (s *Server) listTaskCheckpoints(response http.ResponseWriter, id string) {
+	if _, ok := s.store.GetTask(id); !ok {
+		writeError(response, http.StatusNotFound, "同步任务不存在")
+		return
+	}
+	writeJSON(response, http.StatusOK, s.store.TaskCheckpoints(id))
 }
 
 func (s *Server) rollbackTaskRevision(response http.ResponseWriter, id string, versionValue string) {

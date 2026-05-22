@@ -38,6 +38,7 @@ func NewStore(path string) (*Store, error) {
 		store.ensureUsersLocked()
 		store.ensureClusterLocked()
 		store.ensureTaskRevisionsLocked()
+		store.ensureTaskCheckpointsLocked()
 		store.ensureStructureDDLsLocked()
 		store.ensureQualityDiffsLocked()
 		if err := store.saveLocked(); err != nil {
@@ -52,6 +53,7 @@ func NewStore(path string) (*Store, error) {
 	}
 	store.data = seed
 	store.ensureTaskRevisionsLocked()
+	store.ensureTaskCheckpointsLocked()
 	store.ensureStructureDDLsLocked()
 	store.ensureQualityDiffsLocked()
 	if err := store.saveLocked(); err != nil {
@@ -94,6 +96,16 @@ func (s *Store) ensureTaskRevisionsLocked() {
 			continue
 		}
 		s.recordTaskRevisionLocked(task, "import", "导入当前任务配置", "system")
+	}
+}
+
+func (s *Store) ensureTaskCheckpointsLocked() {
+	for _, task := range s.data.SyncTasks {
+		if s.hasTaskCheckpointLocked(task.ID) {
+			continue
+		}
+		runtime := s.ensureRuntimeLocked(task.ID)
+		s.recordTaskCheckpointLocked(*runtime, "import", "")
 	}
 }
 
@@ -289,6 +301,7 @@ func (s *Store) CreateTask(input SyncTask) (SyncTask, error) {
 		}
 	}
 	s.data.RuntimeStates = append([]TaskRuntimeState{runtime}, s.data.RuntimeStates...)
+	s.recordTaskCheckpointLocked(runtime, "create", "")
 	s.logLocked("admin", "create", "sync_task", input.ID, "创建同步任务 "+input.Name)
 	if err := s.saveLocked(); err != nil {
 		return SyncTask{}, err
@@ -370,6 +383,7 @@ func (s *Store) DeleteTask(id string) (bool, error) {
 			}
 		}
 		s.removeTaskRevisionsLocked(id)
+		s.removeTaskCheckpointsLocked(id)
 		s.logLocked("admin", "delete", "sync_task", id, "删除同步任务")
 		return true, s.saveLocked()
 	}
@@ -388,6 +402,22 @@ func (s *Store) TaskRevisions(taskID string) []TaskRevision {
 	}
 	sortTaskRevisionsDesc(revisions)
 	return cloneJSON(revisions)
+}
+
+func (s *Store) TaskCheckpoints(taskID string) []TaskCheckpoint {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.reconcileClusterLocked()
+	s.refreshRuntimeStatesLocked()
+	s.ensureTaskCheckpointsLocked()
+	checkpoints := []TaskCheckpoint{}
+	for _, checkpoint := range s.data.TaskCheckpoints {
+		if checkpoint.TaskID == taskID {
+			checkpoints = append(checkpoints, checkpoint)
+		}
+	}
+	sortTaskCheckpointsDesc(checkpoints)
+	return cloneJSON(checkpoints)
 }
 
 func (s *Store) RollbackTaskRevision(taskID string, version int) (SyncTask, bool, error) {
@@ -487,6 +517,7 @@ func (s *Store) RerunTask(id string) (SyncTask, bool, error) {
 			runtime.Phase = "idle"
 		}
 		task.UpdatedAt = timestamp
+		s.recordTaskCheckpointLocked(*runtime, "rerun", "")
 		s.recountNodeTasksLocked()
 		s.logLocked("admin", "rerun", "sync_task", id, "重跑同步任务 "+task.Name)
 		return cloneJSON(*task), true, s.saveLocked()
@@ -543,6 +574,7 @@ func (s *Store) TransitionTask(id string, action string) (SyncTask, bool, error)
 		runtime.UpdatedAt = timestamp
 		task.UpdatedAt = timestamp
 		updated := *task
+		s.recordTaskCheckpointLocked(*runtime, "lifecycle_"+action, "")
 		s.recountNodeTasksLocked()
 		s.logLocked("admin", action, "sync_task", id, action+" 同步任务 "+task.Name)
 		return cloneJSON(updated), true, s.saveLocked()
@@ -639,6 +671,7 @@ func (s *Store) ResetTaskPosition(id string, input PositionResetInput) (SyncTask
 		runtime.EventsPerSecond = 0
 		runtime.UpdatedAt = now()
 		task.UpdatedAt = now()
+		s.recordTaskCheckpointLocked(*runtime, "manual_reset", "")
 		detail := "重置任务位点 " + task.Name + " 到 " + input.BinlogFile + ":" + intToString(int(input.BinlogPosition))
 		if input.ServerID != "" {
 			detail += " serverId=" + input.ServerID
@@ -944,6 +977,7 @@ func (s *Store) RebalanceCluster() (ClusterSnapshot, error) {
 			runtime.LeaseExpiresAt = ""
 			runtime.UpdatedAt = now()
 			s.removeLeaseLocked(runtime.TaskID)
+			s.recordTaskCheckpointLocked(*runtime, "lease_unassigned", "")
 			continue
 		}
 		if currentNode == nil || currentNode.Status != NodeOnline || targetNode.ID != runtime.NodeID {
@@ -1440,8 +1474,7 @@ func (s *Store) ensureClusterLocked() {
 		runtime := s.ensureRuntimeLocked(s.data.SyncTasks[taskIndex].ID)
 		if runtime.NodeID == "" {
 			if node := s.selectNodeLocked(""); node != nil {
-				runtime.NodeID = node.ID
-				runtime.LeaseExpiresAt = leaseExpiry()
+				s.assignTaskToNodeLocked(runtime, node.ID, "lease_assign", false)
 			}
 		}
 		if runtime.NodeID != "" {
@@ -1478,6 +1511,7 @@ func (s *Store) reconcileClusterLocked() {
 			runtime.LeaseExpiresAt = ""
 			runtime.UpdatedAt = now()
 			s.removeLeaseLocked(task.ID)
+			s.recordTaskCheckpointLocked(*runtime, "lease_unassigned", "")
 			continue
 		}
 		s.assignTaskToNodeLocked(runtime, target.ID, "节点故障自动接管", true)
@@ -1510,6 +1544,11 @@ func (s *Store) assignTaskToNodeLocked(runtime *TaskRuntimeState, nodeID string,
 	}
 	runtime.UpdatedAt = now()
 	lease := s.upsertLeaseLocked(runtime.TaskID, nodeID, takeover)
+	if takeover {
+		s.recordTaskCheckpointLocked(*runtime, "failover_takeover", previousNodeID)
+	} else {
+		s.recordTaskCheckpointLocked(*runtime, "lease_assign", previousNodeID)
+	}
 	detail := reason + "：" + runtime.TaskID + " 从 " + valueOr(previousNodeID, "unassigned") + " 切换到 " + nodeID
 	if takeover && lease.TakeoverCount > 0 {
 		s.logLocked("system", "failover", "sync_task", runtime.TaskID, detail)
@@ -1749,12 +1788,104 @@ func (s *Store) removeTaskRevisionsLocked(taskID string) {
 	s.data.TaskRevisions = revisions
 }
 
+const maxTaskCheckpointsPerTask = 50
+
+func (s *Store) hasTaskCheckpointLocked(taskID string) bool {
+	for _, checkpoint := range s.data.TaskCheckpoints {
+		if checkpoint.TaskID == taskID {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *Store) recordTaskCheckpointLocked(runtime TaskRuntimeState, reason string, previousNodeID string) {
+	if runtime.TaskID == "" {
+		return
+	}
+	if reason == "" {
+		reason = "runtime_tick"
+	}
+	lease := TaskLease{}
+	for _, item := range s.data.TaskLeases {
+		if item.TaskID == runtime.TaskID {
+			lease = item
+			break
+		}
+	}
+	checkpoint := TaskCheckpoint{
+		ID:              newID(),
+		TaskID:          runtime.TaskID,
+		Phase:           runtime.Phase,
+		BinlogFile:      runtime.BinlogFile,
+		BinlogPosition:  runtime.BinlogPosition,
+		NodeID:          runtime.NodeID,
+		PreviousNodeID:  previousNodeID,
+		LeaseEpoch:      lease.Epoch,
+		TakeoverCount:   lease.TakeoverCount,
+		EventsPerSecond: runtime.EventsPerSecond,
+		DelaySeconds:    runtime.DelaySeconds,
+		Reason:          reason,
+		CreatedAt:       now(),
+	}
+	for _, existing := range s.data.TaskCheckpoints {
+		if existing.TaskID != runtime.TaskID {
+			continue
+		}
+		if existing.Phase == checkpoint.Phase &&
+			existing.BinlogFile == checkpoint.BinlogFile &&
+			existing.BinlogPosition == checkpoint.BinlogPosition &&
+			existing.NodeID == checkpoint.NodeID &&
+			existing.PreviousNodeID == checkpoint.PreviousNodeID &&
+			existing.LeaseEpoch == checkpoint.LeaseEpoch &&
+			existing.Reason == checkpoint.Reason {
+			return
+		}
+		break
+	}
+	s.data.TaskCheckpoints = append([]TaskCheckpoint{checkpoint}, s.data.TaskCheckpoints...)
+	s.pruneTaskCheckpointsLocked(runtime.TaskID)
+}
+
+func (s *Store) pruneTaskCheckpointsLocked(taskID string) {
+	keptForTask := 0
+	checkpoints := s.data.TaskCheckpoints[:0]
+	for _, checkpoint := range s.data.TaskCheckpoints {
+		if checkpoint.TaskID != taskID {
+			checkpoints = append(checkpoints, checkpoint)
+			continue
+		}
+		if keptForTask >= maxTaskCheckpointsPerTask {
+			continue
+		}
+		checkpoints = append(checkpoints, checkpoint)
+		keptForTask++
+	}
+	s.data.TaskCheckpoints = checkpoints
+}
+
+func (s *Store) removeTaskCheckpointsLocked(taskID string) {
+	checkpoints := s.data.TaskCheckpoints[:0]
+	for _, checkpoint := range s.data.TaskCheckpoints {
+		if checkpoint.TaskID != taskID {
+			checkpoints = append(checkpoints, checkpoint)
+		}
+	}
+	s.data.TaskCheckpoints = checkpoints
+}
+
 func sortTaskRevisionsDesc(revisions []TaskRevision) {
 	sort.SliceStable(revisions, func(left, right int) bool {
 		if revisions[left].Version == revisions[right].Version {
 			return revisions[left].CreatedAt > revisions[right].CreatedAt
 		}
 		return revisions[left].Version > revisions[right].Version
+	})
+}
+
+func sortTaskCheckpointsDesc(checkpoints []TaskCheckpoint) {
+	sort.SliceStable(checkpoints, func(left, right int) bool {
+		return checkpoints[left].CreatedAt > checkpoints[right].CreatedAt
 	})
 }
 
@@ -1786,6 +1917,7 @@ func (s *Store) refreshRuntimeStatesLocked() {
 				runtime.Phase = "incremental"
 				runtime.EventsPerSecond = 90 + rand.Intn(80)
 			}
+			s.recordTaskCheckpointLocked(*runtime, "runtime_tick", "")
 		case TaskIncrementalRunning:
 			runtime.Phase = "incremental"
 			runtime.FullSyncedRows = runtime.FullTotalRows
@@ -1794,6 +1926,7 @@ func (s *Store) refreshRuntimeStatesLocked() {
 			runtime.BinlogPosition += int64(1200 + rand.Intn(4200))
 			runtime.UpdatedAt = timestamp
 			changed = true
+			s.recordTaskCheckpointLocked(*runtime, "runtime_tick", "")
 		}
 	}
 	if changed {

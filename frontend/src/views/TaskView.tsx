@@ -8,6 +8,7 @@ import {
   FileText,
   FunnelSimple,
   GearSix,
+  MapPinLine,
   MagnifyingGlass,
   Pause,
   Play,
@@ -19,9 +20,9 @@ import {
 import { PermissionNotice } from "../components/PermissionNotice";
 import { StatusBadge } from "../components/StatusBadge";
 import { api } from "../lib/api";
-import { cx, formatDate } from "../lib/format";
+import { cx, formatDate, formatNumber } from "../lib/format";
 import { taskStatusText } from "../lib/taskStatus";
-import type { ClusterSnapshot, ErrorEvent, OperationLog, SyncStrategy, SyncTask, TaskExport, TaskRevision, TaskStatus } from "../types/api";
+import type { ClusterSnapshot, ErrorEvent, OperationLog, SyncStrategy, SyncTask, TaskCheckpoint, TaskExport, TaskRevision, TaskStatus } from "../types/api";
 import { TaskInsightPanel } from "./TaskInsightPanel";
 
 type TaskAction = "start" | "pause" | "resume" | "stop" | "copy";
@@ -99,6 +100,45 @@ function Info({ label, value, mono }: { label: string; value: string; mono?: boo
   );
 }
 
+const checkpointReasonText: Record<string, string> = {
+  create: "创建任务",
+  import: "导入快照",
+  runtime_tick: "运行推进",
+  failover_takeover: "故障接管",
+  lease_assign: "分配节点",
+  lease_unassigned: "等待接管",
+  manual_reset: "手动重置",
+  rerun: "任务重跑",
+  lifecycle_start: "启动任务",
+  lifecycle_resume: "恢复任务",
+  lifecycle_pause: "暂停任务",
+  lifecycle_stop: "停止任务"
+};
+
+const checkpointPhaseText: Record<string, string> = {
+  idle: "空闲",
+  full: "全量",
+  incremental: "增量",
+  paused: "暂停",
+  failed: "异常",
+  stopped: "停止"
+};
+
+function checkpointReason(reason: string) {
+  return checkpointReasonText[reason] || reason;
+}
+
+function checkpointPhase(phase: string) {
+  return checkpointPhaseText[phase] || phase;
+}
+
+function checkpointTone(reason: string) {
+  if (reason === "failover_takeover") return "bg-amber-500";
+  if (reason === "lease_unassigned") return "bg-red-500";
+  if (reason === "manual_reset" || reason.startsWith("lifecycle_")) return "bg-zinc-500";
+  return "bg-emerald-500";
+}
+
 function EmptyTaskState() {
   return (
     <div className="rounded-lg border border-dashed border-line bg-[#fcfcf8] p-8 text-center">
@@ -153,7 +193,7 @@ function ActionButton({
   );
 }
 
-type TaskTool = "params" | "position" | "export" | "versions" | "lifecycle";
+type TaskTool = "params" | "position" | "export" | "versions" | "checkpoints" | "lifecycle";
 
 function TaskFunctionPanel({ task, canManage, onChanged }: { task: SyncTask; canManage: boolean; onChanged: () => Promise<void> | void }) {
   const [activeTool, setActiveTool] = useState<TaskTool>(canManage ? "params" : "export");
@@ -172,12 +212,21 @@ function TaskFunctionPanel({ task, canManage, onChanged }: { task: SyncTask; can
   const [exported, setExported] = useState<TaskExport | null>(null);
   const [revisions, setRevisions] = useState<TaskRevision[]>([]);
   const [loadingRevisions, setLoadingRevisions] = useState(false);
+  const [checkpoints, setCheckpoints] = useState<TaskCheckpoint[]>([]);
+  const [loadingCheckpoints, setLoadingCheckpoints] = useState(false);
   const [rollbackVersion, setRollbackVersion] = useState<number | null>(null);
   const [confirmText, setConfirmText] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const canRerun = task.status === "stopped" || task.status === "failed";
   const canDelete = task.status === "stopped" || task.status === "draft";
+  const latestCheckpoint = checkpoints[0];
+  const latestTakeover = checkpoints.find((checkpoint) => checkpoint.reason === "failover_takeover" || checkpoint.previousNodeId);
+  const currentCheckpointPosition = latestCheckpoint
+    ? `${latestCheckpoint.binlogFile}:${formatNumber(latestCheckpoint.binlogPosition)}`
+    : task.runtime
+      ? `${task.runtime.binlogFile}:${formatNumber(task.runtime.binlogPosition)}`
+      : "-";
 
   useEffect(() => {
     if (!canManage && activeTool !== "export") setActiveTool("export");
@@ -191,6 +240,16 @@ function TaskFunctionPanel({ task, canManage, onChanged }: { task: SyncTask; can
       .then(setRevisions)
       .catch((requestError) => setError(requestError instanceof Error ? requestError.message : "读取版本失败"))
       .finally(() => setLoadingRevisions(false));
+  }, [activeTool, task.id]);
+
+  useEffect(() => {
+    if (activeTool !== "checkpoints") return;
+    setLoadingCheckpoints(true);
+    setError(null);
+    api.taskCheckpoints(task.id)
+      .then(setCheckpoints)
+      .catch((requestError) => setError(requestError instanceof Error ? requestError.message : "读取位点历史失败"))
+      .finally(() => setLoadingCheckpoints(false));
   }, [activeTool, task.id]);
 
   const updateParams = async () => {
@@ -298,6 +357,7 @@ function TaskFunctionPanel({ task, canManage, onChanged }: { task: SyncTask; can
     { id: "position", label: "重置位点", icon: ArrowsClockwise, adminOnly: true },
     { id: "export", label: "导出任务", icon: FileText, adminOnly: false },
     { id: "versions", label: "版本记录", icon: ClockCounterClockwise, adminOnly: false },
+    { id: "checkpoints", label: "位点历史", icon: MapPinLine, adminOnly: false },
     { id: "lifecycle", label: "生命周期", icon: Stop, adminOnly: true }
   ] as const;
 
@@ -311,7 +371,7 @@ function TaskFunctionPanel({ task, canManage, onChanged }: { task: SyncTask; can
         <span className="rounded-full border border-line bg-white px-2 py-1 text-xs text-muted">v{task.configVersion}</span>
       </div>
 
-      <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-5">
+      <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
         {toolItems.map((item) => {
           const Icon = item.icon;
           const disabled = item.adminOnly && !canManage;
@@ -490,6 +550,65 @@ function TaskFunctionPanel({ task, canManage, onChanged }: { task: SyncTask; can
           )}
           {!canManage && (
             <PermissionNotice compact description="当前角色可查看配置版本记录；回滚任务配置需要管理员权限。" />
+          )}
+        </div>
+      )}
+
+      {activeTool === "checkpoints" && (
+        <div className="mt-4 grid gap-3">
+          <div className="grid gap-3 sm:grid-cols-3">
+            <Info label="当前恢复点" value={currentCheckpointPosition} mono />
+            <Info label="检查点" value={`${checkpoints.length} 条`} mono />
+            <Info label="最近接管" value={formatDate(latestTakeover?.createdAt)} />
+          </div>
+          {loadingCheckpoints ? (
+            <div className="grid gap-2">
+              {[0, 1, 2].map((index) => (
+                <div key={index} className="h-20 animate-pulse rounded-lg border border-line bg-white" />
+              ))}
+            </div>
+          ) : checkpoints.length === 0 ? (
+            <div className="rounded-lg border border-dashed border-line bg-white p-5 text-center text-sm text-muted">
+              暂无位点历史，任务启动后会生成第一条检查点。
+            </div>
+          ) : (
+            <div className="divide-y divide-line rounded-lg border border-line bg-white">
+              {checkpoints.map((checkpoint) => {
+                const handoff = checkpoint.previousNodeId && checkpoint.previousNodeId !== checkpoint.nodeId;
+                return (
+                  <div key={checkpoint.id} className="grid gap-3 p-3 text-sm lg:grid-cols-[150px_minmax(0,1fr)_190px] lg:items-center">
+                    <div>
+                      <div className="flex items-center gap-2 font-medium text-coal">
+                        <span className={cx("h-2 w-2 rounded-full", checkpointTone(checkpoint.reason))} />
+                        {checkpointReason(checkpoint.reason)}
+                      </div>
+                      <div className="mt-1 text-xs text-zinc-500">{formatDate(checkpoint.createdAt)}</div>
+                    </div>
+                    <div className="min-w-0">
+                      <div className="break-all font-mono text-sm font-semibold text-coal">
+                        {checkpoint.binlogFile}:{formatNumber(checkpoint.binlogPosition)}
+                      </div>
+                      <div className="mt-1 flex flex-wrap gap-2 text-xs text-zinc-500">
+                        <span>{checkpointPhase(checkpoint.phase)}</span>
+                        <span>node {checkpoint.nodeId || "待分配"}</span>
+                        <span>epoch {checkpoint.leaseEpoch || "-"}</span>
+                        {handoff && <span>{checkpoint.previousNodeId} -&gt; {checkpoint.nodeId}</span>}
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="rounded-md border border-line bg-[#fcfcf8] px-2 py-1.5">
+                        <div className="text-[11px] text-muted">延迟</div>
+                        <div className="font-mono text-sm text-coal">{checkpoint.delaySeconds}s</div>
+                      </div>
+                      <div className="rounded-md border border-line bg-[#fcfcf8] px-2 py-1.5">
+                        <div className="text-[11px] text-muted">吞吐</div>
+                        <div className="font-mono text-sm text-coal">{checkpoint.eventsPerSecond}/s</div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           )}
         </div>
       )}

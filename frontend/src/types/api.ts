@@ -119,6 +119,22 @@ export interface TaskRevision {
   createdAt: string;
 }
 
+export interface TaskCheckpoint {
+  id: string;
+  taskId: string;
+  phase: TaskRuntimeState["phase"] | string;
+  binlogFile: string;
+  binlogPosition: number;
+  nodeId?: string;
+  previousNodeId?: string;
+  leaseEpoch: number;
+  takeoverCount: number;
+  eventsPerSecond: number;
+  delaySeconds: number;
+  reason: string;
+  createdAt: string;
+}
+
 export type PreflightStatus = "passed" | "warning" | "failed";
 
 export interface TaskPreflightCheck {

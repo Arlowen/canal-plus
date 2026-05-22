@@ -199,6 +199,22 @@ type TaskRevision struct {
 	CreatedAt  string   `json:"createdAt"`
 }
 
+type TaskCheckpoint struct {
+	ID              string `json:"id"`
+	TaskID          string `json:"taskId"`
+	Phase           string `json:"phase"`
+	BinlogFile      string `json:"binlogFile"`
+	BinlogPosition  int64  `json:"binlogPosition"`
+	NodeID          string `json:"nodeId,omitempty"`
+	PreviousNodeID  string `json:"previousNodeId,omitempty"`
+	LeaseEpoch      int    `json:"leaseEpoch"`
+	TakeoverCount   int    `json:"takeoverCount"`
+	EventsPerSecond int    `json:"eventsPerSecond"`
+	DelaySeconds    int    `json:"delaySeconds"`
+	Reason          string `json:"reason"`
+	CreatedAt       string `json:"createdAt"`
+}
+
 type PreflightStatus string
 
 const (
@@ -514,19 +530,20 @@ type ClusterSnapshot struct {
 }
 
 type DatabaseShape struct {
-	Users          []User             `json:"users"`
-	Datasources    []Datasource       `json:"datasources"`
-	SyncTasks      []SyncTask         `json:"syncTasks"`
-	RuntimeStates  []TaskRuntimeState `json:"runtimeStates"`
-	ErrorEvents    []ErrorEvent       `json:"errorEvents"`
-	OperationLogs  []OperationLog     `json:"operationLogs"`
-	AlertRules     []AlertRule        `json:"alertRules"`
-	CapabilityJobs []CapabilityJob    `json:"capabilityJobs"`
-	Nodes          []ClusterNode      `json:"nodes"`
-	TaskLeases     []TaskLease        `json:"taskLeases"`
-	TaskRevisions  []TaskRevision     `json:"taskRevisions"`
-	QualityDiffs   []QualityDiff      `json:"qualityDiffs"`
-	StructureDDLs  []StructureDDL     `json:"structureDdls"`
+	Users           []User             `json:"users"`
+	Datasources     []Datasource       `json:"datasources"`
+	SyncTasks       []SyncTask         `json:"syncTasks"`
+	RuntimeStates   []TaskRuntimeState `json:"runtimeStates"`
+	ErrorEvents     []ErrorEvent       `json:"errorEvents"`
+	OperationLogs   []OperationLog     `json:"operationLogs"`
+	AlertRules      []AlertRule        `json:"alertRules"`
+	CapabilityJobs  []CapabilityJob    `json:"capabilityJobs"`
+	Nodes           []ClusterNode      `json:"nodes"`
+	TaskLeases      []TaskLease        `json:"taskLeases"`
+	TaskRevisions   []TaskRevision     `json:"taskRevisions"`
+	TaskCheckpoints []TaskCheckpoint   `json:"taskCheckpoints"`
+	QualityDiffs    []QualityDiff      `json:"qualityDiffs"`
+	StructureDDLs   []StructureDDL     `json:"structureDdls"`
 }
 
 type DashboardSummary struct {

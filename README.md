@@ -18,6 +18,7 @@ canal-plus/
 - 数据源管理：新增、编辑、删除保护、连接测试、关键词/用途/状态筛选、引用任务统计、schema/table/column 元数据读取。
 - 同步任务：列表、详情、关键词/状态/负责人筛选、延迟/吞吐/更新时间排序、创建向导、启动、暂停、恢复、停止、重跑、复制、安全删除。
 - 任务版本：配置变更自动生成版本快照，支持版本时间线查看和管理员回滚。
+- 位点检查点：运行推进、手动重置、重跑、生命周期和 node 接管都会沉淀 checkpoint，可在任务详情追踪恢复位点、lease epoch 和接管节点。
 - 发布前预检：创建任务前检查源端连接、目标结构、字段兼容性、重复订阅、同步策略和 node 承载能力，预检失败会阻止发布。
 - 任务功能列表：支持修改运行参数、停止后重置 binlog 位点、导出任务配置包。
 - 任务运行剖面：在任务详情内聚合链路拓扑、node lease、接管次数、待处理错误和最近操作。
@@ -103,6 +104,7 @@ cp backend/.env.example backend/.env
 - `POST /api/sync-tasks/{id}/reset-position`: 在任务停止后重置 binlog 文件和 position。
 - `POST /api/sync-tasks/{id}/rerun`: 停止或异常任务按原配置重跑，并重新分配 node lease。
 - `GET /api/sync-tasks/{id}/export`: 导出任务配置、运行位点和 checksum。
+- `GET /api/sync-tasks/{id}/checkpoints`: 查看任务位点 checkpoint、node handoff、lease epoch、延迟和吞吐历史。
 - `DELETE /api/sync-tasks/{id}`: 删除草稿或已停止任务，并清理运行态与 lease。
 
 ## 错误事件 API
