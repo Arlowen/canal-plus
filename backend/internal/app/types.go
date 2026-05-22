@@ -188,6 +188,17 @@ type TaskExport struct {
 	Checksum   string           `json:"checksum"`
 }
 
+type TaskRevision struct {
+	ID         string   `json:"id"`
+	TaskID     string   `json:"taskId"`
+	Version    int      `json:"version"`
+	ChangeType string   `json:"changeType"`
+	Summary    string   `json:"summary"`
+	Actor      string   `json:"actor"`
+	Snapshot   SyncTask `json:"snapshot"`
+	CreatedAt  string   `json:"createdAt"`
+}
+
 type PreflightStatus string
 
 const (
@@ -439,6 +450,7 @@ type DatabaseShape struct {
 	CapabilityJobs []CapabilityJob    `json:"capabilityJobs"`
 	Nodes          []ClusterNode      `json:"nodes"`
 	TaskLeases     []TaskLease        `json:"taskLeases"`
+	TaskRevisions  []TaskRevision     `json:"taskRevisions"`
 }
 
 type DashboardSummary struct {

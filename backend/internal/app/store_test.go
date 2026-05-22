@@ -161,6 +161,48 @@ func TestRebalanceKeepsLeasesOnOnlineNodes(t *testing.T) {
 	}
 }
 
+func TestTaskRevisionRollbackRestoresConfiguration(t *testing.T) {
+	store := newTestStore(t)
+	snapshot := store.Snapshot()
+	if len(snapshot.SyncTasks) == 0 {
+		t.Fatalf("expected seed task")
+	}
+	task := snapshot.SyncTasks[0]
+	originalBatchSize := task.Strategy.BatchSize
+	nextBatchSize := originalBatchSize + 257
+
+	updated, ok, err := store.UpdateTaskParameters(task.ID, TaskParameterPatch{BatchSize: &nextBatchSize})
+	if err != nil || !ok {
+		t.Fatalf("UpdateTaskParameters() = ok %v err %v", ok, err)
+	}
+	if updated.ConfigVersion <= task.ConfigVersion {
+		t.Fatalf("expected config version to increase, before %d after %d", task.ConfigVersion, updated.ConfigVersion)
+	}
+
+	revisions := store.TaskRevisions(task.ID)
+	if len(revisions) < 2 {
+		t.Fatalf("expected at least two revisions, got %#v", revisions)
+	}
+	if revisions[0].Version != updated.ConfigVersion {
+		t.Fatalf("expected latest revision to match updated version, got %#v", revisions[0])
+	}
+
+	rolledBack, ok, err := store.RollbackTaskRevision(task.ID, task.ConfigVersion)
+	if err != nil || !ok {
+		t.Fatalf("RollbackTaskRevision() = ok %v err %v", ok, err)
+	}
+	if rolledBack.Strategy.BatchSize != originalBatchSize {
+		t.Fatalf("expected batch size %d after rollback, got %d", originalBatchSize, rolledBack.Strategy.BatchSize)
+	}
+	if rolledBack.ConfigVersion <= updated.ConfigVersion {
+		t.Fatalf("rollback should create a new version, before %d after %d", updated.ConfigVersion, rolledBack.ConfigVersion)
+	}
+	revisions = store.TaskRevisions(task.ID)
+	if revisions[0].ChangeType != "rollback" {
+		t.Fatalf("expected latest revision to be rollback, got %#v", revisions[0])
+	}
+}
+
 func TestStaleHeartbeatTriggersAutomaticTakeover(t *testing.T) {
 	store := newTestStore(t)
 	before := store.ClusterSnapshot()

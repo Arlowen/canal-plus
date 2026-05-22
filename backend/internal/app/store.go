@@ -6,6 +6,7 @@ import (
 	"math/rand"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -36,6 +37,7 @@ func NewStore(path string) (*Store, error) {
 		}
 		store.ensureUsersLocked()
 		store.ensureClusterLocked()
+		store.ensureTaskRevisionsLocked()
 		if err := store.saveLocked(); err != nil {
 			return nil, err
 		}
@@ -47,6 +49,7 @@ func NewStore(path string) (*Store, error) {
 		return nil, err
 	}
 	store.data = seed
+	store.ensureTaskRevisionsLocked()
 	if err := store.saveLocked(); err != nil {
 		return nil, err
 	}
@@ -79,6 +82,15 @@ func (s *Store) ensureUsersLocked() {
 		PasswordHash: hashPassword("operator123"),
 		CreatedAt:    createdAt,
 	})
+}
+
+func (s *Store) ensureTaskRevisionsLocked() {
+	for _, task := range s.data.SyncTasks {
+		if s.hasTaskRevisionLocked(task.ID, task.ConfigVersion) {
+			continue
+		}
+		s.recordTaskRevisionLocked(task, "import", "导入当前任务配置", "system")
+	}
 }
 
 func (s *Store) Snapshot() DatabaseShape {
@@ -263,6 +275,7 @@ func (s *Store) CreateTask(input SyncTask) (SyncTask, error) {
 		}
 	}
 	s.data.SyncTasks = append([]SyncTask{input}, s.data.SyncTasks...)
+	s.recordTaskRevisionLocked(input, "create", "创建同步任务", "admin")
 	runtime := s.defaultRuntimeLocked(input.ID)
 	if leaseRequired(input.Status) {
 		if node := s.selectNodeLocked(""); node != nil {
@@ -290,18 +303,23 @@ func (s *Store) UpdateTask(id string, patch SyncTask) (SyncTask, bool, error) {
 		changedConfig := false
 		if patch.Name != "" {
 			task.Name = patch.Name
+			changedConfig = true
 		}
 		if patch.Description != "" {
 			task.Description = patch.Description
+			changedConfig = true
 		}
 		if patch.Owner != "" {
 			task.Owner = patch.Owner
+			changedConfig = true
 		}
 		if patch.SourceDatasourceID != "" {
 			task.SourceDatasourceID = patch.SourceDatasourceID
+			changedConfig = true
 		}
 		if patch.TargetDatasourceID != "" {
 			task.TargetDatasourceID = patch.TargetDatasourceID
+			changedConfig = true
 		}
 		if len(patch.TableMappings) > 0 {
 			for mappingIndex := range patch.TableMappings {
@@ -321,6 +339,9 @@ func (s *Store) UpdateTask(id string, patch SyncTask) (SyncTask, bool, error) {
 		}
 		task.UpdatedAt = now()
 		updated := *task
+		if changedConfig {
+			s.recordTaskRevisionLocked(updated, "update", "更新同步任务配置", "admin")
+		}
 		s.logLocked("admin", "update", "sync_task", id, "更新同步任务 "+updated.Name)
 		return cloneJSON(updated), true, s.saveLocked()
 	}
@@ -344,10 +365,65 @@ func (s *Store) DeleteTask(id string) (bool, error) {
 				break
 			}
 		}
+		s.removeTaskRevisionsLocked(id)
 		s.logLocked("admin", "delete", "sync_task", id, "删除同步任务")
 		return true, s.saveLocked()
 	}
 	return false, nil
+}
+
+func (s *Store) TaskRevisions(taskID string) []TaskRevision {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.ensureTaskRevisionsLocked()
+	revisions := []TaskRevision{}
+	for _, revision := range s.data.TaskRevisions {
+		if revision.TaskID == taskID {
+			revisions = append(revisions, revision)
+		}
+	}
+	sortTaskRevisionsDesc(revisions)
+	return cloneJSON(revisions)
+}
+
+func (s *Store) RollbackTaskRevision(taskID string, version int) (SyncTask, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var revision TaskRevision
+	for _, item := range s.data.TaskRevisions {
+		if item.TaskID == taskID && item.Version == version {
+			revision = item
+			break
+		}
+	}
+	if revision.ID == "" {
+		return SyncTask{}, false, nil
+	}
+	for index := range s.data.SyncTasks {
+		if s.data.SyncTasks[index].ID != taskID {
+			continue
+		}
+		current := &s.data.SyncTasks[index]
+		next := revision.Snapshot
+		next.ID = current.ID
+		next.Status = current.Status
+		next.ConfigVersion = current.ConfigVersion + 1
+		next.CreatedAt = current.CreatedAt
+		next.UpdatedAt = now()
+		current.Name = next.Name
+		current.Description = next.Description
+		current.Owner = next.Owner
+		current.SourceDatasourceID = next.SourceDatasourceID
+		current.TargetDatasourceID = next.TargetDatasourceID
+		current.TableMappings = next.TableMappings
+		current.Strategy = next.Strategy
+		current.ConfigVersion = next.ConfigVersion
+		current.UpdatedAt = next.UpdatedAt
+		s.recordTaskRevisionLocked(*current, "rollback", "回滚到 v"+intToString(version), "admin")
+		s.logLocked("admin", "rollback", "sync_task", taskID, "回滚同步任务 "+current.Name+" 到 v"+intToString(version))
+		return cloneJSON(*current), true, s.saveLocked()
+	}
+	return SyncTask{}, false, nil
 }
 
 func (s *Store) CopyTask(id string) (SyncTask, bool, error) {
@@ -529,6 +605,7 @@ func (s *Store) UpdateTaskParameters(id string, patch TaskParameterPatch) (SyncT
 		if changed {
 			task.ConfigVersion++
 			task.UpdatedAt = now()
+			s.recordTaskRevisionLocked(*task, "params", "修改任务运行参数", "admin")
 			s.logLocked("admin", "params", "sync_task", id, "修改任务参数 "+task.Name)
 			return cloneJSON(*task), true, s.saveLocked()
 		}
@@ -1368,6 +1445,61 @@ func validateAlertRuleInput(input AlertRuleInput) error {
 	return nil
 }
 
+func (s *Store) recordTaskRevisionLocked(task SyncTask, changeType string, summary string, actor string) {
+	if task.ID == "" || task.ConfigVersion <= 0 {
+		return
+	}
+	for index := range s.data.TaskRevisions {
+		if s.data.TaskRevisions[index].TaskID == task.ID && s.data.TaskRevisions[index].Version == task.ConfigVersion {
+			s.data.TaskRevisions[index].Snapshot = cloneJSON(task)
+			s.data.TaskRevisions[index].ChangeType = changeType
+			s.data.TaskRevisions[index].Summary = summary
+			s.data.TaskRevisions[index].Actor = actor
+			return
+		}
+	}
+	s.data.TaskRevisions = append([]TaskRevision{
+		{
+			ID:         newID(),
+			TaskID:     task.ID,
+			Version:    task.ConfigVersion,
+			ChangeType: changeType,
+			Summary:    summary,
+			Actor:      actor,
+			Snapshot:   cloneJSON(task),
+			CreatedAt:  now(),
+		},
+	}, s.data.TaskRevisions...)
+}
+
+func (s *Store) hasTaskRevisionLocked(taskID string, version int) bool {
+	for _, revision := range s.data.TaskRevisions {
+		if revision.TaskID == taskID && revision.Version == version {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *Store) removeTaskRevisionsLocked(taskID string) {
+	revisions := s.data.TaskRevisions[:0]
+	for _, revision := range s.data.TaskRevisions {
+		if revision.TaskID != taskID {
+			revisions = append(revisions, revision)
+		}
+	}
+	s.data.TaskRevisions = revisions
+}
+
+func sortTaskRevisionsDesc(revisions []TaskRevision) {
+	sort.SliceStable(revisions, func(left, right int) bool {
+		if revisions[left].Version == revisions[right].Version {
+			return revisions[left].CreatedAt > revisions[right].CreatedAt
+		}
+		return revisions[left].Version > revisions[right].Version
+	})
+}
+
 func (s *Store) refreshRuntimeStatesLocked() {
 	timestamp := now()
 	changed := false
@@ -1482,6 +1614,7 @@ func (s *Store) applySubscriptionJobLocked(job *CapabilityJob) {
 			}
 			task.ConfigVersion++
 			task.UpdatedAt = now()
+			s.recordTaskRevisionLocked(*task, "subscription", "订阅变更已生效", "system")
 			s.logLocked("system", "subscription_apply", "sync_task", task.ID, "订阅变更已生效："+job.Name)
 		}
 		return

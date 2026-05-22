@@ -471,6 +471,10 @@ func (s *Server) handleSyncTasks(response http.ResponseWriter, request *http.Req
 		s.rerunTask(response, parts[1])
 	case len(parts) == 3 && parts[2] == "export" && request.Method == http.MethodGet:
 		s.exportTask(response, parts[1])
+	case len(parts) == 3 && parts[2] == "revisions" && request.Method == http.MethodGet:
+		s.listTaskRevisions(response, parts[1])
+	case len(parts) == 5 && parts[2] == "revisions" && parts[4] == "rollback" && request.Method == http.MethodPost:
+		s.rollbackTaskRevision(response, parts[1], parts[3])
 	case len(parts) == 3 && parts[2] == "copy" && request.Method == http.MethodPost:
 		task, ok, err := s.store.CopyTask(parts[1])
 		if err != nil {
@@ -659,6 +663,38 @@ func (s *Server) exportTask(response http.ResponseWriter, id string) {
 		Runtime: exported.Runtime,
 	})
 	writeJSON(response, http.StatusOK, exported)
+}
+
+func (s *Server) listTaskRevisions(response http.ResponseWriter, id string) {
+	if _, ok := s.store.GetTask(id); !ok {
+		writeError(response, http.StatusNotFound, "同步任务不存在")
+		return
+	}
+	writeJSON(response, http.StatusOK, s.store.TaskRevisions(id))
+}
+
+func (s *Server) rollbackTaskRevision(response http.ResponseWriter, id string, versionValue string) {
+	version, err := strconv.Atoi(versionValue)
+	if err != nil || version <= 0 {
+		writeError(response, http.StatusBadRequest, "版本号不正确")
+		return
+	}
+	task, ok, err := s.store.RollbackTaskRevision(id, version)
+	if err != nil {
+		writeError(response, http.StatusBadRequest, err.Error())
+		return
+	}
+	if !ok {
+		writeError(response, http.StatusNotFound, "任务版本不存在")
+		return
+	}
+	writeJSON(response, http.StatusOK, TaskOperationResult{
+		Task:    s.taskResponse(task),
+		Message: "任务配置已回滚到 v" + intToString(version),
+		Meta: map[string]string{
+			"configVersion": intToString(task.ConfigVersion),
+		},
+	})
 }
 
 func (s *Server) handleErrorEvents(response http.ResponseWriter, request *http.Request, parts []string) {

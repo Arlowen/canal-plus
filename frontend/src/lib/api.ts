@@ -20,6 +20,7 @@ import type {
   TaskOperationResult,
   TaskParameterPatch,
   TaskPreflightReport,
+  TaskRevision,
   User
 } from "../types/api";
 
@@ -159,6 +160,12 @@ export const api = {
   },
   exportTask(id: string) {
     return request<TaskExport>(`/sync-tasks/${id}/export`);
+  },
+  taskRevisions(id: string) {
+    return request<TaskRevision[]>(`/sync-tasks/${id}/revisions`);
+  },
+  rollbackTaskRevision(id: string, version: number) {
+    return request<TaskOperationResult>(`/sync-tasks/${id}/revisions/${version}/rollback`, { method: "POST" });
   },
   defaultStrategy() {
     return request<SyncStrategy>("/sync-strategy/default");

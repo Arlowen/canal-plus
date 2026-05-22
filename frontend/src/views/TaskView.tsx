@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   ArrowRight,
   ArrowsClockwise,
+  ClockCounterClockwise,
   ClipboardText,
   Copy,
   FileText,
@@ -18,9 +19,9 @@ import {
 import { PermissionNotice } from "../components/PermissionNotice";
 import { StatusBadge } from "../components/StatusBadge";
 import { api } from "../lib/api";
-import { cx } from "../lib/format";
+import { cx, formatDate } from "../lib/format";
 import { taskStatusText } from "../lib/taskStatus";
-import type { ClusterSnapshot, ErrorEvent, OperationLog, SyncStrategy, SyncTask, TaskExport, TaskStatus } from "../types/api";
+import type { ClusterSnapshot, ErrorEvent, OperationLog, SyncStrategy, SyncTask, TaskExport, TaskRevision, TaskStatus } from "../types/api";
 import { TaskInsightPanel } from "./TaskInsightPanel";
 
 type TaskAction = "start" | "pause" | "resume" | "stop" | "copy";
@@ -152,7 +153,7 @@ function ActionButton({
   );
 }
 
-type TaskTool = "params" | "position" | "export" | "lifecycle";
+type TaskTool = "params" | "position" | "export" | "versions" | "lifecycle";
 
 function TaskFunctionPanel({ task, canManage, onChanged }: { task: SyncTask; canManage: boolean; onChanged: () => Promise<void> | void }) {
   const [activeTool, setActiveTool] = useState<TaskTool>(canManage ? "params" : "export");
@@ -169,6 +170,9 @@ function TaskFunctionPanel({ task, canManage, onChanged }: { task: SyncTask; can
     serverId: ""
   });
   const [exported, setExported] = useState<TaskExport | null>(null);
+  const [revisions, setRevisions] = useState<TaskRevision[]>([]);
+  const [loadingRevisions, setLoadingRevisions] = useState(false);
+  const [rollbackVersion, setRollbackVersion] = useState<number | null>(null);
   const [confirmText, setConfirmText] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -178,6 +182,16 @@ function TaskFunctionPanel({ task, canManage, onChanged }: { task: SyncTask; can
   useEffect(() => {
     if (!canManage && activeTool !== "export") setActiveTool("export");
   }, [activeTool, canManage]);
+
+  useEffect(() => {
+    if (activeTool !== "versions") return;
+    setLoadingRevisions(true);
+    setError(null);
+    api.taskRevisions(task.id)
+      .then(setRevisions)
+      .catch((requestError) => setError(requestError instanceof Error ? requestError.message : "读取版本失败"))
+      .finally(() => setLoadingRevisions(false));
+  }, [activeTool, task.id]);
 
   const updateParams = async () => {
     if (!canManage) {
@@ -260,10 +274,30 @@ function TaskFunctionPanel({ task, canManage, onChanged }: { task: SyncTask; can
     await onChanged();
   };
 
+  const rollbackRevision = async (version: number) => {
+    if (!canManage) {
+      setError("回滚任务配置需要管理员权限");
+      return;
+    }
+    setRollbackVersion(version);
+    setError(null);
+    const response = await api.rollbackTaskRevision(task.id, version).catch((requestError) => {
+      setError(requestError instanceof Error ? requestError.message : "回滚失败");
+      return null;
+    });
+    setRollbackVersion(null);
+    if (!response) return;
+    setMessage(response.message);
+    const nextRevisions = await api.taskRevisions(task.id).catch(() => revisions);
+    setRevisions(nextRevisions);
+    await onChanged();
+  };
+
   const toolItems = [
     { id: "params", label: "修改参数", icon: GearSix, adminOnly: true },
     { id: "position", label: "重置位点", icon: ArrowsClockwise, adminOnly: true },
     { id: "export", label: "导出任务", icon: FileText, adminOnly: false },
+    { id: "versions", label: "版本记录", icon: ClockCounterClockwise, adminOnly: false },
     { id: "lifecycle", label: "生命周期", icon: Stop, adminOnly: true }
   ] as const;
 
@@ -277,7 +311,7 @@ function TaskFunctionPanel({ task, canManage, onChanged }: { task: SyncTask; can
         <span className="rounded-full border border-line bg-white px-2 py-1 text-xs text-muted">v{task.configVersion}</span>
       </div>
 
-      <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+      <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-5">
         {toolItems.map((item) => {
           const Icon = item.icon;
           const disabled = item.adminOnly && !canManage;
@@ -403,6 +437,59 @@ function TaskFunctionPanel({ task, canManage, onChanged }: { task: SyncTask; can
 {JSON.stringify(exported, null, 2)}
               </pre>
             </div>
+          )}
+        </div>
+      )}
+
+      {activeTool === "versions" && (
+        <div className="mt-4 grid gap-3">
+          <div className="grid gap-3 sm:grid-cols-3">
+            <Info label="当前版本" value={`v${task.configVersion}`} mono />
+            <Info label="历史快照" value={`${revisions.length} 条`} mono />
+            <Info label="最近变更" value={formatDate(revisions[0]?.createdAt)} />
+          </div>
+          {loadingRevisions ? (
+            <div className="rounded-lg border border-line bg-white p-4 text-sm text-muted">正在读取版本记录</div>
+          ) : revisions.length === 0 ? (
+            <div className="rounded-lg border border-dashed border-line bg-white p-5 text-center text-sm text-muted">
+              暂无版本记录，下一次配置变更后会自动生成快照。
+            </div>
+          ) : (
+            <div className="divide-y divide-line rounded-lg border border-line bg-white">
+              {revisions.map((revision) => {
+                const current = revision.version === task.configVersion;
+                const fieldCount = revision.snapshot.tableMappings.reduce((total, mapping) => total + mapping.fields.filter((field) => !field.ignored).length, 0);
+                return (
+                  <div key={revision.id} className="grid gap-3 p-3 text-sm lg:grid-cols-[90px_minmax(0,1fr)_auto] lg:items-center">
+                    <div className="font-mono text-lg font-semibold text-coal">v{revision.version}</div>
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-medium text-coal">{revision.summary}</span>
+                        <span className="rounded-full border border-line bg-[#fcfcf8] px-2 py-0.5 text-xs text-muted">{revision.changeType}</span>
+                        {current && <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-xs text-emerald-700">当前</span>}
+                      </div>
+                      <div className="mt-1 flex flex-wrap gap-2 text-xs text-zinc-500">
+                        <span>{formatDate(revision.createdAt)}</span>
+                        <span>{revision.actor}</span>
+                        <span>{revision.snapshot.tableMappings.length} tables</span>
+                        <span>{fieldCount} fields</span>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => rollbackRevision(revision.version)}
+                      disabled={!canManage || current || rollbackVersion === revision.version}
+                      className="inline-flex items-center justify-center gap-2 rounded-lg border border-line bg-white px-3 py-2 text-sm text-zinc-700 transition hover:bg-zinc-50 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45"
+                    >
+                      <ClockCounterClockwise size={16} />
+                      {rollbackVersion === revision.version ? "回滚中" : "回滚"}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          {!canManage && (
+            <PermissionNotice compact description="当前角色可查看配置版本记录；回滚任务配置需要管理员权限。" />
           )}
         </div>
       )}

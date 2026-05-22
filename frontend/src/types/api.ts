@@ -108,6 +108,17 @@ export interface TaskExport {
   checksum: string;
 }
 
+export interface TaskRevision {
+  id: string;
+  taskId: string;
+  version: number;
+  changeType: "create" | "update" | "params" | "subscription" | "rollback" | "import" | string;
+  summary: string;
+  actor: string;
+  snapshot: SyncTask;
+  createdAt: string;
+}
+
 export type PreflightStatus = "passed" | "warning" | "failed";
 
 export interface TaskPreflightCheck {
