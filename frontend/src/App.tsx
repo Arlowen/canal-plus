@@ -26,6 +26,7 @@ import { cx, formatDate, formatNumber } from "./lib/format";
 import { CapabilityView } from "./views/CapabilityView";
 import { ClusterView } from "./views/ClusterView";
 import { ErrorCenterView } from "./views/ErrorCenterView";
+import { OperationLogsView } from "./views/OperationLogsView";
 import { SettingsView } from "./views/SettingsView";
 import { TaskView } from "./views/TaskView";
 import type {
@@ -276,7 +277,7 @@ function App() {
                 <ErrorCenterView errors={errors} tasks={tasks} onChanged={() => refresh(true)} />
               )}
               {view === "logs" && (
-                <OperationLogs logs={logs} />
+                <OperationLogsView logs={logs} />
               )}
               {view === "settings" && (
                 <SettingsView alertRules={alertRules} evaluations={alertEvaluations} tasks={tasks} onChanged={() => refresh(true)} />
@@ -1025,27 +1026,6 @@ function TaskWizard({ datasources, onCreated }: { datasources: Datasource[]; onC
         </div>
       </section>
     </div>
-  );
-}
-
-function OperationLogs({ logs }: { logs: OperationLog[] }) {
-  return (
-    <section className="rounded-xl border border-line bg-white shadow-panel">
-      <div className="border-b border-line p-5">
-        <h2 className="text-lg font-semibold tracking-tight text-coal">操作日志</h2>
-        <div className="mt-1 text-sm text-muted">关键操作审计</div>
-      </div>
-      <div className="divide-y divide-line">
-        {logs.map((log) => (
-          <div key={log.id} className="grid gap-2 p-5 md:grid-cols-[160px_130px_1fr_140px] md:items-center">
-            <div className="text-sm text-muted">{formatDate(log.createdAt)}</div>
-            <div className="font-mono text-sm text-zinc-700">{log.actor}</div>
-            <div className="text-sm text-coal">{log.detail}</div>
-            <div className="text-xs uppercase tracking-[0.14em] text-muted">{log.action}</div>
-          </div>
-        ))}
-      </div>
-    </section>
   );
 }
 
