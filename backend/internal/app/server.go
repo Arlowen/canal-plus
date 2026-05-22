@@ -926,6 +926,31 @@ func (s *Server) handleCapabilityJobs(response http.ResponseWriter, request *htt
 			return
 		}
 		writeJSON(response, http.StatusOK, job)
+	case len(parts) == 3 && parts[2] == "structure-ddl" && request.Method == http.MethodGet:
+		statements, ok := s.store.StructureDDLs(parts[1])
+		if !ok {
+			writeError(response, http.StatusNotFound, "结构迁移任务不存在")
+			return
+		}
+		writeJSON(response, http.StatusOK, statements)
+	case len(parts) == 4 && parts[2] == "structure-ddl" && parts[3] == "apply" && request.Method == http.MethodPost:
+		var input StructureDDLApplyInput
+		if request.Body != nil && request.ContentLength != 0 {
+			if err := decodeJSON(request, &input); err != nil {
+				writeError(response, http.StatusBadRequest, "请求体格式错误")
+				return
+			}
+		}
+		job, ok, err := s.store.ApplyStructureDDLs(parts[1], input)
+		if err != nil {
+			writeError(response, http.StatusBadRequest, err.Error())
+			return
+		}
+		if !ok {
+			writeError(response, http.StatusNotFound, "结构迁移任务不存在")
+			return
+		}
+		writeJSON(response, http.StatusOK, job)
 	case len(parts) == 3 && parts[2] == "quality-diffs" && request.Method == http.MethodGet:
 		diffs, ok := s.store.QualityDiffs(parts[1])
 		if !ok {

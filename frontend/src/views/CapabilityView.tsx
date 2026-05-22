@@ -14,7 +14,7 @@ import { PermissionNotice } from "../components/PermissionNotice";
 import { StatusBadge } from "../components/StatusBadge";
 import { api } from "../lib/api";
 import { cx, formatDate } from "../lib/format";
-import type { CapabilityJob, CapabilityJobType, Datasource, QualityDiff, SyncTask } from "../types/api";
+import type { CapabilityJob, CapabilityJobType, Datasource, QualityDiff, StructureDDL, SyncTask } from "../types/api";
 
 const capabilityConfig: Record<CapabilityJobType, {
   title: string;
@@ -110,6 +110,20 @@ function diffStatusClass(value: QualityDiff["status"]) {
   return value === "corrected" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-amber-200 bg-amber-50 text-amber-700";
 }
 
+function ddlStatusLabel(value: StructureDDL["status"]) {
+  return value === "applied" ? "已执行" : "待执行";
+}
+
+function ddlStatusClass(value: StructureDDL["status"]) {
+  return value === "applied" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-amber-200 bg-amber-50 text-amber-700";
+}
+
+function ddlChangeLabel(value: string) {
+  if (value === "create_table") return "建表";
+  if (value === "add_column") return "加列";
+  return value;
+}
+
 export function CapabilityView({
   mode,
   tasks,
@@ -134,13 +148,18 @@ export function CapabilityView({
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [structureDDLs, setStructureDDLs] = useState<StructureDDL[]>([]);
+  const [loadingDDLs, setLoadingDDLs] = useState(false);
+  const [applyingDDL, setApplyingDDL] = useState<string | null>(null);
   const [qualityDiffs, setQualityDiffs] = useState<QualityDiff[]>([]);
   const [loadingDiffs, setLoadingDiffs] = useState(false);
   const [correctingDiff, setCorrectingDiff] = useState<string | null>(null);
   const relevantJobs = useMemo(() => jobs.filter((job) => job.type === mode), [jobs, mode]);
   const selectedTask = tasks.find((task) => task.id === selectedTaskId) ?? availableTasks[0];
   const latestJob = relevantJobs[0];
+  const latestStructureJobId = mode === "structure" ? latestJob?.id ?? "" : "";
   const latestQualityJobId = mode === "quality" ? latestJob?.id ?? "" : "";
+  const pendingDDLs = structureDDLs.filter((statement) => statement.status === "pending");
   const pendingDiffs = qualityDiffs.filter((diff) => diff.status === "pending");
 
   useEffect(() => {
@@ -152,6 +171,28 @@ export function CapabilityView({
       setSelectedTaskId(availableTasks[0].id);
     }
   }, [availableTasks, selectedTaskId]);
+
+  useEffect(() => {
+    if (!latestStructureJobId) {
+      setStructureDDLs([]);
+      return;
+    }
+    let cancelled = false;
+    setLoadingDDLs(true);
+    api.structureDDLs(latestStructureJobId)
+      .then((statements) => {
+        if (!cancelled) setStructureDDLs(statements);
+      })
+      .catch((requestError) => {
+        if (!cancelled) setError(requestError instanceof Error ? requestError.message : "加载 DDL 计划失败");
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingDDLs(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [latestStructureJobId]);
 
   useEffect(() => {
     if (!latestQualityJobId) {
@@ -211,6 +252,33 @@ export function CapabilityView({
       await onChanged();
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "运行失败");
+    }
+  };
+
+  const applyStructureDDLs = async (ids?: string[]) => {
+    if (!canManage) {
+      setError("执行结构 DDL 需要管理员权限");
+      return;
+    }
+    if (!latestJob) return;
+    const marker = ids?.[0] ?? "all";
+    setApplyingDDL(marker);
+    setError(null);
+    setMessage(null);
+    try {
+      await api.applyStructureDDLs(latestJob.id, {
+        ids,
+        reason: ids?.length ? "人工确认单条 DDL 执行" : "人工确认批量 DDL 执行"
+      });
+      const statements = await api.structureDDLs(latestJob.id);
+      setStructureDDLs(statements);
+      const appliedCount = statements.filter((statement) => statement.status === "applied").length;
+      setMessage(`已执行 ${appliedCount}/${statements.length} 条 DDL`);
+      await onChanged();
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "执行 DDL 失败");
+    } finally {
+      setApplyingDDL(null);
     }
   };
 
@@ -372,6 +440,73 @@ export function CapabilityView({
                 </div>
               ))}
             </div>
+          </div>
+        )}
+
+        {mode === "structure" && latestJob && (
+          <div className="mt-5 rounded-xl border border-line bg-[#fcfcf8] p-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <h3 className="font-semibold tracking-tight text-coal">DDL 执行计划</h3>
+                <div className="mt-1 text-sm text-muted">预览目标端结构变更，确认后按计划执行。</div>
+              </div>
+              <button
+                onClick={() => applyStructureDDLs()}
+                disabled={!canManage || loadingDDLs || pendingDDLs.length === 0 || applyingDDL === "all" || latestJob.status !== "completed"}
+                className="inline-flex items-center justify-center gap-2 rounded-lg bg-coal px-3 py-2 text-sm text-white transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {applyingDDL === "all" ? <ArrowsClockwise size={16} /> : <Stack size={16} />}
+                {applyingDDL === "all" ? "执行中" : `执行待处理 ${pendingDDLs.length}`}
+              </button>
+            </div>
+
+            <div className="mt-4 grid gap-3 sm:grid-cols-3">
+              <Info label="DDL 语句" value={loadingDDLs ? "加载中" : `${structureDDLs.length} 条`} mono />
+              <Info label="待执行" value={`${pendingDDLs.length} 条`} mono />
+              <Info label="已执行" value={`${structureDDLs.length - pendingDDLs.length} 条`} mono />
+            </div>
+
+            <div className="mt-4 divide-y divide-line overflow-hidden rounded-lg border border-line bg-white">
+              {loadingDDLs ? (
+                <div className="grid gap-3 p-4">
+                  <div className="h-4 w-2/5 animate-pulse rounded bg-zinc-100" />
+                  <div className="h-20 w-full animate-pulse rounded bg-zinc-100" />
+                </div>
+              ) : structureDDLs.length === 0 ? (
+                <div className="p-6 text-center text-sm text-muted">当前结构任务暂无 DDL 计划</div>
+              ) : structureDDLs.slice(0, 8).map((statement) => (
+                <div key={statement.id} className="grid gap-3 p-3 text-sm xl:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)_auto] xl:items-start">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="truncate font-medium text-coal">{statement.sourceObject}</span>
+                      <span className="text-muted">to</span>
+                      <span className="truncate font-medium text-coal">{statement.targetObject}</span>
+                    </div>
+                    <div className="mt-1 flex flex-wrap gap-2 text-xs text-muted">
+                      <span>{statement.objectType}</span>
+                      <span>{ddlChangeLabel(statement.changeType)}</span>
+                      <span>风险 {riskLabel(statement.riskLevel)}</span>
+                    </div>
+                  </div>
+                  <pre className="max-h-32 overflow-auto rounded-lg border border-line bg-[#fcfcf8] p-3 font-mono text-xs leading-relaxed text-zinc-700">{statement.statement}</pre>
+                  <div className="flex flex-wrap items-center gap-2 xl:justify-end">
+                    <span className={cx("rounded-full border px-2 py-1 text-xs", severityClass(statement.riskLevel))}>{riskLabel(statement.riskLevel)}</span>
+                    <span className={cx("rounded-full border px-2 py-1 text-xs", ddlStatusClass(statement.status))}>{ddlStatusLabel(statement.status)}</span>
+                    <button
+                      onClick={() => applyStructureDDLs([statement.id])}
+                      disabled={!canManage || statement.status === "applied" || applyingDDL === statement.id || latestJob.status !== "completed"}
+                      className="rounded-lg border border-line bg-white px-3 py-2 text-xs text-zinc-700 transition hover:bg-zinc-50 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45"
+                    >
+                      {applyingDDL === statement.id ? "执行中" : "执行"}
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {structureDDLs.length > 8 && (
+              <div className="mt-3 text-xs text-muted">已展示前 8 条 DDL，其余语句可通过批量执行处理。</div>
+            )}
           </div>
         )}
 

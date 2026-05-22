@@ -114,6 +114,11 @@ func TestOperatorCannotMutateConfigurationOrCluster(t *testing.T) {
 	if correctQualityResponse.Code != http.StatusForbidden {
 		t.Fatalf("operator correct quality diff status = %d body = %s", correctQualityResponse.Code, correctQualityResponse.Body.String())
 	}
+
+	applyStructureResponse := serveTestRequest(server, authRequest(http.MethodPost, "/api/capability-jobs/job-missing/structure-ddl/apply", operatorToken, `{}`))
+	if applyStructureResponse.Code != http.StatusForbidden {
+		t.Fatalf("operator apply structure ddl status = %d body = %s", applyStructureResponse.Code, applyStructureResponse.Body.String())
+	}
 }
 
 func TestAdminCanMutateConfiguration(t *testing.T) {

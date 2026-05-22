@@ -374,6 +374,36 @@ type CapabilityJob struct {
 	UpdatedAt       string               `json:"updatedAt"`
 }
 
+type StructureDDLStatus string
+
+const (
+	StructureDDLPending StructureDDLStatus = "pending"
+	StructureDDLApplied StructureDDLStatus = "applied"
+)
+
+type StructureDDL struct {
+	ID            string             `json:"id"`
+	JobID         string             `json:"jobId"`
+	TaskID        string             `json:"taskId"`
+	SourceObject  string             `json:"sourceObject"`
+	TargetObject  string             `json:"targetObject"`
+	ObjectType    string             `json:"objectType"`
+	ChangeType    string             `json:"changeType"`
+	Statement     string             `json:"statement"`
+	RiskLevel     string             `json:"riskLevel"`
+	Status        StructureDDLStatus `json:"status"`
+	CreatedAt     string             `json:"createdAt"`
+	UpdatedAt     string             `json:"updatedAt"`
+	AppliedAt     string             `json:"appliedAt,omitempty"`
+	AppliedBy     string             `json:"appliedBy,omitempty"`
+	HandledReason string             `json:"handledReason,omitempty"`
+}
+
+type StructureDDLApplyInput struct {
+	IDs    []string `json:"ids,omitempty"`
+	Reason string   `json:"reason,omitempty"`
+}
+
 type QualityDiffStatus string
 
 const (
@@ -496,6 +526,7 @@ type DatabaseShape struct {
 	TaskLeases     []TaskLease        `json:"taskLeases"`
 	TaskRevisions  []TaskRevision     `json:"taskRevisions"`
 	QualityDiffs   []QualityDiff      `json:"qualityDiffs"`
+	StructureDDLs  []StructureDDL     `json:"structureDdls"`
 }
 
 type DashboardSummary struct {

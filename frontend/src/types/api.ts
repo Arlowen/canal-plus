@@ -277,6 +277,31 @@ export interface CapabilityJob {
   updatedAt: string;
 }
 
+export type StructureDDLStatus = "pending" | "applied";
+
+export interface StructureDDL {
+  id: string;
+  jobId: string;
+  taskId: string;
+  sourceObject: string;
+  targetObject: string;
+  objectType: "table" | "column" | string;
+  changeType: "create_table" | "add_column" | string;
+  statement: string;
+  riskLevel: "low" | "medium" | "high" | string;
+  status: StructureDDLStatus;
+  createdAt: string;
+  updatedAt: string;
+  appliedAt?: string;
+  appliedBy?: string;
+  handledReason?: string;
+}
+
+export interface StructureDDLApplyInput {
+  ids?: string[];
+  reason?: string;
+}
+
 export type QualityDiffStatus = "pending" | "corrected";
 
 export interface QualityDiff {

@@ -38,6 +38,7 @@ func NewStore(path string) (*Store, error) {
 		store.ensureUsersLocked()
 		store.ensureClusterLocked()
 		store.ensureTaskRevisionsLocked()
+		store.ensureStructureDDLsLocked()
 		store.ensureQualityDiffsLocked()
 		if err := store.saveLocked(); err != nil {
 			return nil, err
@@ -51,6 +52,7 @@ func NewStore(path string) (*Store, error) {
 	}
 	store.data = seed
 	store.ensureTaskRevisionsLocked()
+	store.ensureStructureDDLsLocked()
 	store.ensureQualityDiffsLocked()
 	if err := store.saveLocked(); err != nil {
 		return nil, err
@@ -1203,7 +1205,10 @@ func (s *Store) CreateCapabilityJob(input CapabilityJob) (CapabilityJob, error) 
 	input.CreatedAt = timestamp
 	input.UpdatedAt = timestamp
 	s.data.CapabilityJobs = append([]CapabilityJob{input}, s.data.CapabilityJobs...)
-	if input.Type == CapabilityQuality {
+	switch input.Type {
+	case CapabilityStructure:
+		s.createStructureDDLsLocked(input, task)
+	case CapabilityQuality:
 		s.createQualityDiffsLocked(input, task)
 	}
 	s.logLocked("admin", "create", "capability_job", input.ID, "创建能力任务 "+input.Name)
@@ -1227,6 +1232,13 @@ func (s *Store) RunCapabilityJob(id string) (CapabilityJob, bool, error) {
 			job.ProgressPercent = 18
 			job.CurrentStep = 0
 			job.Steps = defaultCapabilitySteps(job.Type)
+			if job.Type == CapabilityStructure {
+				if task, ok := s.getTaskLocked(job.TaskID); ok {
+					job.Summary = buildCapabilitySummary(job.Type, task)
+					s.removeStructureDDLsLocked(job.ID)
+					s.createStructureDDLsLocked(*job, task)
+				}
+			}
 			if job.Type == CapabilityQuality {
 				if task, ok := s.getTaskLocked(job.TaskID); ok {
 					job.Summary = buildCapabilitySummary(job.Type, task)
@@ -1240,6 +1252,69 @@ func (s *Store) RunCapabilityJob(id string) (CapabilityJob, bool, error) {
 		return cloneJSON(*job), true, s.saveLocked()
 	}
 	return CapabilityJob{}, false, nil
+}
+
+func (s *Store) StructureDDLs(jobID string) ([]StructureDDL, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.ensureStructureDDLsLocked()
+	job, ok := s.getCapabilityJobLocked(jobID)
+	if !ok || job.Type != CapabilityStructure {
+		return nil, false
+	}
+	statements := make([]StructureDDL, 0)
+	for _, statement := range s.data.StructureDDLs {
+		if statement.JobID == jobID {
+			statements = append(statements, statement)
+		}
+	}
+	sortStructureDDLs(statements)
+	return cloneJSON(statements), true
+}
+
+func (s *Store) ApplyStructureDDLs(jobID string, input StructureDDLApplyInput) (CapabilityJob, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	job := s.getCapabilityJobPointerLocked(jobID)
+	if job == nil {
+		return CapabilityJob{}, false, nil
+	}
+	if job.Type != CapabilityStructure {
+		return CapabilityJob{}, true, errors.New("只有结构迁移任务支持 DDL 执行")
+	}
+	if job.Status != CapabilityCompleted {
+		return CapabilityJob{}, true, errors.New("结构迁移计划生成后才能执行 DDL")
+	}
+	selected := map[string]bool{}
+	for _, id := range input.IDs {
+		if strings.TrimSpace(id) != "" {
+			selected[id] = true
+		}
+	}
+	applyAll := len(selected) == 0
+	timestamp := now()
+	changed := 0
+	for index := range s.data.StructureDDLs {
+		statement := &s.data.StructureDDLs[index]
+		if statement.JobID != jobID || statement.Status == StructureDDLApplied {
+			continue
+		}
+		if !applyAll && !selected[statement.ID] {
+			continue
+		}
+		statement.Status = StructureDDLApplied
+		statement.AppliedAt = timestamp
+		statement.AppliedBy = "admin"
+		statement.HandledReason = strings.TrimSpace(input.Reason)
+		statement.UpdatedAt = timestamp
+		changed++
+	}
+	if changed == 0 {
+		return cloneJSON(*job), true, nil
+	}
+	job.UpdatedAt = timestamp
+	s.logLocked("admin", "structure_apply", "capability_job", jobID, "执行结构迁移 DDL "+intToString(changed)+" 条："+job.Name)
+	return cloneJSON(*job), true, s.saveLocked()
 }
 
 func (s *Store) QualityDiffs(jobID string) ([]QualityDiff, bool) {
@@ -1761,6 +1836,8 @@ func (s *Store) refreshCapabilityJobsLocked() {
 		}
 		if job.Status == CapabilityCompleted {
 			switch job.Type {
+			case CapabilityStructure:
+				s.ensureStructureDDLsForJobLocked(*job)
 			case CapabilityQuality:
 				s.ensureQualityDiffsForJobLocked(*job)
 				job.Summary.CorrectedRows = s.countQualityDiffsLocked(job.ID, QualityDiffCorrected)
@@ -1774,6 +1851,175 @@ func (s *Store) refreshCapabilityJobsLocked() {
 	if changed {
 		_ = s.saveLocked()
 	}
+}
+
+func (s *Store) ensureStructureDDLsLocked() {
+	for _, job := range s.data.CapabilityJobs {
+		if job.Type != CapabilityStructure {
+			continue
+		}
+		s.ensureStructureDDLsForJobLocked(job)
+	}
+}
+
+func (s *Store) ensureStructureDDLsForJobLocked(job CapabilityJob) {
+	if job.Type != CapabilityStructure || s.hasStructureDDLsLocked(job.ID) {
+		return
+	}
+	task, ok := s.getTaskLocked(job.TaskID)
+	if !ok {
+		return
+	}
+	s.createStructureDDLsLocked(job, task)
+}
+
+func (s *Store) createStructureDDLsLocked(job CapabilityJob, task SyncTask) int {
+	if job.Type != CapabilityStructure || s.hasStructureDDLsLocked(job.ID) {
+		return 0
+	}
+	limit := minInt(maxInt(2, job.Summary.DDLCount), 12)
+	if limit <= 0 {
+		limit = 2
+	}
+	timestamp := now()
+	statements := []StructureDDL{}
+	for mappingIndex, mapping := range task.TableMappings {
+		statements = append(statements, StructureDDL{
+			ID:           newID(),
+			JobID:        job.ID,
+			TaskID:       task.ID,
+			SourceObject: mapping.SourceSchema + "." + mapping.SourceTable,
+			TargetObject: mapping.TargetSchema + "." + mapping.TargetTable,
+			ObjectType:   "table",
+			ChangeType:   "create_table",
+			Statement:    buildCreateTableDDL(mapping),
+			RiskLevel:    structureDDLRisk(mapping, "create_table"),
+			Status:       StructureDDLPending,
+			CreatedAt:    timestamp,
+			UpdatedAt:    timestamp,
+		})
+		for fieldIndex, field := range mapping.Fields {
+			if field.Ignored || field.PrimaryKey {
+				continue
+			}
+			if len(statements) >= limit {
+				break
+			}
+			statements = append(statements, StructureDDL{
+				ID:           newID(),
+				JobID:        job.ID,
+				TaskID:       task.ID,
+				SourceObject: mapping.SourceSchema + "." + mapping.SourceTable + "." + field.SourceField,
+				TargetObject: mapping.TargetSchema + "." + mapping.TargetTable + "." + field.TargetField,
+				ObjectType:   "column",
+				ChangeType:   "add_column",
+				Statement:    buildAddColumnDDL(mapping, field),
+				RiskLevel:    structureDDLRisk(mapping, "add_column_"+intToString(mappingIndex+fieldIndex)),
+				Status:       StructureDDLPending,
+				CreatedAt:    timestamp,
+				UpdatedAt:    timestamp,
+			})
+		}
+		if len(statements) >= limit {
+			break
+		}
+	}
+	if len(statements) == 0 {
+		return 0
+	}
+	if len(statements) > limit {
+		statements = statements[:limit]
+	}
+	s.data.StructureDDLs = append(s.data.StructureDDLs, statements...)
+	return len(statements)
+}
+
+func buildCreateTableDDL(mapping TableMapping) string {
+	lines := []string{}
+	for _, field := range mapping.Fields {
+		if field.Ignored {
+			continue
+		}
+		column := "  `" + field.TargetField + "` " + mysqlColumnType(field.TargetType)
+		if !field.Nullable || field.PrimaryKey {
+			column += " NOT NULL"
+		}
+		lines = append(lines, column)
+	}
+	primaryKey := primaryKeyField(mapping.Fields)
+	if primaryKey != "" {
+		lines = append(lines, "  PRIMARY KEY (`"+primaryKey+"`)")
+	}
+	return "CREATE TABLE IF NOT EXISTS `" + mapping.TargetSchema + "`.`" + mapping.TargetTable + "` (\n" + strings.Join(lines, ",\n") + "\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;"
+}
+
+func buildAddColumnDDL(mapping TableMapping, field FieldMapping) string {
+	column := "`" + field.TargetField + "` " + mysqlColumnType(field.TargetType)
+	if !field.Nullable {
+		column += " NOT NULL"
+	}
+	return "ALTER TABLE `" + mapping.TargetSchema + "`.`" + mapping.TargetTable + "` ADD COLUMN " + column + ";"
+}
+
+func mysqlColumnType(value string) string {
+	normalized := strings.ToLower(strings.TrimSpace(value))
+	if normalized == "" {
+		return "varchar(255)"
+	}
+	if strings.Contains(normalized, "bigint") {
+		return "bigint"
+	}
+	if strings.Contains(normalized, "int") {
+		return "int"
+	}
+	if strings.Contains(normalized, "decimal") {
+		return "decimal(18,4)"
+	}
+	if strings.Contains(normalized, "datetime") || strings.Contains(normalized, "timestamp") {
+		return "datetime"
+	}
+	if strings.Contains(normalized, "json") {
+		return "json"
+	}
+	return "varchar(255)"
+}
+
+func structureDDLRisk(mapping TableMapping, changeType string) string {
+	if strings.Contains(changeType, "create_table") {
+		return "low"
+	}
+	if len(mapping.Fields) > 8 {
+		return "medium"
+	}
+	return "low"
+}
+
+func (s *Store) hasStructureDDLsLocked(jobID string) bool {
+	for _, statement := range s.data.StructureDDLs {
+		if statement.JobID == jobID {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *Store) removeStructureDDLsLocked(jobID string) {
+	statements := s.data.StructureDDLs[:0]
+	for _, statement := range s.data.StructureDDLs {
+		if statement.JobID != jobID {
+			statements = append(statements, statement)
+		}
+	}
+	s.data.StructureDDLs = statements
+}
+
+func sortStructureDDLs(statements []StructureDDL) {
+	sort.SliceStable(statements, func(left, right int) bool {
+		if statements[left].Status == statements[right].Status {
+			return statements[left].CreatedAt > statements[right].CreatedAt
+		}
+		return statements[left].Status == StructureDDLPending
+	})
 }
 
 func (s *Store) ensureQualityDiffsLocked() {

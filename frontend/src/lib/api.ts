@@ -16,6 +16,8 @@ import type {
   PositionResetInput,
   QualityDiff,
   QualityDiffCorrectionInput,
+  StructureDDL,
+  StructureDDLApplyInput,
   SyncStrategy,
   SyncTask,
   TableColumn,
@@ -235,6 +237,15 @@ export const api = {
   },
   runCapabilityJob(id: string) {
     return request<CapabilityJob>(`/capability-jobs/${id}/run`, { method: "POST" });
+  },
+  structureDDLs(jobId: string) {
+    return request<StructureDDL[]>(`/capability-jobs/${jobId}/structure-ddl`);
+  },
+  applyStructureDDLs(jobId: string, input: StructureDDLApplyInput = {}) {
+    return request<CapabilityJob>(`/capability-jobs/${jobId}/structure-ddl/apply`, {
+      method: "POST",
+      body: JSON.stringify(input)
+    });
   },
   qualityDiffs(jobId: string) {
     return request<QualityDiff[]>(`/capability-jobs/${jobId}/quality-diffs`);

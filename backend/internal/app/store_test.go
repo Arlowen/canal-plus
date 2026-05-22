@@ -592,6 +592,70 @@ func TestCreateCapabilityJobBuildsSummaryAndSteps(t *testing.T) {
 	}
 }
 
+func TestStructureDDLApplyUpdatesPlan(t *testing.T) {
+	store := newTestStore(t)
+	snapshot := store.Snapshot()
+	if len(snapshot.SyncTasks) == 0 {
+		t.Fatal("expected seed task")
+	}
+
+	job, err := store.CreateCapabilityJob(CapabilityJob{
+		Type:      CapabilityStructure,
+		TaskID:    snapshot.SyncTasks[0].ID,
+		Mode:      "schema_prepare",
+		Status:    CapabilityCompleted,
+		AutoStart: true,
+	})
+	if err != nil {
+		t.Fatalf("CreateCapabilityJob(structure) error = %v", err)
+	}
+	if job.ProgressPercent != 100 {
+		t.Fatalf("completed structure job should start at 100%%, got %#v", job)
+	}
+	statements, ok := store.StructureDDLs(job.ID)
+	if !ok || len(statements) == 0 {
+		t.Fatalf("expected structure DDL statements, ok=%v statements=%#v", ok, statements)
+	}
+	if statements[0].Statement == "" || statements[0].TargetObject == "" {
+		t.Fatalf("expected populated DDL statement: %#v", statements[0])
+	}
+
+	updated, ok, err := store.ApplyStructureDDLs(job.ID, StructureDDLApplyInput{
+		IDs:    []string{statements[0].ID},
+		Reason: "结构计划审核通过",
+	})
+	if err != nil || !ok {
+		t.Fatalf("ApplyStructureDDLs() ok %v err %v", ok, err)
+	}
+	if updated.ID != job.ID {
+		t.Fatalf("unexpected updated job: %#v", updated)
+	}
+
+	updatedStatements, ok := store.StructureDDLs(job.ID)
+	if !ok {
+		t.Fatalf("structure job missing after apply")
+	}
+	applied := 0
+	for _, statement := range updatedStatements {
+		if statement.Status == StructureDDLApplied {
+			applied++
+		}
+	}
+	if applied != 1 {
+		t.Fatalf("expected one DDL statement applied, got %d in %#v", applied, updatedStatements)
+	}
+
+	if _, ok, err := store.ApplyStructureDDLs(job.ID, StructureDDLApplyInput{}); err != nil || !ok {
+		t.Fatalf("ApplyStructureDDLs(all) ok %v err %v", ok, err)
+	}
+	updatedStatements, _ = store.StructureDDLs(job.ID)
+	for _, statement := range updatedStatements {
+		if statement.Status != StructureDDLApplied {
+			t.Fatalf("expected all DDL statements applied: %#v", updatedStatements)
+		}
+	}
+}
+
 func TestQualityDiffCorrectionUpdatesSummary(t *testing.T) {
 	store := newTestStore(t)
 	snapshot := store.Snapshot()
