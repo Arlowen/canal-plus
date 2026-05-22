@@ -163,6 +163,131 @@ func TestStaleHeartbeatTriggersAutomaticTakeover(t *testing.T) {
 	}
 }
 
+func TestReconcileClusterRenewsHealthyNodeLease(t *testing.T) {
+	store := newTestStore(t)
+	before := store.ClusterSnapshot()
+	if len(before.Leases) == 0 {
+		t.Fatalf("expected active leases in snapshot")
+	}
+	lease := before.Leases[0]
+	shortExpiry := time.Now().UTC().Add(time.Second).Format(time.RFC3339Nano)
+
+	store.mu.Lock()
+	for index := range store.data.RuntimeStates {
+		if store.data.RuntimeStates[index].TaskID == lease.TaskID {
+			store.data.RuntimeStates[index].LeaseExpiresAt = shortExpiry
+			store.data.RuntimeStates[index].NodeID = lease.NodeID
+			break
+		}
+	}
+	for index := range store.data.TaskLeases {
+		if store.data.TaskLeases[index].TaskID == lease.TaskID {
+			store.data.TaskLeases[index].ExpiresAt = shortExpiry
+			break
+		}
+	}
+	store.mu.Unlock()
+
+	after, err := store.ReconcileCluster()
+	if err != nil {
+		t.Fatalf("ReconcileCluster() error = %v", err)
+	}
+	var renewed TaskLease
+	for _, item := range after.Leases {
+		if item.TaskID == lease.TaskID {
+			renewed = item
+			break
+		}
+	}
+	if renewed.TaskID == "" {
+		t.Fatalf("expected renewed lease for task %s", lease.TaskID)
+	}
+	if renewed.NodeID != lease.NodeID {
+		t.Fatalf("healthy node lease moved unexpectedly: before %s after %s", lease.NodeID, renewed.NodeID)
+	}
+	renewedExpiry, err := time.Parse(time.RFC3339Nano, renewed.ExpiresAt)
+	if err != nil {
+		t.Fatalf("renewed lease expiry parse error: %v", err)
+	}
+	oldExpiry, err := time.Parse(time.RFC3339Nano, shortExpiry)
+	if err != nil {
+		t.Fatalf("old lease expiry parse error: %v", err)
+	}
+	if !renewedExpiry.After(oldExpiry) {
+		t.Fatalf("expected lease expiry to be renewed, old %s new %s", shortExpiry, renewed.ExpiresAt)
+	}
+}
+
+func TestClusterSupervisorRunsTakeoverWithoutSnapshotRequest(t *testing.T) {
+	store := newTestStore(t)
+	before := store.ClusterSnapshot()
+
+	var activeNode ClusterNode
+	affectedTasks := map[string]bool{}
+	for _, node := range before.Nodes {
+		if node.Status == NodeOnline && node.RunningTasks > 0 {
+			activeNode = node
+			break
+		}
+	}
+	if activeNode.ID == "" {
+		t.Fatalf("expected active node in snapshot: %#v", before.Nodes)
+	}
+	for _, lease := range before.Leases {
+		if lease.NodeID == activeNode.ID {
+			affectedTasks[lease.TaskID] = true
+		}
+	}
+	if len(affectedTasks) == 0 {
+		t.Fatalf("expected affected leases for active node %s", activeNode.ID)
+	}
+
+	store.mu.Lock()
+	for index := range store.data.Nodes {
+		if store.data.Nodes[index].ID == activeNode.ID {
+			store.data.Nodes[index].LastHeartbeatAt = time.Now().UTC().Add(-nodeHeartbeatTimeout - time.Second).Format(time.RFC3339Nano)
+			break
+		}
+	}
+	store.mu.Unlock()
+
+	stop := store.StartClusterSupervisor(10 * time.Millisecond)
+	defer stop()
+
+	deadline := time.After(600 * time.Millisecond)
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-deadline:
+			t.Fatalf("supervisor did not take over leases from stale node %s", activeNode.ID)
+		case <-ticker.C:
+			store.mu.Lock()
+			nodeOffline := false
+			leaseStayed := false
+			takeoverMissing := false
+			for _, node := range store.data.Nodes {
+				if node.ID == activeNode.ID {
+					nodeOffline = node.Status == NodeOffline && node.RunningTasks == 0
+					break
+				}
+			}
+			for _, lease := range store.data.TaskLeases {
+				if lease.NodeID == activeNode.ID {
+					leaseStayed = true
+				}
+				if affectedTasks[lease.TaskID] && lease.TakeoverCount == 0 {
+					takeoverMissing = true
+				}
+			}
+			store.mu.Unlock()
+			if nodeOffline && !leaseStayed && !takeoverMissing {
+				return
+			}
+		}
+	}
+}
+
 func TestNonRunningTasksDoNotHoldLeases(t *testing.T) {
 	store := newTestStore(t)
 	snapshot := store.Snapshot()

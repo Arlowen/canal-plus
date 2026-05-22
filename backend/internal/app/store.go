@@ -503,6 +503,16 @@ func (s *Store) ClusterSnapshot() ClusterSnapshot {
 	return s.clusterSnapshotLocked()
 }
 
+func (s *Store) ReconcileCluster() (ClusterSnapshot, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.reconcileClusterLocked()
+	if err := s.saveLocked(); err != nil {
+		return ClusterSnapshot{}, err
+	}
+	return s.clusterSnapshotLocked(), nil
+}
+
 func (s *Store) MarkNodeStatus(id string, status NodeStatus) (ClusterNode, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -547,16 +557,58 @@ func (s *Store) RefreshOnlineNodeHeartbeats() error {
 	if !changed {
 		return nil
 	}
+	s.reconcileClusterLocked()
 	return s.saveLocked()
 }
 
-func (s *Store) StartEmbeddedNodeHeartbeat(interval time.Duration) {
+func (s *Store) StartEmbeddedNodeHeartbeat(interval time.Duration) func() {
+	if interval <= 0 {
+		return func() {}
+	}
 	ticker := time.NewTicker(interval)
+	done := make(chan struct{})
+	var stopOnce sync.Once
 	go func() {
-		for range ticker.C {
-			_ = s.RefreshOnlineNodeHeartbeats()
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				_ = s.RefreshOnlineNodeHeartbeats()
+			case <-done:
+				return
+			}
 		}
 	}()
+	return func() {
+		stopOnce.Do(func() {
+			close(done)
+		})
+	}
+}
+
+func (s *Store) StartClusterSupervisor(interval time.Duration) func() {
+	if interval <= 0 {
+		return func() {}
+	}
+	ticker := time.NewTicker(interval)
+	done := make(chan struct{})
+	var stopOnce sync.Once
+	go func() {
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				_, _ = s.ReconcileCluster()
+			case <-done:
+				return
+			}
+		}
+	}()
+	return func() {
+		stopOnce.Do(func() {
+			close(done)
+		})
+	}
 }
 
 func (s *Store) RebalanceCluster() (ClusterSnapshot, error) {
@@ -830,6 +882,8 @@ func (s *Store) reconcileClusterLocked() {
 		runtime := s.ensureRuntimeLocked(task.ID)
 		node := s.getNodeLocked(runtime.NodeID)
 		if node != nil && node.Status == NodeOnline && !expired(runtime.LeaseExpiresAt) {
+			runtime.LeaseExpiresAt = leaseExpiry()
+			runtime.UpdatedAt = now()
 			s.upsertLeaseLocked(task.ID, node.ID, false)
 			continue
 		}

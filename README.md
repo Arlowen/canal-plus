@@ -19,7 +19,7 @@ canal-plus/
 - 任务功能列表：支持修改运行参数、停止后重置 binlog 位点、导出任务配置包。
 - 任务运行剖面：在任务详情内聚合链路拓扑、node lease、接管次数、待处理错误和最近操作。
 - 运行监控：任务数量、异常数量、延迟、吞吐、binlog 位点、全量进度。
-- 分布式部署：内置 node 节点、任务 lease、心跳超时下线、任务自动接管和重新均衡 API。
+- 分布式部署：内置 node 节点、任务 lease、后台 supervisor、心跳超时下线、任务自动接管和重新均衡 API。
 - 产品模块：任务中心、结构迁移、数据校验订正、订阅变更、节点集群、错误中心、操作审计。
 - 能力任务：结构迁移计划、二次差异校验与订正、运行中订阅变更具备 API 状态、阶段进度和操作日志。
 - 错误中心：错误事件展示、重试、跳过并记录原因。
@@ -54,7 +54,10 @@ cp backend/.env.example backend/.env
 - `FRONTEND_ORIGIN`: 前端跨域来源，默认 `http://localhost:5173`。
 - `CANAL_PLUS_SECRET`: 数据源密码加密密钥。
 - `CANAL_PLUS_DATA_FILE`: 后端数据文件路径，默认 `./data/store.json`。
+- `CANAL_PLUS_CLUSTER_SUPERVISOR`: 后台 lease supervisor，默认开启；设为 `false` 可关闭。
+- `CANAL_PLUS_CLUSTER_SUPERVISOR_INTERVAL_SECONDS`: 后台 supervisor 巡检间隔秒，默认 `5`。
 - `CANAL_PLUS_EMBEDDED_NODE_HEARTBEAT`: 本地演示内置 node 心跳，默认开启；真实多节点部署可设为 `false`，由各 worker 调用 heartbeat API。
+- `CANAL_PLUS_EMBEDDED_NODE_HEARTBEAT_INTERVAL_SECONDS`: 本地演示心跳间隔秒，默认 `10`。
 
 前端可设置：
 

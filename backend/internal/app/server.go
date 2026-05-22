@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -29,8 +30,11 @@ func NewServer() (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
+	if os.Getenv("CANAL_PLUS_CLUSTER_SUPERVISOR") != "false" {
+		store.StartClusterSupervisor(envDurationSeconds("CANAL_PLUS_CLUSTER_SUPERVISOR_INTERVAL_SECONDS", 5*time.Second))
+	}
 	if os.Getenv("CANAL_PLUS_EMBEDDED_NODE_HEARTBEAT") != "false" {
-		store.StartEmbeddedNodeHeartbeat(10 * time.Second)
+		store.StartEmbeddedNodeHeartbeat(envDurationSeconds("CANAL_PLUS_EMBEDDED_NODE_HEARTBEAT_INTERVAL_SECONDS", 10*time.Second))
 	}
 
 	frontendOrigin := os.Getenv("FRONTEND_ORIGIN")
@@ -50,6 +54,18 @@ func NewServer() (*Server, error) {
 		port:           port,
 		allowedOrigins: allowedOrigins,
 	}, nil
+}
+
+func envDurationSeconds(name string, fallback time.Duration) time.Duration {
+	value := strings.TrimSpace(os.Getenv(name))
+	if value == "" {
+		return fallback
+	}
+	seconds, err := strconv.Atoi(value)
+	if err != nil || seconds <= 0 {
+		return fallback
+	}
+	return time.Duration(seconds) * time.Second
 }
 
 func (s *Server) Port() string {
