@@ -341,3 +341,57 @@ func TestCompletedSubscriptionJobAppliesTaskMapping(t *testing.T) {
 		t.Fatalf("expected subscription mapping to be added, before %d after %d", initialMappings, len(updated.TableMappings))
 	}
 }
+
+func TestUpdateTaskParametersIncrementsConfigVersion(t *testing.T) {
+	store := newTestStore(t)
+	snapshot := store.Snapshot()
+	task := snapshot.SyncTasks[0]
+	nextBatchSize := task.Strategy.BatchSize + 512
+	nextRetries := task.Strategy.RetryTimes + 1
+
+	updated, ok, err := store.UpdateTaskParameters(task.ID, TaskParameterPatch{
+		BatchSize:  &nextBatchSize,
+		RetryTimes: &nextRetries,
+	})
+	if err != nil || !ok {
+		t.Fatalf("UpdateTaskParameters() ok %v err %v", ok, err)
+	}
+	if updated.ConfigVersion != task.ConfigVersion+1 {
+		t.Fatalf("expected config version increment, before %d after %d", task.ConfigVersion, updated.ConfigVersion)
+	}
+	if updated.Strategy.BatchSize != nextBatchSize || updated.Strategy.RetryTimes != nextRetries {
+		t.Fatalf("parameter patch not applied: %#v", updated.Strategy)
+	}
+}
+
+func TestResetTaskPositionRequiresStoppedTask(t *testing.T) {
+	store := newTestStore(t)
+	snapshot := store.Snapshot()
+	task := snapshot.SyncTasks[0]
+
+	if _, _, err := store.ResetTaskPosition(task.ID, PositionResetInput{
+		BinlogFile:     "mysql-bin.000777",
+		BinlogPosition: 8821,
+	}); err == nil {
+		t.Fatal("expected reset position to require stopped task")
+	}
+
+	if _, ok, err := store.TransitionTask(task.ID, "stop"); err != nil || !ok {
+		t.Fatalf("TransitionTask(stop) ok %v err %v", ok, err)
+	}
+	updated, ok, err := store.ResetTaskPosition(task.ID, PositionResetInput{
+		BinlogFile:     "mysql-bin.000777",
+		BinlogPosition: 8821,
+		ServerID:       "18721",
+	})
+	if err != nil || !ok {
+		t.Fatalf("ResetTaskPosition() ok %v err %v", ok, err)
+	}
+	runtime, ok := store.Runtime(updated.ID)
+	if !ok {
+		t.Fatalf("runtime missing for task %s", updated.ID)
+	}
+	if runtime.BinlogFile != "mysql-bin.000777" || runtime.BinlogPosition != 8821 {
+		t.Fatalf("position not reset: %#v", runtime)
+	}
+}

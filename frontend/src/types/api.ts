@@ -95,6 +95,36 @@ export interface TaskRuntimeState {
   lastErrorId?: string;
 }
 
+export interface TaskOperationResult {
+  task: SyncTask;
+  message: string;
+  meta?: Record<string, string>;
+}
+
+export interface TaskExport {
+  exportedAt: string;
+  task: SyncTask;
+  runtime: TaskRuntimeState;
+  checksum: string;
+}
+
+export interface TaskParameterPatch {
+  initMode?: SyncStrategy["initMode"];
+  writeMode?: Partial<SyncStrategy["writeMode"]>;
+  conflictStrategy?: SyncStrategy["conflictStrategy"];
+  deleteStrategy?: SyncStrategy["deleteStrategy"];
+  batchSize?: number;
+  retryTimes?: number;
+  retryIntervalSeconds?: number;
+}
+
+export interface PositionResetInput {
+  binlogFile: string;
+  binlogPosition: number;
+  serverId?: string;
+  reason?: string;
+}
+
 export interface SyncTask {
   id: string;
   name: string;

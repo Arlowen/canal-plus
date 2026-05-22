@@ -3,6 +3,7 @@ package app
 import (
 	"bufio"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -61,6 +62,15 @@ func cloneJSON[T any](value T) T {
 		panic(err)
 	}
 	return cloned
+}
+
+func checksumJSON(value any) string {
+	data, err := json.Marshal(value)
+	if err != nil {
+		panic(err)
+	}
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:])
 }
 
 func writeJSON(response http.ResponseWriter, status int, value any) {

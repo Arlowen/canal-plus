@@ -6,21 +6,17 @@ import {
   CheckCircle,
   Cloud,
   ClipboardText,
-  Copy,
   Database,
   FileText,
   FlowArrow,
   Gauge,
   GearSix,
   GitBranch,
-  Pause,
-  Play,
   Plus,
   Pulse,
   ShieldCheck,
   SignOut,
   Stack,
-  Stop,
   Table,
   WarningCircle,
   XCircle
@@ -30,6 +26,7 @@ import { api, clearToken, getToken, setToken } from "./lib/api";
 import { cx, formatDate, formatNumber } from "./lib/format";
 import { CapabilityView } from "./views/CapabilityView";
 import { ClusterView } from "./views/ClusterView";
+import { TaskView } from "./views/TaskView";
 import type {
   CapabilityJob,
   DashboardSummary,
@@ -245,7 +242,7 @@ function App() {
                 <DatasourceView datasources={datasources} onChanged={() => refresh(true)} />
               )}
               {view === "tasks" && (
-                <TaskView tasks={tasks} onAction={handleTaskAction} />
+                <TaskView tasks={tasks} onAction={handleTaskAction} onChanged={() => refresh(true)} />
               )}
               {view === "wizard" && (
                 <TaskWizard datasources={datasources} onCreated={() => {
@@ -672,102 +669,6 @@ function DatasourceView({ datasources, onChanged }: { datasources: Datasource[];
           </div>
         )}
       </aside>
-    </div>
-  );
-}
-
-function TaskView({
-  tasks,
-  onAction
-}: {
-  tasks: SyncTask[];
-  onAction: (task: SyncTask, action: "start" | "pause" | "resume" | "stop" | "copy") => Promise<void>;
-}) {
-  const [selectedId, setSelectedId] = useState<string | null>(tasks[0]?.id ?? null);
-  const selected = tasks.find((task) => task.id === selectedId) ?? tasks[0];
-
-  useEffect(() => {
-    if (!selectedId && tasks[0]) setSelectedId(tasks[0].id);
-  }, [selectedId, tasks]);
-
-  if (tasks.length === 0) {
-    return <EmptyState title="暂无同步任务" description="使用新建任务向导创建第一条链路" />;
-  }
-
-  return (
-    <div className="grid gap-5 xl:grid-cols-[1fr_420px]">
-      <section className="rounded-xl border border-line bg-white shadow-panel">
-        <div className="border-b border-line p-5">
-          <h2 className="text-lg font-semibold tracking-tight text-coal">任务列表</h2>
-          <div className="mt-1 text-sm text-muted">生命周期、吞吐、延迟和操作入口</div>
-        </div>
-        <div className="divide-y divide-line">
-          {tasks.map((task) => (
-            <button
-              key={task.id}
-              onClick={() => setSelectedId(task.id)}
-              className={cx(
-                "grid w-full gap-3 p-5 text-left transition hover:bg-zinc-50 md:grid-cols-[1.2fr_0.8fr_0.7fr] md:items-center",
-                selected?.id === task.id && "bg-[#f7faf6]"
-              )}
-            >
-              <div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="font-medium text-coal">{task.name}</span>
-                  <StatusBadge status={task.status} />
-                </div>
-                <div className="mt-1 text-sm text-muted">{task.description}</div>
-              </div>
-              <div className="font-mono text-sm text-zinc-700">
-                {task.runtime?.binlogFile}:{task.runtime?.binlogPosition}
-              </div>
-              <div className="grid grid-cols-2 gap-2 text-sm text-zinc-600">
-                <span>{task.runtime?.delaySeconds ?? 0}s</span>
-                <span>{task.runtime?.eventsPerSecond ?? 0}/s</span>
-              </div>
-            </button>
-          ))}
-        </div>
-      </section>
-
-      {selected && (
-        <aside className="rounded-xl border border-line bg-white p-5 shadow-panel">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <h2 className="text-lg font-semibold tracking-tight text-coal">{selected.name}</h2>
-              <div className="mt-1 text-sm text-muted">配置版本 v{selected.configVersion}</div>
-            </div>
-            <StatusBadge status={selected.status} />
-          </div>
-
-          <div className="mt-5 grid grid-cols-2 gap-3">
-            <Info label="负责人" value={selected.owner} />
-            <Info label="阶段" value={selected.runtime?.phase || "-"} />
-            <Info label="全量进度" value={`${progressOf(selected)}%`} />
-            <Info label="延迟" value={`${selected.runtime?.delaySeconds ?? 0}s`} mono />
-          </div>
-
-          <div className="mt-5 rounded-lg border border-line bg-[#fcfcf8] p-4">
-            <div className="text-sm font-medium text-coal">链路</div>
-            <div className="mt-3 flex items-center gap-2 text-sm text-zinc-700">
-              <span>{selected.sourceDatasource?.name}</span>
-              <ArrowRight size={16} />
-              <span>{selected.targetDatasource?.name}</span>
-            </div>
-            <div className="mt-3 text-sm text-muted">
-              {selected.tableMappings.map((mapping) => `${mapping.sourceSchema}.${mapping.sourceTable} 到 ${mapping.targetSchema}.${mapping.targetTable}`).join("，")}
-            </div>
-          </div>
-
-          <div className="mt-5 grid grid-cols-2 gap-2">
-            <ActionButton icon={Play} label="启动" onClick={() => onAction(selected, "start")} disabled={selected.status === "incremental_running" || selected.status === "full_syncing"} />
-            <ActionButton icon={Pause} label="暂停" onClick={() => onAction(selected, "pause")} disabled={selected.status === "paused" || selected.status === "stopped"} />
-            <ActionButton icon={Play} label="恢复" onClick={() => onAction(selected, "resume")} disabled={selected.status !== "paused" && selected.status !== "failed"} />
-            <ActionButton icon={Stop} label="停止" onClick={() => onAction(selected, "stop")} disabled={selected.status === "stopped"} />
-            <ActionButton icon={Copy} label="复制" onClick={() => onAction(selected, "copy")} />
-          </div>
-        </aside>
-      )}
     </div>
   );
 }
@@ -1271,38 +1172,6 @@ function ColumnPreview({ columns }: { columns: TableColumn[] }) {
   );
 }
 
-function Info({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
-  return (
-    <div className="rounded-lg border border-line bg-[#fcfcf8] p-3">
-      <div className="text-xs text-muted">{label}</div>
-      <div className={cx("mt-2 text-sm font-medium text-coal", mono && "font-mono")}>{value}</div>
-    </div>
-  );
-}
-
-function ActionButton({
-  icon: Icon,
-  label,
-  onClick,
-  disabled
-}: {
-  icon: typeof Play;
-  label: string;
-  onClick: () => void;
-  disabled?: boolean;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      disabled={disabled}
-      className="inline-flex items-center justify-center gap-2 rounded-lg border border-line bg-white px-3 py-2 text-sm text-zinc-700 transition hover:bg-zinc-50 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45"
-    >
-      <Icon size={16} />
-      {label}
-    </button>
-  );
-}
-
 function EmptyState({ title, description }: { title: string; description: string }) {
   return (
     <div className="rounded-lg border border-dashed border-line bg-[#fcfcf8] p-6 text-center">
@@ -1343,12 +1212,6 @@ function purposeLabel(purpose: Datasource["purpose"]) {
   if (purpose === "source") return "源端";
   if (purpose === "target") return "目标端";
   return "源端和目标端";
-}
-
-function progressOf(task: SyncTask) {
-  const runtime = task.runtime;
-  if (!runtime || runtime.fullTotalRows === 0) return 0;
-  return Math.min(100, Math.round((runtime.fullSyncedRows / runtime.fullTotalRows) * 100));
 }
 
 export default App;

@@ -385,6 +385,104 @@ func (s *Store) TransitionTask(id string, action string) (SyncTask, bool, error)
 	return SyncTask{}, false, nil
 }
 
+func (s *Store) UpdateTaskParameters(id string, patch TaskParameterPatch) (SyncTask, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for index := range s.data.SyncTasks {
+		if s.data.SyncTasks[index].ID != id {
+			continue
+		}
+		task := &s.data.SyncTasks[index]
+		changed := false
+		if patch.InitMode != "" {
+			task.Strategy.InitMode = patch.InitMode
+			changed = true
+		}
+		if patch.ConflictStrategy != "" {
+			task.Strategy.ConflictStrategy = patch.ConflictStrategy
+			changed = true
+		}
+		if patch.DeleteStrategy != "" {
+			task.Strategy.DeleteStrategy = patch.DeleteStrategy
+			changed = true
+		}
+		if patch.BatchSize != nil {
+			if *patch.BatchSize <= 0 {
+				return SyncTask{}, false, errors.New("批量写入大小必须大于 0")
+			}
+			task.Strategy.BatchSize = *patch.BatchSize
+			changed = true
+		}
+		if patch.RetryTimes != nil {
+			if *patch.RetryTimes < 0 {
+				return SyncTask{}, false, errors.New("失败重试次数不能小于 0")
+			}
+			task.Strategy.RetryTimes = *patch.RetryTimes
+			changed = true
+		}
+		if patch.RetryIntervalSeconds != nil {
+			if *patch.RetryIntervalSeconds <= 0 {
+				return SyncTask{}, false, errors.New("重试间隔必须大于 0")
+			}
+			task.Strategy.RetryIntervalSeconds = *patch.RetryIntervalSeconds
+			changed = true
+		}
+		if patch.WriteMode != nil {
+			if patch.WriteMode.Insert != nil {
+				task.Strategy.WriteMode.Insert = *patch.WriteMode.Insert
+				changed = true
+			}
+			if patch.WriteMode.Update != nil {
+				task.Strategy.WriteMode.Update = *patch.WriteMode.Update
+				changed = true
+			}
+			if patch.WriteMode.Delete != nil {
+				task.Strategy.WriteMode.Delete = *patch.WriteMode.Delete
+				changed = true
+			}
+		}
+		if changed {
+			task.ConfigVersion++
+			task.UpdatedAt = now()
+			s.logLocked("admin", "params", "sync_task", id, "修改任务参数 "+task.Name)
+			return cloneJSON(*task), true, s.saveLocked()
+		}
+		return cloneJSON(*task), true, nil
+	}
+	return SyncTask{}, false, nil
+}
+
+func (s *Store) ResetTaskPosition(id string, input PositionResetInput) (SyncTask, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if input.BinlogFile == "" || input.BinlogPosition <= 0 {
+		return SyncTask{}, false, errors.New("位点文件和位置必填")
+	}
+	for index := range s.data.SyncTasks {
+		if s.data.SyncTasks[index].ID != id {
+			continue
+		}
+		task := &s.data.SyncTasks[index]
+		if task.Status != TaskStopped {
+			return SyncTask{}, false, errors.New("只有已停止的增量任务允许重置位点")
+		}
+		runtime := s.ensureRuntimeLocked(id)
+		runtime.BinlogFile = input.BinlogFile
+		runtime.BinlogPosition = input.BinlogPosition
+		runtime.DelaySeconds = 0
+		runtime.EventsPerSecond = 0
+		runtime.UpdatedAt = now()
+		task.UpdatedAt = now()
+		detail := "重置任务位点 " + task.Name + " 到 " + input.BinlogFile + ":" + intToString(int(input.BinlogPosition))
+		if input.ServerID != "" {
+			detail += " serverId=" + input.ServerID
+		}
+		s.logLocked("admin", "reset_position", "sync_task", id, detail)
+		return cloneJSON(*task), true, s.saveLocked()
+	}
+	return SyncTask{}, false, nil
+}
+
 func (s *Store) Runtime(taskID string) (TaskRuntimeState, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

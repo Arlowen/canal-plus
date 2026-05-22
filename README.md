@@ -16,6 +16,7 @@ canal-plus/
 - 登录鉴权：默认账号 `admin`，默认密码 `admin123`。
 - 数据源管理：新增、连接测试、schema/table/column 元数据读取。
 - 同步任务：列表、详情、创建向导、启动、暂停、恢复、停止、复制。
+- 任务功能列表：支持修改运行参数、停止后重置 binlog 位点、导出任务配置包。
 - 运行监控：任务数量、异常数量、延迟、吞吐、binlog 位点、全量进度。
 - 分布式部署：内置 node 节点、任务 lease、心跳超时下线、任务自动接管和重新均衡 API。
 - 产品模块：任务中心、结构迁移、数据校验订正、订阅变更、节点集群、错误中心、操作审计。
@@ -79,6 +80,12 @@ cp backend/.env.example backend/.env
 - `GET /api/capability-jobs?type=quality`: 按能力类型过滤。
 - `POST /api/capability-jobs`: 创建能力任务，请求体包含 `type`、`taskId`、`mode`、`autoStart`。
 - `POST /api/capability-jobs/{id}/run`: 重跑能力任务。
+
+## 任务功能列表 API
+
+- `POST /api/sync-tasks/{id}/params`: 修改任务运行参数并递增配置版本。
+- `POST /api/sync-tasks/{id}/reset-position`: 在任务停止后重置 binlog 文件和 position。
+- `GET /api/sync-tasks/{id}/export`: 导出任务配置、运行位点和 checksum。
 
 ## 下一步建议
 

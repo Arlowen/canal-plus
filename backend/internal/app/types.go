@@ -175,6 +175,42 @@ type TaskRuntimeState struct {
 	LastErrorID     string `json:"lastErrorId,omitempty"`
 }
 
+type TaskOperationResult struct {
+	Task    TaskResponse      `json:"task"`
+	Message string            `json:"message"`
+	Meta    map[string]string `json:"meta,omitempty"`
+}
+
+type TaskExport struct {
+	ExportedAt string           `json:"exportedAt"`
+	Task       TaskResponse     `json:"task"`
+	Runtime    TaskRuntimeState `json:"runtime"`
+	Checksum   string           `json:"checksum"`
+}
+
+type WriteModePatch struct {
+	Insert *bool `json:"insert,omitempty"`
+	Update *bool `json:"update,omitempty"`
+	Delete *bool `json:"delete,omitempty"`
+}
+
+type TaskParameterPatch struct {
+	InitMode             string          `json:"initMode,omitempty"`
+	WriteMode            *WriteModePatch `json:"writeMode,omitempty"`
+	ConflictStrategy     string          `json:"conflictStrategy,omitempty"`
+	DeleteStrategy       string          `json:"deleteStrategy,omitempty"`
+	BatchSize            *int            `json:"batchSize,omitempty"`
+	RetryTimes           *int            `json:"retryTimes,omitempty"`
+	RetryIntervalSeconds *int            `json:"retryIntervalSeconds,omitempty"`
+}
+
+type PositionResetInput struct {
+	BinlogFile     string `json:"binlogFile"`
+	BinlogPosition int64  `json:"binlogPosition"`
+	ServerID       string `json:"serverId,omitempty"`
+	Reason         string `json:"reason,omitempty"`
+}
+
 type ErrorStatus string
 
 const (

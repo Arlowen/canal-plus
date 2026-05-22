@@ -440,6 +440,12 @@ func (s *Server) handleSyncTasks(response http.ResponseWriter, request *http.Req
 		response.WriteHeader(http.StatusNoContent)
 	case len(parts) == 3 && isTaskAction(parts[2]) && request.Method == http.MethodPost:
 		s.transitionTask(response, parts[1], parts[2])
+	case len(parts) == 3 && parts[2] == "params" && request.Method == http.MethodPost:
+		s.updateTaskParameters(response, request, parts[1])
+	case len(parts) == 3 && parts[2] == "reset-position" && request.Method == http.MethodPost:
+		s.resetTaskPosition(response, request, parts[1])
+	case len(parts) == 3 && parts[2] == "export" && request.Method == http.MethodGet:
+		s.exportTask(response, parts[1])
 	case len(parts) == 3 && parts[2] == "copy" && request.Method == http.MethodPost:
 		task, ok, err := s.store.CopyTask(parts[1])
 		if err != nil {
@@ -519,6 +525,78 @@ func (s *Server) transitionTask(response http.ResponseWriter, id string, action 
 		return
 	}
 	writeJSON(response, http.StatusOK, s.taskResponse(task))
+}
+
+func (s *Server) updateTaskParameters(response http.ResponseWriter, request *http.Request, id string) {
+	var input TaskParameterPatch
+	if err := decodeJSON(request, &input); err != nil {
+		writeError(response, http.StatusBadRequest, "请求体格式错误")
+		return
+	}
+	task, ok, err := s.store.UpdateTaskParameters(id, input)
+	if err != nil {
+		writeError(response, http.StatusBadRequest, err.Error())
+		return
+	}
+	if !ok {
+		writeError(response, http.StatusNotFound, "同步任务不存在")
+		return
+	}
+	writeJSON(response, http.StatusOK, TaskOperationResult{
+		Task:    s.taskResponse(task),
+		Message: "任务参数已生效",
+		Meta: map[string]string{
+			"configVersion": intToString(task.ConfigVersion),
+		},
+	})
+}
+
+func (s *Server) resetTaskPosition(response http.ResponseWriter, request *http.Request, id string) {
+	var input PositionResetInput
+	if err := decodeJSON(request, &input); err != nil {
+		writeError(response, http.StatusBadRequest, "请求体格式错误")
+		return
+	}
+	task, ok, err := s.store.ResetTaskPosition(id, input)
+	if err != nil {
+		writeError(response, http.StatusBadRequest, err.Error())
+		return
+	}
+	if !ok {
+		writeError(response, http.StatusNotFound, "同步任务不存在")
+		return
+	}
+	writeJSON(response, http.StatusOK, TaskOperationResult{
+		Task:    s.taskResponse(task),
+		Message: "任务位点已重置",
+		Meta: map[string]string{
+			"binlogFile":     input.BinlogFile,
+			"binlogPosition": intToString(int(input.BinlogPosition)),
+		},
+	})
+}
+
+func (s *Server) exportTask(response http.ResponseWriter, id string) {
+	task, ok := s.store.GetTask(id)
+	if !ok {
+		writeError(response, http.StatusNotFound, "同步任务不存在")
+		return
+	}
+	runtime, _ := s.store.Runtime(id)
+	taskResponse := s.taskResponse(task)
+	exported := TaskExport{
+		ExportedAt: now(),
+		Task:       taskResponse,
+		Runtime:    runtime,
+	}
+	exported.Checksum = checksumJSON(struct {
+		Task    TaskResponse     `json:"task"`
+		Runtime TaskRuntimeState `json:"runtime"`
+	}{
+		Task:    exported.Task,
+		Runtime: exported.Runtime,
+	})
+	writeJSON(response, http.StatusOK, exported)
 }
 
 func (s *Server) handleErrorEvents(response http.ResponseWriter, request *http.Request, parts []string) {

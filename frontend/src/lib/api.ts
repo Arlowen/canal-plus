@@ -7,10 +7,14 @@ import type {
   ErrorEvent,
   LoginResponse,
   OperationLog,
+  PositionResetInput,
   SyncStrategy,
   SyncTask,
   TableColumn,
   TableInfo,
+  TaskExport,
+  TaskOperationResult,
+  TaskParameterPatch,
   User
 } from "../types/api";
 
@@ -104,6 +108,21 @@ export const api = {
   },
   taskAction(id: string, action: "start" | "pause" | "resume" | "stop" | "copy") {
     return request<SyncTask>(`/sync-tasks/${id}/${action}`, { method: "POST" });
+  },
+  updateTaskParams(id: string, input: TaskParameterPatch) {
+    return request<TaskOperationResult>(`/sync-tasks/${id}/params`, {
+      method: "POST",
+      body: JSON.stringify(input)
+    });
+  },
+  resetTaskPosition(id: string, input: PositionResetInput) {
+    return request<TaskOperationResult>(`/sync-tasks/${id}/reset-position`, {
+      method: "POST",
+      body: JSON.stringify(input)
+    });
+  },
+  exportTask(id: string) {
+    return request<TaskExport>(`/sync-tasks/${id}/export`);
   },
   defaultStrategy() {
     return request<SyncStrategy>("/sync-strategy/default");
