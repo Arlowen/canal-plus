@@ -166,6 +166,10 @@ type TaskRuntimeState struct {
 	EventsPerSecond int    `json:"eventsPerSecond"`
 	BinlogFile      string `json:"binlogFile"`
 	BinlogPosition  int64  `json:"binlogPosition"`
+	NodeID          string `json:"nodeId,omitempty"`
+	LeaseExpiresAt  string `json:"leaseExpiresAt,omitempty"`
+	FailoverCount   int    `json:"failoverCount"`
+	LastTakeoverAt  string `json:"lastTakeoverAt,omitempty"`
 	StartedAt       string `json:"startedAt,omitempty"`
 	UpdatedAt       string `json:"updatedAt"`
 	LastErrorID     string `json:"lastErrorId,omitempty"`
@@ -220,6 +224,49 @@ type AlertRule struct {
 	UpdatedAt             string `json:"updatedAt"`
 }
 
+type NodeStatus string
+
+const (
+	NodeOnline   NodeStatus = "online"
+	NodeOffline  NodeStatus = "offline"
+	NodeDraining NodeStatus = "draining"
+)
+
+type ClusterNode struct {
+	ID              string     `json:"id"`
+	Name            string     `json:"name"`
+	Endpoint        string     `json:"endpoint"`
+	Zone            string     `json:"zone"`
+	Status          NodeStatus `json:"status"`
+	Role            string     `json:"role"`
+	CPUPercent      int        `json:"cpuPercent"`
+	MemoryPercent   int        `json:"memoryPercent"`
+	RunningTasks    int        `json:"runningTasks"`
+	Capacity        int        `json:"capacity"`
+	LastHeartbeatAt string     `json:"lastHeartbeatAt"`
+	StartedAt       string     `json:"startedAt"`
+	UpdatedAt       string     `json:"updatedAt"`
+}
+
+type TaskLease struct {
+	TaskID        string `json:"taskId"`
+	NodeID        string `json:"nodeId"`
+	Epoch         int    `json:"epoch"`
+	Status        string `json:"status"`
+	AcquiredAt    string `json:"acquiredAt"`
+	ExpiresAt     string `json:"expiresAt"`
+	TakeoverCount int    `json:"takeoverCount"`
+	UpdatedAt     string `json:"updatedAt"`
+}
+
+type ClusterSnapshot struct {
+	Nodes       []ClusterNode `json:"nodes"`
+	Leases      []TaskLease   `json:"leases"`
+	OnlineNodes int           `json:"onlineNodes"`
+	TotalNodes  int           `json:"totalNodes"`
+	Failovers   int           `json:"failovers"`
+}
+
 type DatabaseShape struct {
 	Users         []User             `json:"users"`
 	Datasources   []Datasource       `json:"datasources"`
@@ -228,6 +275,8 @@ type DatabaseShape struct {
 	ErrorEvents   []ErrorEvent       `json:"errorEvents"`
 	OperationLogs []OperationLog     `json:"operationLogs"`
 	AlertRules    []AlertRule        `json:"alertRules"`
+	Nodes         []ClusterNode      `json:"nodes"`
+	TaskLeases    []TaskLease        `json:"taskLeases"`
 }
 
 type DashboardSummary struct {
@@ -238,4 +287,7 @@ type DashboardSummary struct {
 	EventsPerSecond     int `json:"eventsPerSecond"`
 	FailuresLast24Hours int `json:"failuresLast24Hours"`
 	FullSyncProgress    int `json:"fullSyncProgress"`
+	OnlineNodes         int `json:"onlineNodes"`
+	TotalNodes          int `json:"totalNodes"`
+	FailoverCount       int `json:"failoverCount"`
 }

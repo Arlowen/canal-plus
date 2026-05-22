@@ -6,6 +6,10 @@
   .control {
     @apply w-full rounded-lg border border-line bg-white px-3 py-2 text-zinc-800 outline-none transition focus:border-accent disabled:cursor-not-allowed disabled:opacity-60;
   }
+
+  .node-action {
+    @apply rounded-lg border border-line bg-white px-2 py-2 text-sm text-zinc-700 transition hover:bg-zinc-50 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45;
+  }
 }
 
 :root {

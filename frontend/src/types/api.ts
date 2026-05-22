@@ -86,6 +86,10 @@ export interface TaskRuntimeState {
   eventsPerSecond: number;
   binlogFile: string;
   binlogPosition: number;
+  nodeId?: string;
+  leaseExpiresAt?: string;
+  failoverCount: number;
+  lastTakeoverAt?: string;
   startedAt?: string;
   updatedAt: string;
   lastErrorId?: string;
@@ -145,6 +149,46 @@ export interface DashboardSummary {
   eventsPerSecond: number;
   failuresLast24Hours: number;
   fullSyncProgress: number;
+  onlineNodes: number;
+  totalNodes: number;
+  failoverCount: number;
+}
+
+export type NodeStatus = "online" | "offline" | "draining";
+
+export interface ClusterNode {
+  id: string;
+  name: string;
+  endpoint: string;
+  zone: string;
+  status: NodeStatus;
+  role: string;
+  cpuPercent: number;
+  memoryPercent: number;
+  runningTasks: number;
+  capacity: number;
+  lastHeartbeatAt: string;
+  startedAt: string;
+  updatedAt: string;
+}
+
+export interface TaskLease {
+  taskId: string;
+  nodeId: string;
+  epoch: number;
+  status: string;
+  acquiredAt: string;
+  expiresAt: string;
+  takeoverCount: number;
+  updatedAt: string;
+}
+
+export interface ClusterSnapshot {
+  nodes: ClusterNode[];
+  leases: TaskLease[];
+  onlineNodes: number;
+  totalNodes: number;
+  failovers: number;
 }
 
 export interface LoginResponse {

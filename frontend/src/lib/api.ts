@@ -1,5 +1,6 @@
 import type {
   DashboardSummary,
+  ClusterSnapshot,
   Datasource,
   ErrorEvent,
   LoginResponse,
@@ -119,5 +120,14 @@ export const api = {
   },
   logs() {
     return request<OperationLog[]>("/operation-logs");
+  },
+  cluster() {
+    return request<ClusterSnapshot>("/cluster");
+  },
+  nodeAction(id: string, action: "online" | "offline" | "drain" | "heartbeat") {
+    return request<ClusterSnapshot | unknown>(`/cluster/nodes/${id}/${action}`, { method: "POST" });
+  },
+  rebalanceCluster() {
+    return request<ClusterSnapshot>("/cluster/rebalance", { method: "POST" });
   }
 };

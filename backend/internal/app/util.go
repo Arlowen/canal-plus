@@ -18,6 +18,18 @@ func now() string {
 	return time.Now().UTC().Format(time.RFC3339Nano)
 }
 
+func leaseExpiry() string {
+	return time.Now().UTC().Add(45 * time.Second).Format(time.RFC3339Nano)
+}
+
+func expired(timestamp string) bool {
+	parsed, err := time.Parse(time.RFC3339Nano, timestamp)
+	if err != nil {
+		return true
+	}
+	return time.Now().UTC().After(parsed)
+}
+
 func newID() string {
 	var bytes [16]byte
 	if _, err := rand.Read(bytes[:]); err != nil {
@@ -64,6 +76,13 @@ func ensureParentDir(path string) error {
 
 func stringContainsFold(value string, keyword string) bool {
 	return strings.Contains(strings.ToLower(value), strings.ToLower(keyword))
+}
+
+func valueOr(value string, fallback string) string {
+	if value == "" {
+		return fallback
+	}
+	return value
 }
 
 func intToString(value int) string {

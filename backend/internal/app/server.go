@@ -102,6 +102,8 @@ func (s *Server) ServeHTTP(response http.ResponseWriter, request *http.Request) 
 		s.handleSyncTasks(response, request, parts)
 	case len(parts) >= 1 && parts[0] == "error-events":
 		s.handleErrorEvents(response, request, parts)
+	case len(parts) >= 1 && parts[0] == "cluster":
+		s.handleCluster(response, request, parts)
 	case len(parts) == 1 && parts[0] == "operation-logs" && request.Method == http.MethodGet:
 		writeJSON(response, http.StatusOK, firstN(s.store.Logs(), 200))
 	case len(parts) == 1 && parts[0] == "alert-rules" && request.Method == http.MethodGet:
@@ -192,6 +194,9 @@ func (s *Server) handleDashboardSummary(response http.ResponseWriter) {
 		EventsPerSecond:     eventsPerSecond,
 		FailuresLast24Hours: failuresLast24Hours,
 		FullSyncProgress:    fullSyncProgress,
+		OnlineNodes:         clusterOnline(snapshot.Nodes),
+		TotalNodes:          len(snapshot.Nodes),
+		FailoverCount:       failoverCount(snapshot.TaskLeases),
 	})
 }
 
@@ -584,6 +589,49 @@ func (s *Server) handleErrorEvents(response http.ResponseWriter, request *http.R
 	}
 }
 
+func (s *Server) handleCluster(response http.ResponseWriter, request *http.Request, parts []string) {
+	switch {
+	case len(parts) == 1 && request.Method == http.MethodGet:
+		writeJSON(response, http.StatusOK, s.store.ClusterSnapshot())
+	case len(parts) == 2 && parts[1] == "nodes" && request.Method == http.MethodGet:
+		writeJSON(response, http.StatusOK, s.store.ClusterSnapshot().Nodes)
+	case len(parts) == 2 && parts[1] == "leases" && request.Method == http.MethodGet:
+		writeJSON(response, http.StatusOK, s.store.ClusterSnapshot().Leases)
+	case len(parts) == 2 && parts[1] == "rebalance" && request.Method == http.MethodPost:
+		snapshot, err := s.store.RebalanceCluster()
+		if err != nil {
+			writeError(response, http.StatusInternalServerError, err.Error())
+			return
+		}
+		writeJSON(response, http.StatusOK, snapshot)
+	case len(parts) == 4 && parts[1] == "nodes" && request.Method == http.MethodPost:
+		var status NodeStatus
+		switch parts[3] {
+		case "online", "heartbeat":
+			status = NodeOnline
+		case "offline":
+			status = NodeOffline
+		case "drain":
+			status = NodeDraining
+		default:
+			writeError(response, http.StatusNotFound, "not found")
+			return
+		}
+		node, ok, err := s.store.MarkNodeStatus(parts[2], status)
+		if err != nil {
+			writeError(response, http.StatusInternalServerError, err.Error())
+			return
+		}
+		if !ok {
+			writeError(response, http.StatusNotFound, "节点不存在")
+			return
+		}
+		writeJSON(response, http.StatusOK, node)
+	default:
+		writeError(response, http.StatusNotFound, "not found")
+	}
+}
+
 func (s *Server) taskResponse(task SyncTask) TaskResponse {
 	runtime, _ := s.store.Runtime(task.ID)
 	response := TaskResponse{
@@ -599,6 +647,24 @@ func (s *Server) taskResponse(task SyncTask) TaskResponse {
 		response.TargetDatasource = &public
 	}
 	return response
+}
+
+func clusterOnline(nodes []ClusterNode) int {
+	count := 0
+	for _, node := range nodes {
+		if node.Status == NodeOnline {
+			count++
+		}
+	}
+	return count
+}
+
+func failoverCount(leases []TaskLease) int {
+	count := 0
+	for _, lease := range leases {
+		count += lease.TakeoverCount
+	}
+	return count
 }
 
 func (s *Server) currentUser(request *http.Request) (User, bool) {

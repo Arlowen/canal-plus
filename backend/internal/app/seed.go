@@ -31,6 +31,8 @@ func createSeedData() (DatabaseShape, error) {
 		return DatabaseShape{}, err
 	}
 
+	nodes := defaultClusterNodes(createdAt)
+
 	return DatabaseShape{
 		Users: []User{
 			{
@@ -142,6 +144,8 @@ func createSeedData() (DatabaseShape, error) {
 				EventsPerSecond: 128,
 				BinlogFile:      "mysql-bin.000421",
 				BinlogPosition:  76819244,
+				NodeID:          nodes[0].ID,
+				LeaseExpiresAt:  leaseExpiry(),
 				StartedAt:       createdAt,
 				UpdatedAt:       createdAt,
 			},
@@ -154,6 +158,8 @@ func createSeedData() (DatabaseShape, error) {
 				EventsPerSecond: 0,
 				BinlogFile:      "mysql-bin.000420",
 				BinlogPosition:  9912735,
+				NodeID:          nodes[1].ID,
+				LeaseExpiresAt:  leaseExpiry(),
 				LastErrorID:     errorID,
 				StartedAt:       createdAt,
 				UpdatedAt:       createdAt,
@@ -197,5 +203,75 @@ func createSeedData() (DatabaseShape, error) {
 				UpdatedAt:             createdAt,
 			},
 		},
+		Nodes: nodes,
+		TaskLeases: []TaskLease{
+			{
+				TaskID:        runningTaskID,
+				NodeID:        nodes[0].ID,
+				Epoch:         1,
+				Status:        "active",
+				AcquiredAt:    createdAt,
+				ExpiresAt:     leaseExpiry(),
+				TakeoverCount: 0,
+				UpdatedAt:     createdAt,
+			},
+			{
+				TaskID:        failedTaskID,
+				NodeID:        nodes[1].ID,
+				Epoch:         1,
+				Status:        "active",
+				AcquiredAt:    createdAt,
+				ExpiresAt:     leaseExpiry(),
+				TakeoverCount: 0,
+				UpdatedAt:     createdAt,
+			},
+		},
 	}, nil
+}
+
+func defaultClusterNodes(timestamp string) []ClusterNode {
+	return []ClusterNode{
+		{
+			ID:              "node-shanghai-a",
+			Name:            "shanghai-a",
+			Endpoint:        "10.18.4.21:4100",
+			Zone:            "cn-shanghai-a",
+			Status:          NodeOnline,
+			Role:            "scheduler+worker",
+			CPUPercent:      42,
+			MemoryPercent:   58,
+			Capacity:        8,
+			LastHeartbeatAt: timestamp,
+			StartedAt:       timestamp,
+			UpdatedAt:       timestamp,
+		},
+		{
+			ID:              "node-shanghai-b",
+			Name:            "shanghai-b",
+			Endpoint:        "10.18.4.22:4100",
+			Zone:            "cn-shanghai-b",
+			Status:          NodeOnline,
+			Role:            "worker",
+			CPUPercent:      35,
+			MemoryPercent:   46,
+			Capacity:        8,
+			LastHeartbeatAt: timestamp,
+			StartedAt:       timestamp,
+			UpdatedAt:       timestamp,
+		},
+		{
+			ID:              "node-shanghai-c",
+			Name:            "shanghai-c",
+			Endpoint:        "10.18.4.23:4100",
+			Zone:            "cn-shanghai-c",
+			Status:          NodeOnline,
+			Role:            "worker",
+			CPUPercent:      27,
+			MemoryPercent:   39,
+			Capacity:        8,
+			LastHeartbeatAt: timestamp,
+			StartedAt:       timestamp,
+			UpdatedAt:       timestamp,
+		},
+	}
 }
