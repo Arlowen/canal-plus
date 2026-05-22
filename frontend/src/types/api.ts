@@ -404,8 +404,14 @@ export interface FailoverDrillTask {
   taskName: string;
   previousNodeId: string;
   newNodeId: string;
+  previousLeaseEpoch: number;
   leaseEpoch: number;
   takeoverCount: number;
+  runtimePhase: string;
+  recoveryBinlogFile: string;
+  recoveryBinlogPosition: number;
+  recoveryDelaySeconds: number;
+  recoveryEventsPerSecond: number;
 }
 
 export interface FailoverDrillReport {

@@ -855,6 +855,7 @@ func (s *Store) FailoverDrill(nodeID string) (FailoverDrillReport, bool, error) 
 	}
 	for taskID, previous := range affectedBefore {
 		next := afterLeaseByTask[taskID]
+		runtime := s.ensureRuntimeLocked(taskID)
 		taskName := taskID
 		if task, ok := tasksByID[taskID]; ok {
 			taskName = task.Name
@@ -863,12 +864,18 @@ func (s *Store) FailoverDrill(nodeID string) (FailoverDrillReport, bool, error) 
 			report.Success = false
 		}
 		report.AffectedTasks = append(report.AffectedTasks, FailoverDrillTask{
-			TaskID:         taskID,
-			TaskName:       taskName,
-			PreviousNodeID: previous.NodeID,
-			NewNodeID:      next.NodeID,
-			LeaseEpoch:     next.Epoch,
-			TakeoverCount:  next.TakeoverCount,
+			TaskID:                  taskID,
+			TaskName:                taskName,
+			PreviousNodeID:          previous.NodeID,
+			NewNodeID:               next.NodeID,
+			PreviousLeaseEpoch:      previous.Epoch,
+			LeaseEpoch:              next.Epoch,
+			TakeoverCount:           next.TakeoverCount,
+			RuntimePhase:            runtime.Phase,
+			RecoveryBinlogFile:      runtime.BinlogFile,
+			RecoveryBinlogPosition:  runtime.BinlogPosition,
+			RecoveryDelaySeconds:    runtime.DelaySeconds,
+			RecoveryEventsPerSecond: runtime.EventsPerSecond,
 		})
 	}
 	if len(report.AffectedTasks) == 0 {

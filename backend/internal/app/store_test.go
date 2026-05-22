@@ -155,6 +155,12 @@ func TestFailoverDrillReturnsTakeoverReport(t *testing.T) {
 		if transition.TakeoverCount == 0 {
 			t.Fatalf("takeover count not incremented: %#v", transition)
 		}
+		if transition.PreviousLeaseEpoch != affectedBefore[transition.TaskID].Epoch || transition.LeaseEpoch <= transition.PreviousLeaseEpoch {
+			t.Fatalf("lease epoch transition missing: %#v", transition)
+		}
+		if transition.RecoveryBinlogFile == "" || transition.RecoveryBinlogPosition <= 0 {
+			t.Fatalf("recovery position missing: %#v", transition)
+		}
 	}
 	for _, node := range report.After.Nodes {
 		if node.ID == activeNode.ID && node.Status != NodeOffline {

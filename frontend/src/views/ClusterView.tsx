@@ -1,17 +1,19 @@
 import { useState, type FormEvent } from "react";
 import {
+  ArrowRight,
   ArrowsClockwise,
   ChartLineUp,
   ClockClockwise,
   Cpu,
   HardDrives,
+  MapPinLine,
   Pulse,
   ShieldCheck,
   WarningCircle
 } from "@phosphor-icons/react";
 import { PermissionNotice } from "../components/PermissionNotice";
 import { api } from "../lib/api";
-import { cx, formatDate, secondsSince } from "../lib/format";
+import { cx, formatDate, formatNumber, secondsSince } from "../lib/format";
 import type { ClusterNode, ClusterNodeInput, ClusterSnapshot, FailoverDrillReport, SyncTask } from "../types/api";
 
 function emptyNodeForm(): ClusterNodeInput {
@@ -67,6 +69,19 @@ function ClusterStat({ label, value, detail, tone }: { label: string; value: str
   );
 }
 
+const runtimePhaseText: Record<string, string> = {
+  idle: "空闲",
+  full: "全量",
+  incremental: "增量",
+  paused: "暂停",
+  failed: "异常",
+  stopped: "停止"
+};
+
+function phaseText(phase: string) {
+  return runtimePhaseText[phase] || phase || "-";
+}
+
 export function ClusterView({
   cluster,
   tasks,
@@ -86,9 +101,16 @@ export function ClusterView({
   const nodes = cluster?.nodes ?? [];
   const leases = cluster?.leases ?? [];
   const taskById = new Map(tasks.map((task) => [task.id, task]));
+  const nodeById = new Map(nodes.map((node) => [node.id, node]));
   const onlineNodes = cluster?.onlineNodes ?? nodes.filter((node) => node.status === "online").length;
   const degradedNodes = cluster?.degradedNodes ?? Math.max(0, nodes.length - onlineNodes);
   const heartbeatTimeoutSeconds = cluster?.heartbeatTimeoutSeconds ?? 30;
+
+  const nodeName = (id?: string) => {
+    if (!id) return "待分配";
+    const node = nodeById.get(id) || drillReport?.after.nodes.find((item) => item.id === id) || drillReport?.before.nodes.find((item) => item.id === id);
+    return node ? `${node.name} / ${id}` : id;
+  };
 
   const runNodeAction = async (node: ClusterNode, action: "online" | "offline" | "drain" | "heartbeat") => {
     if (!canManage) {
@@ -353,41 +375,102 @@ export function ClusterView({
         </div>
 
         {drillReport && (
-          <div className={cx(
-            "rounded-xl border p-5 shadow-panel",
-            drillReport.success ? "border-emerald-200 bg-emerald-50 text-emerald-900" : "border-red-200 bg-red-50 text-red-900"
-          )}>
+          <div className="rounded-xl border border-line bg-white p-5 shadow-panel">
             <div className="flex items-start justify-between gap-3">
               <div>
                 <div className="flex items-center gap-2">
-                  {drillReport.success ? <ShieldCheck size={20} /> : <WarningCircle size={20} />}
-                  <h2 className="font-semibold tracking-tight">最近故障演练</h2>
+                  <span className={cx(
+                    "flex h-9 w-9 items-center justify-center rounded-lg border",
+                    drillReport.success ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-red-200 bg-red-50 text-red-700"
+                  )}>
+                    {drillReport.success ? <ShieldCheck size={18} /> : <WarningCircle size={18} />}
+                  </span>
+                  <div>
+                    <h2 className="font-semibold tracking-tight text-coal">最近故障演练</h2>
+                    <p className="mt-1 text-sm text-zinc-600">{drillReport.message}</p>
+                  </div>
                 </div>
-                <p className="mt-2 text-sm leading-relaxed">{drillReport.message}</p>
               </div>
-              <span className="rounded-full border border-white/70 bg-white px-2 py-1 font-mono text-xs">
+              <span className="rounded-full border border-line bg-[#fcfcf8] px-2 py-1 font-mono text-xs text-muted">
                 {formatDate(drillReport.drilledAt)}
               </span>
             </div>
 
             <div className="mt-4 grid gap-2 sm:grid-cols-3">
-              <ClusterStat label="演练节点" value={drillReport.node.name} detail={drillReport.node.id} tone={drillReport.success ? "ok" : "warn"} />
+              <ClusterStat label="演练节点" value={drillReport.node.name} detail={`${drillReport.node.zone} / ${drillReport.node.id}`} tone={drillReport.success ? "ok" : "warn"} />
               <ClusterStat label="影响任务" value={drillReport.affectedTasks.length} detail="自动接管链路" />
               <ClusterStat label="接管累计" value={drillReport.after.failovers} detail={`演练前 ${drillReport.before.failovers}`} />
             </div>
 
-            <div className="mt-4 space-y-2">
+            <div className="mt-4 rounded-xl border border-line bg-[#fcfcf8] p-3">
+              <div className="flex items-center gap-2 text-sm font-medium text-coal">
+                <MapPinLine size={16} />
+                演练轨迹
+              </div>
+              <div className="mt-3 grid gap-2 text-xs text-zinc-600 sm:grid-cols-[1fr_auto_1fr] sm:items-center">
+                <div className="rounded-lg border border-line bg-white p-3">
+                  <div className="text-muted">故障节点</div>
+                  <div className="mt-1 truncate font-mono text-coal">{nodeName(drillReport.node.id)}</div>
+                </div>
+                <ArrowRight className="hidden text-zinc-400 sm:block" size={18} />
+                <div className="rounded-lg border border-line bg-white p-3">
+                  <div className="text-muted">接管目标</div>
+                  <div className="mt-1 truncate font-mono text-coal">
+                    {drillReport.affectedTasks.length > 0
+                      ? Array.from(new Set(drillReport.affectedTasks.map((task) => nodeName(task.newNodeId)))).join(", ")
+                      : "无任务迁移"}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-4 space-y-3">
               {drillReport.affectedTasks.length === 0 ? (
-                <div className="rounded-lg border border-white/70 bg-white/80 p-3 text-sm">该节点没有承载任务，演练只验证节点离线流程。</div>
+                <div className="rounded-lg border border-dashed border-line bg-[#fcfcf8] p-4 text-center text-sm text-muted">该节点没有承载任务，演练只验证节点离线流程。</div>
               ) : drillReport.affectedTasks.map((task) => (
-                <div key={task.taskId} className="rounded-lg border border-white/70 bg-white/80 p-3 text-sm">
-                  <div className="font-medium text-coal">{task.taskName}</div>
-                  <div className="mt-2 flex flex-wrap gap-2 font-mono text-xs text-zinc-600">
-                    <span>{task.previousNodeId}</span>
-                    <span>to</span>
-                    <span>{task.newNodeId || "unassigned"}</span>
-                    <span>epoch {task.leaseEpoch}</span>
-                    <span>takeover {task.takeoverCount}</span>
+                <div key={task.taskId} className="rounded-xl border border-line bg-[#fcfcf8] p-4 text-sm">
+                  <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="truncate font-medium text-coal">{task.taskName}</span>
+                        <span className={cx(
+                          "rounded-full border px-2 py-0.5 text-xs",
+                          task.newNodeId ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-red-200 bg-red-50 text-red-700"
+                        )}>
+                          {task.newNodeId ? "已接管" : "待处理"}
+                        </span>
+                      </div>
+                      <div className="mt-2 flex flex-wrap items-center gap-2 font-mono text-xs text-zinc-600">
+                        <span className="rounded-full bg-white px-2 py-1">{nodeName(task.previousNodeId)}</span>
+                        <ArrowRight size={14} className="text-zinc-400" />
+                        <span className="rounded-full bg-white px-2 py-1">{nodeName(task.newNodeId)}</span>
+                      </div>
+                    </div>
+                    <div className="rounded-lg border border-line bg-white px-3 py-2">
+                      <div className="text-xs text-muted">恢复位点</div>
+                      <div className="mt-1 break-all font-mono text-sm font-semibold text-coal">
+                        {task.recoveryBinlogFile}:{formatNumber(task.recoveryBinlogPosition)}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-3 grid gap-2 sm:grid-cols-4">
+                    <div className="rounded-lg border border-line bg-white px-3 py-2">
+                      <div className="text-xs text-muted">运行阶段</div>
+                      <div className="mt-1 font-medium text-coal">{phaseText(task.runtimePhase)}</div>
+                    </div>
+                    <div className="rounded-lg border border-line bg-white px-3 py-2">
+                      <div className="text-xs text-muted">Lease Epoch</div>
+                      <div className="mt-1 font-mono font-medium text-coal">{task.previousLeaseEpoch} -&gt; {task.leaseEpoch}</div>
+                    </div>
+                    <div className="rounded-lg border border-line bg-white px-3 py-2">
+                      <div className="text-xs text-muted">延迟</div>
+                      <div className="mt-1 font-mono font-medium text-coal">{task.recoveryDelaySeconds}s</div>
+                    </div>
+                    <div className="rounded-lg border border-line bg-white px-3 py-2">
+                      <div className="text-xs text-muted">吞吐</div>
+                      <div className="mt-1 font-mono font-medium text-coal">{task.recoveryEventsPerSecond}/s</div>
+                    </div>
                   </div>
                 </div>
               ))}

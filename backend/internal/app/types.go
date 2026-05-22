@@ -500,12 +500,18 @@ type TaskLease struct {
 }
 
 type FailoverDrillTask struct {
-	TaskID         string `json:"taskId"`
-	TaskName       string `json:"taskName"`
-	PreviousNodeID string `json:"previousNodeId"`
-	NewNodeID      string `json:"newNodeId"`
-	LeaseEpoch     int    `json:"leaseEpoch"`
-	TakeoverCount  int    `json:"takeoverCount"`
+	TaskID                  string `json:"taskId"`
+	TaskName                string `json:"taskName"`
+	PreviousNodeID          string `json:"previousNodeId"`
+	NewNodeID               string `json:"newNodeId"`
+	PreviousLeaseEpoch      int    `json:"previousLeaseEpoch"`
+	LeaseEpoch              int    `json:"leaseEpoch"`
+	TakeoverCount           int    `json:"takeoverCount"`
+	RuntimePhase            string `json:"runtimePhase"`
+	RecoveryBinlogFile      string `json:"recoveryBinlogFile"`
+	RecoveryBinlogPosition  int64  `json:"recoveryBinlogPosition"`
+	RecoveryDelaySeconds    int    `json:"recoveryDelaySeconds"`
+	RecoveryEventsPerSecond int    `json:"recoveryEventsPerSecond"`
 }
 
 type FailoverDrillReport struct {
