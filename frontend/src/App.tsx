@@ -25,6 +25,7 @@ import { api, clearToken, getToken, setToken } from "./lib/api";
 import { cx, formatDate, formatNumber } from "./lib/format";
 import { CapabilityView } from "./views/CapabilityView";
 import { ClusterView } from "./views/ClusterView";
+import { DatasourceView } from "./views/DatasourceView";
 import { ErrorCenterView } from "./views/ErrorCenterView";
 import { OperationLogsView } from "./views/OperationLogsView";
 import { SettingsView } from "./views/SettingsView";
@@ -249,7 +250,7 @@ function App() {
                 <Dashboard summary={summary} tasks={tasks} errors={errors} logs={logs} cluster={cluster} />
               )}
               {view === "datasources" && (
-                <DatasourceView datasources={datasources} onChanged={() => refresh(true)} />
+                <DatasourceView datasources={datasources} tasks={tasks} onChanged={() => refresh(true)} />
               )}
               {view === "tasks" && (
                 <TaskView tasks={tasks} errors={errors} logs={logs} cluster={cluster} onAction={handleTaskAction} onChanged={() => refresh(true)} />
@@ -538,147 +539,6 @@ function Dashboard({
         </div>
       </aside>
       </div>
-    </div>
-  );
-}
-
-function DatasourceView({ datasources, onChanged }: { datasources: Datasource[]; onChanged: () => Promise<void> | void }) {
-  const [formOpen, setFormOpen] = useState(false);
-  const [form, setForm] = useState({
-    name: "",
-    purpose: "source",
-    host: "",
-    port: 3306,
-    username: "",
-    password: "",
-    defaultSchema: ""
-  });
-  const [message, setMessage] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  const submit = async (event: FormEvent) => {
-    event.preventDefault();
-    setError(null);
-    await api.createDatasource(form);
-    setFormOpen(false);
-    setForm({ name: "", purpose: "source", host: "", port: 3306, username: "", password: "", defaultSchema: "" });
-    await onChanged();
-  };
-
-  const test = async (datasource: Datasource) => {
-    setMessage(null);
-    setError(null);
-    try {
-      const next = await api.testDatasource(datasource.id);
-      setMessage(`${next.name}: ${next.lastTestMessage || "连接成功"}`);
-      await onChanged();
-    } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : "连接失败");
-      await onChanged();
-    }
-  };
-
-  return (
-    <div className="grid gap-5 xl:grid-cols-[1fr_380px]">
-      <section className="rounded-xl border border-line bg-white shadow-panel">
-        <div className="flex flex-col gap-3 border-b border-line p-5 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h2 className="text-lg font-semibold tracking-tight text-coal">数据源</h2>
-            <div className="mt-1 text-sm text-muted">源端与目标端连接资产</div>
-          </div>
-          <button
-            onClick={() => setFormOpen((value) => !value)}
-            className="inline-flex items-center justify-center gap-2 rounded-lg bg-coal px-3 py-2 text-sm text-white transition active:scale-[0.98]"
-          >
-            <Plus size={16} />
-            新增
-          </button>
-        </div>
-
-        <div className="divide-y divide-line">
-          {datasources.map((datasource) => (
-            <div key={datasource.id} className="grid gap-3 p-5 md:grid-cols-[1fr_0.7fr_0.7fr_auto] md:items-center">
-              <div>
-                <div className="flex items-center gap-2">
-                  <Database size={18} className="text-accent" />
-                  <span className="font-medium text-coal">{datasource.name}</span>
-                  <span className={cx(
-                    "rounded-full border px-2 py-0.5 text-xs",
-                    datasource.connectionStatus === "online" && "border-emerald-200 bg-emerald-50 text-emerald-700",
-                    datasource.connectionStatus === "offline" && "border-red-200 bg-red-50 text-red-700",
-                    datasource.connectionStatus === "untested" && "border-zinc-200 bg-zinc-50 text-zinc-600"
-                  )}>
-                    {datasource.connectionStatus === "online" ? "在线" : datasource.connectionStatus === "offline" ? "离线" : "未测试"}
-                  </span>
-                </div>
-                <div className="mt-1 text-sm text-muted">{datasource.host}:{datasource.port} / {datasource.username}</div>
-              </div>
-              <div className="text-sm text-zinc-600">用途：{purposeLabel(datasource.purpose)}</div>
-              <div className="text-sm text-zinc-600">库：{datasource.defaultSchema || "-"}</div>
-              <button
-                onClick={() => test(datasource)}
-                className="inline-flex items-center justify-center gap-2 rounded-lg border border-line bg-white px-3 py-2 text-sm text-zinc-700 transition hover:bg-zinc-50 active:scale-[0.98]"
-              >
-                <Pulse size={16} />
-                测试
-              </button>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      <aside className="space-y-4">
-        {message && <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">{message}</div>}
-        {error && <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>}
-
-        {formOpen ? (
-          <form onSubmit={submit} className="rounded-xl border border-line bg-white p-5 shadow-panel">
-            <h2 className="font-semibold tracking-tight text-coal">新增数据源</h2>
-            <div className="mt-4 space-y-4">
-              <Field label="名称">
-                <input className="control" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} required />
-              </Field>
-              <Field label="用途">
-                <select className="control" value={form.purpose} onChange={(event) => setForm({ ...form, purpose: event.target.value })}>
-                  <option value="source">源端</option>
-                  <option value="target">目标端</option>
-                  <option value="both">源端和目标端</option>
-                </select>
-              </Field>
-              <div className="grid grid-cols-[1fr_110px] gap-3">
-                <Field label="Host">
-                  <input className="control" value={form.host} onChange={(event) => setForm({ ...form, host: event.target.value })} required />
-                </Field>
-                <Field label="Port">
-                  <input className="control" type="number" value={form.port} onChange={(event) => setForm({ ...form, port: Number(event.target.value) })} required />
-                </Field>
-              </div>
-              <Field label="账号">
-                <input className="control" value={form.username} onChange={(event) => setForm({ ...form, username: event.target.value })} required />
-              </Field>
-              <Field label="密码">
-                <input className="control" type="password" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} required />
-              </Field>
-              <Field label="默认库">
-                <input className="control" value={form.defaultSchema} onChange={(event) => setForm({ ...form, defaultSchema: event.target.value })} />
-              </Field>
-              <button className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-coal px-3 py-2.5 text-sm text-white transition active:scale-[0.98]">
-                <Plus size={16} />
-                保存数据源
-              </button>
-            </div>
-          </form>
-        ) : (
-          <div className="rounded-xl border border-line bg-[#fcfcf8] p-5 shadow-panel">
-            <h2 className="font-semibold tracking-tight text-coal">连接规则</h2>
-            <div className="mt-4 space-y-3 text-sm text-zinc-600">
-              <div className="border-l border-line pl-3">密码只在后端加密保存，前端不读取明文。</div>
-              <div className="border-l border-line pl-3">真实 MySQL 可读取 schema、table 和 column 元数据。</div>
-              <div className="border-l border-line pl-3">被任务引用的数据源由后端阻止删除。</div>
-            </div>
-          </div>
-        )}
-      </aside>
     </div>
   );
 }
@@ -1103,12 +963,6 @@ function SkeletonPage() {
       <div className="skeleton h-96 rounded-xl" />
     </div>
   );
-}
-
-function purposeLabel(purpose: Datasource["purpose"]) {
-  if (purpose === "source") return "源端";
-  if (purpose === "target") return "目标端";
-  return "源端和目标端";
 }
 
 export default App;

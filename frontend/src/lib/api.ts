@@ -88,6 +88,23 @@ export const api = {
       body: JSON.stringify(input)
     });
   },
+  updateDatasource(id: string, input: {
+    name?: string;
+    purpose?: string;
+    host?: string;
+    port?: number;
+    username?: string;
+    password?: string;
+    defaultSchema?: string;
+  }) {
+    return request<Datasource>(`/datasources/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(input)
+    });
+  },
+  deleteDatasource(id: string) {
+    return request<void>(`/datasources/${id}`, { method: "DELETE" });
+  },
   testDatasource(id: string) {
     return request<Datasource>(`/datasources/${id}/test`, { method: "POST" });
   },
