@@ -14,6 +14,8 @@ import (
 	"time"
 )
 
+const nodeHeartbeatTimeout = 30 * time.Second
+
 func now() string {
 	return time.Now().UTC().Format(time.RFC3339Nano)
 }
@@ -28,6 +30,14 @@ func expired(timestamp string) bool {
 		return true
 	}
 	return time.Now().UTC().After(parsed)
+}
+
+func heartbeatStale(timestamp string) bool {
+	parsed, err := time.Parse(time.RFC3339Nano, timestamp)
+	if err != nil {
+		return true
+	}
+	return time.Since(parsed) > nodeHeartbeatTimeout
 }
 
 func newID() string {

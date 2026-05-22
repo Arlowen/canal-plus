@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 )
 
 type Store struct {
@@ -233,10 +234,12 @@ func (s *Store) CreateTask(input SyncTask) (SyncTask, error) {
 	}
 	s.data.SyncTasks = append([]SyncTask{input}, s.data.SyncTasks...)
 	runtime := s.defaultRuntimeLocked(input.ID)
-	if node := s.selectNodeLocked(""); node != nil {
-		runtime.NodeID = node.ID
-		runtime.LeaseExpiresAt = leaseExpiry()
-		s.upsertLeaseLocked(input.ID, node.ID, false)
+	if leaseRequired(input.Status) {
+		if node := s.selectNodeLocked(""); node != nil {
+			runtime.NodeID = node.ID
+			runtime.LeaseExpiresAt = leaseExpiry()
+			s.upsertLeaseLocked(input.ID, node.ID, false)
+		}
 	}
 	s.data.RuntimeStates = append([]TaskRuntimeState{runtime}, s.data.RuntimeStates...)
 	s.logLocked("admin", "create", "sync_task", input.ID, "创建同步任务 "+input.Name)
@@ -329,6 +332,7 @@ func (s *Store) CopyTask(id string) (SyncTask, bool, error) {
 func (s *Store) TransitionTask(id string, action string) (SyncTask, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.reconcileClusterLocked()
 	s.refreshRuntimeStatesLocked()
 	for index := range s.data.SyncTasks {
 		if s.data.SyncTasks[index].ID != id {
@@ -353,16 +357,28 @@ func (s *Store) TransitionTask(id string, action string) (SyncTask, bool, error)
 			task.Status = TaskPaused
 			runtime.Phase = "paused"
 			runtime.EventsPerSecond = 0
+			runtime.NodeID = ""
+			runtime.LeaseExpiresAt = ""
+			s.removeLeaseLocked(id)
 		case "stop":
 			task.Status = TaskStopped
 			runtime.Phase = "stopped"
 			runtime.EventsPerSecond = 0
+			runtime.NodeID = ""
+			runtime.LeaseExpiresAt = ""
+			s.removeLeaseLocked(id)
 		default:
 			return SyncTask{}, false, errors.New("unsupported task action")
+		}
+		if leaseRequired(task.Status) && runtime.NodeID == "" {
+			if node := s.selectNodeLocked(""); node != nil {
+				s.assignTaskToNodeLocked(runtime, node.ID, "任务状态恢复分配")
+			}
 		}
 		runtime.UpdatedAt = timestamp
 		task.UpdatedAt = timestamp
 		updated := *task
+		s.recountNodeTasksLocked()
 		s.logLocked("admin", action, "sync_task", id, action+" 同步任务 "+task.Name)
 		return cloneJSON(updated), true, s.saveLocked()
 	}
@@ -386,25 +402,7 @@ func (s *Store) ClusterSnapshot() ClusterSnapshot {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.reconcileClusterLocked()
-	nodes := cloneJSON(s.data.Nodes)
-	leases := cloneJSON(s.data.TaskLeases)
-	online := 0
-	failovers := 0
-	for _, node := range nodes {
-		if node.Status == NodeOnline {
-			online++
-		}
-	}
-	for _, lease := range leases {
-		failovers += lease.TakeoverCount
-	}
-	return ClusterSnapshot{
-		Nodes:       nodes,
-		Leases:      leases,
-		OnlineNodes: online,
-		TotalNodes:  len(nodes),
-		Failovers:   failovers,
-	}
+	return s.clusterSnapshotLocked()
 }
 
 func (s *Store) MarkNodeStatus(id string, status NodeStatus) (ClusterNode, bool, error) {
@@ -435,23 +433,66 @@ func (s *Store) HeartbeatNode(id string) (ClusterNode, bool, error) {
 	return s.MarkNodeStatus(id, NodeOnline)
 }
 
+func (s *Store) RefreshOnlineNodeHeartbeats() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	timestamp := now()
+	changed := false
+	for index := range s.data.Nodes {
+		if s.data.Nodes[index].Status != NodeOnline {
+			continue
+		}
+		s.data.Nodes[index].LastHeartbeatAt = timestamp
+		s.data.Nodes[index].UpdatedAt = timestamp
+		changed = true
+	}
+	if !changed {
+		return nil
+	}
+	return s.saveLocked()
+}
+
+func (s *Store) StartEmbeddedNodeHeartbeat(interval time.Duration) {
+	ticker := time.NewTicker(interval)
+	go func() {
+		for range ticker.C {
+			_ = s.RefreshOnlineNodeHeartbeats()
+		}
+	}()
+}
+
 func (s *Store) RebalanceCluster() (ClusterSnapshot, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.ensureClusterLocked()
+	s.markStaleNodesLocked()
+	plannedLoads := map[string]int{}
+	for index := range s.data.Nodes {
+		if s.data.Nodes[index].Status == NodeOnline {
+			plannedLoads[s.data.Nodes[index].ID] = 0
+		}
+	}
 	for taskIndex := range s.data.SyncTasks {
 		if !leaseRequired(s.data.SyncTasks[taskIndex].Status) {
 			continue
 		}
 		runtime := s.ensureRuntimeLocked(s.data.SyncTasks[taskIndex].ID)
 		currentNode := s.getNodeLocked(runtime.NodeID)
-		targetNode := s.selectNodeLocked(runtime.NodeID)
+		targetNode := s.selectNodeForLoadLocked(plannedLoads)
 		if targetNode == nil {
+			runtime.NodeID = ""
+			runtime.LeaseExpiresAt = ""
+			runtime.UpdatedAt = now()
+			s.removeLeaseLocked(runtime.TaskID)
 			continue
 		}
 		if currentNode == nil || currentNode.Status != NodeOnline || targetNode.ID != runtime.NodeID {
 			s.assignTaskToNodeLocked(runtime, targetNode.ID, "任务重新均衡")
+		} else {
+			runtime.LeaseExpiresAt = leaseExpiry()
+			s.upsertLeaseLocked(runtime.TaskID, runtime.NodeID, false)
 		}
+		plannedLoads[targetNode.ID]++
 	}
 	if err := s.saveLocked(); err != nil {
 		return ClusterSnapshot{}, err
@@ -564,6 +605,13 @@ func (s *Store) ensureClusterLocked() {
 		s.data.Nodes = defaultClusterNodes(timestamp)
 	}
 	for taskIndex := range s.data.SyncTasks {
+		if !leaseRequired(s.data.SyncTasks[taskIndex].Status) {
+			s.removeLeaseLocked(s.data.SyncTasks[taskIndex].ID)
+			runtime := s.ensureRuntimeLocked(s.data.SyncTasks[taskIndex].ID)
+			runtime.NodeID = ""
+			runtime.LeaseExpiresAt = ""
+			continue
+		}
 		runtime := s.ensureRuntimeLocked(s.data.SyncTasks[taskIndex].ID)
 		if runtime.NodeID == "" {
 			if node := s.selectNodeLocked(""); node != nil {
@@ -573,6 +621,7 @@ func (s *Store) ensureClusterLocked() {
 		}
 		if runtime.NodeID != "" {
 			s.upsertLeaseLocked(s.data.SyncTasks[taskIndex].ID, runtime.NodeID, false)
+			s.recountNodeTasksLocked()
 		}
 	}
 	s.recountNodeTasksLocked()
@@ -580,9 +629,11 @@ func (s *Store) ensureClusterLocked() {
 
 func (s *Store) reconcileClusterLocked() {
 	s.ensureClusterLocked()
+	s.markStaleNodesLocked()
 	for taskIndex := range s.data.SyncTasks {
 		task := s.data.SyncTasks[taskIndex]
 		if !leaseRequired(task.Status) {
+			s.removeLeaseLocked(task.ID)
 			continue
 		}
 		runtime := s.ensureRuntimeLocked(task.ID)
@@ -593,11 +644,30 @@ func (s *Store) reconcileClusterLocked() {
 		}
 		target := s.selectNodeLocked(runtime.NodeID)
 		if target == nil {
+			if runtime.NodeID != "" {
+				s.logLocked("system", "lease_unassigned", "sync_task", runtime.TaskID, "无可用在线节点，任务等待接管："+runtime.TaskID)
+			}
+			runtime.NodeID = ""
+			runtime.LeaseExpiresAt = ""
+			runtime.UpdatedAt = now()
+			s.removeLeaseLocked(task.ID)
 			continue
 		}
 		s.assignTaskToNodeLocked(runtime, target.ID, "节点故障自动接管")
 	}
 	s.recountNodeTasksLocked()
+}
+
+func (s *Store) markStaleNodesLocked() {
+	for index := range s.data.Nodes {
+		node := &s.data.Nodes[index]
+		if node.Status != NodeOnline || !heartbeatStale(node.LastHeartbeatAt) {
+			continue
+		}
+		node.Status = NodeOffline
+		node.UpdatedAt = now()
+		s.logLocked("system", "node_heartbeat_timeout", "cluster_node", node.ID, "节点心跳超时自动下线："+node.Name)
+	}
 }
 
 func (s *Store) assignTaskToNodeLocked(runtime *TaskRuntimeState, nodeID string, reason string) {
@@ -615,6 +685,7 @@ func (s *Store) assignTaskToNodeLocked(runtime *TaskRuntimeState, nodeID string,
 	if lease.TakeoverCount > 0 {
 		s.logLocked("system", "failover", "sync_task", runtime.TaskID, detail)
 	}
+	s.recountNodeTasksLocked()
 }
 
 func (s *Store) upsertLeaseLocked(taskID string, nodeID string, takeover bool) TaskLease {
@@ -653,6 +724,15 @@ func (s *Store) upsertLeaseLocked(taskID string, nodeID string, takeover bool) T
 	return lease
 }
 
+func (s *Store) removeLeaseLocked(taskID string) {
+	for index := range s.data.TaskLeases {
+		if s.data.TaskLeases[index].TaskID == taskID {
+			s.data.TaskLeases = append(s.data.TaskLeases[:index], s.data.TaskLeases[index+1:]...)
+			return
+		}
+	}
+}
+
 func (s *Store) selectNodeLocked(excludeID string) *ClusterNode {
 	var selected *ClusterNode
 	for index := range s.data.Nodes {
@@ -678,6 +758,25 @@ func (s *Store) selectNodeLocked(excludeID string) *ClusterNode {
 	return nil
 }
 
+func (s *Store) selectNodeForLoadLocked(loads map[string]int) *ClusterNode {
+	var selected *ClusterNode
+	for index := range s.data.Nodes {
+		node := &s.data.Nodes[index]
+		if node.Status != NodeOnline || node.Capacity <= 0 {
+			continue
+		}
+		if loads[node.ID] >= node.Capacity {
+			continue
+		}
+		if selected == nil ||
+			loads[node.ID] < loads[selected.ID] ||
+			(loads[node.ID] == loads[selected.ID] && node.CPUPercent < selected.CPUPercent) {
+			selected = node
+		}
+	}
+	return selected
+}
+
 func (s *Store) getNodeLocked(id string) *ClusterNode {
 	for index := range s.data.Nodes {
 		if s.data.Nodes[index].ID == id {
@@ -688,9 +787,13 @@ func (s *Store) getNodeLocked(id string) *ClusterNode {
 }
 
 func (s *Store) recountNodeTasksLocked() {
+	leaseRequiredByTask := map[string]bool{}
+	for _, task := range s.data.SyncTasks {
+		leaseRequiredByTask[task.ID] = leaseRequired(task.Status)
+	}
 	counts := map[string]int{}
 	for _, runtime := range s.data.RuntimeStates {
-		if runtime.NodeID != "" {
+		if runtime.NodeID != "" && leaseRequiredByTask[runtime.TaskID] {
 			counts[runtime.NodeID]++
 		}
 	}
@@ -714,11 +817,13 @@ func (s *Store) clusterSnapshotLocked() ClusterSnapshot {
 		failovers += lease.TakeoverCount
 	}
 	return ClusterSnapshot{
-		Nodes:       nodes,
-		Leases:      leases,
-		OnlineNodes: online,
-		TotalNodes:  len(nodes),
-		Failovers:   failovers,
+		Nodes:                   nodes,
+		Leases:                  leases,
+		OnlineNodes:             online,
+		TotalNodes:              len(nodes),
+		DegradedNodes:           len(nodes) - online,
+		Failovers:               failovers,
+		HeartbeatTimeoutSeconds: int(nodeHeartbeatTimeout.Seconds()),
 	}
 }
 

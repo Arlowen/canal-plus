@@ -188,7 +188,9 @@ export interface ClusterSnapshot {
   leases: TaskLease[];
   onlineNodes: number;
   totalNodes: number;
+  degradedNodes: number;
   failovers: number;
+  heartbeatTimeoutSeconds: number;
 }
 
 export interface LoginResponse {

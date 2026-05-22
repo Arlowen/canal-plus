@@ -29,6 +29,9 @@ func NewServer() (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
+	if os.Getenv("CANAL_PLUS_EMBEDDED_NODE_HEARTBEAT") != "false" {
+		store.StartEmbeddedNodeHeartbeat(10 * time.Second)
+	}
 
 	frontendOrigin := os.Getenv("FRONTEND_ORIGIN")
 	if frontendOrigin == "" {

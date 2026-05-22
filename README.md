@@ -17,7 +17,7 @@ canal-plus/
 - 数据源管理：新增、连接测试、schema/table/column 元数据读取。
 - 同步任务：列表、详情、创建向导、启动、暂停、恢复、停止、复制。
 - 运行监控：任务数量、异常数量、延迟、吞吐、binlog 位点、全量进度。
-- 分布式部署：内置 node 节点、任务 lease、节点下线、任务自动接管和重新均衡 API。
+- 分布式部署：内置 node 节点、任务 lease、心跳超时下线、任务自动接管和重新均衡 API。
 - 产品模块：任务中心、结构迁移、数据校验订正、订阅变更、节点集群、错误中心、操作审计。
 - 错误中心：错误事件展示、重试、跳过并记录原因。
 - 操作日志：关键操作审计。
@@ -51,6 +51,7 @@ cp backend/.env.example backend/.env
 - `FRONTEND_ORIGIN`: 前端跨域来源，默认 `http://localhost:5173`。
 - `CANAL_PLUS_SECRET`: 数据源密码加密密钥。
 - `CANAL_PLUS_DATA_FILE`: 后端数据文件路径，默认 `./data/store.json`。
+- `CANAL_PLUS_EMBEDDED_NODE_HEARTBEAT`: 本地演示内置 node 心跳，默认开启；真实多节点部署可设为 `false`，由各 worker 调用 heartbeat API。
 
 前端可设置：
 
@@ -63,6 +64,9 @@ cp backend/.env.example backend/.env
 ## 分布式接管 API
 
 - `GET /api/cluster`: 查看节点、租约和接管次数。
+- `GET /api/cluster/nodes`: 查看 node 状态、心跳时间和运行任务数。
+- `GET /api/cluster/leases`: 查看任务租约、epoch 和接管次数。
+- `POST /api/cluster/nodes/{id}/heartbeat`: 上报 node 心跳，超时未上报会自动下线并触发接管。
 - `POST /api/cluster/nodes/{id}/offline`: 模拟节点故障，任务会迁移到其他在线节点。
 - `POST /api/cluster/nodes/{id}/online`: 恢复节点心跳。
 - `POST /api/cluster/nodes/{id}/drain`: 标记节点排空。

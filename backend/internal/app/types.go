@@ -260,11 +260,13 @@ type TaskLease struct {
 }
 
 type ClusterSnapshot struct {
-	Nodes       []ClusterNode `json:"nodes"`
-	Leases      []TaskLease   `json:"leases"`
-	OnlineNodes int           `json:"onlineNodes"`
-	TotalNodes  int           `json:"totalNodes"`
-	Failovers   int           `json:"failovers"`
+	Nodes                   []ClusterNode `json:"nodes"`
+	Leases                  []TaskLease   `json:"leases"`
+	OnlineNodes             int           `json:"onlineNodes"`
+	TotalNodes              int           `json:"totalNodes"`
+	DegradedNodes           int           `json:"degradedNodes"`
+	Failovers               int           `json:"failovers"`
+	HeartbeatTimeoutSeconds int           `json:"heartbeatTimeoutSeconds"`
 }
 
 type DatabaseShape struct {
