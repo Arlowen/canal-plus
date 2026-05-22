@@ -25,6 +25,7 @@ import { api, clearToken, getToken, setToken } from "./lib/api";
 import { cx, formatDate, formatNumber } from "./lib/format";
 import { CapabilityView } from "./views/CapabilityView";
 import { ClusterView } from "./views/ClusterView";
+import { ErrorCenterView } from "./views/ErrorCenterView";
 import { SettingsView } from "./views/SettingsView";
 import { TaskView } from "./views/TaskView";
 import type {
@@ -272,7 +273,7 @@ function App() {
                 <ClusterView cluster={cluster} tasks={tasks} onChanged={() => refresh(true)} />
               )}
               {view === "errors" && (
-                <ErrorCenter errors={errors} onChanged={() => refresh(true)} />
+                <ErrorCenterView errors={errors} tasks={tasks} onChanged={() => refresh(true)} />
               )}
               {view === "logs" && (
                 <OperationLogs logs={logs} />
@@ -1024,63 +1025,6 @@ function TaskWizard({ datasources, onCreated }: { datasources: Datasource[]; onC
         </div>
       </section>
     </div>
-  );
-}
-
-function ErrorCenter({ errors, onChanged }: { errors: ErrorEvent[]; onChanged: () => Promise<void> | void }) {
-  const retry = async (event: ErrorEvent) => {
-    await api.retryError(event.id);
-    await onChanged();
-  };
-
-  const skip = async (event: ErrorEvent) => {
-    const reason = window.prompt("跳过原因");
-    if (!reason) return;
-    await api.skipError(event.id, reason);
-    await onChanged();
-  };
-
-  return (
-    <section className="rounded-xl border border-line bg-white shadow-panel">
-      <div className="border-b border-line p-5">
-        <h2 className="text-lg font-semibold tracking-tight text-coal">错误事件</h2>
-        <div className="mt-1 text-sm text-muted">失败事件、binlog 位点和处理动作</div>
-      </div>
-      {errors.length === 0 ? (
-        <div className="p-8">
-          <EmptyState title="暂无错误事件" description="运行异常会进入这里" />
-        </div>
-      ) : (
-        <div className="divide-y divide-line">
-          {errors.map((event) => (
-            <div key={event.id} className="grid gap-4 p-5 xl:grid-cols-[1fr_0.8fr_auto] xl:items-center">
-              <div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="font-medium text-coal">{event.sourceTable}</span>
-                  <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs text-amber-700">{event.status}</span>
-                </div>
-                <div className="mt-1 text-sm text-red-700">{event.reason}</div>
-                <div className="mt-2 font-mono text-xs text-muted">{event.rawEventSummary}</div>
-              </div>
-              <div className="font-mono text-sm text-zinc-700">
-                {event.binlogFile}:{event.binlogPosition}
-                <div className="mt-1 text-xs text-muted">PK {event.primaryKeyValue}</div>
-              </div>
-              <div className="flex gap-2">
-                <button onClick={() => retry(event)} className="inline-flex items-center gap-2 rounded-lg border border-line px-3 py-2 text-sm transition hover:bg-zinc-50 active:scale-[0.98]">
-                  <ArrowsClockwise size={16} />
-                  重试
-                </button>
-                <button onClick={() => skip(event)} className="inline-flex items-center gap-2 rounded-lg border border-line px-3 py-2 text-sm transition hover:bg-zinc-50 active:scale-[0.98]">
-                  <ArrowRight size={16} />
-                  跳过
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-    </section>
   );
 }
 

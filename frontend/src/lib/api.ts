@@ -142,6 +142,12 @@ export const api = {
   retryError(id: string) {
     return request<ErrorEvent>(`/error-events/${id}/retry`, { method: "POST" });
   },
+  retryErrors(ids: string[]) {
+    return request<ErrorEvent[]>("/error-events/batch-retry", {
+      method: "POST",
+      body: JSON.stringify({ ids })
+    });
+  },
   skipError(id: string, reason: string) {
     return request<ErrorEvent>(`/error-events/${id}/skip`, {
       method: "POST",

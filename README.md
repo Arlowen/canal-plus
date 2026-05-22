@@ -23,7 +23,7 @@ canal-plus/
 - 分布式部署：内置 node 节点、任务 lease、后台 supervisor、心跳超时下线、任务自动接管和重新均衡 API。
 - 产品模块：任务中心、结构迁移、数据校验订正、订阅变更、节点集群、错误中心、操作审计。
 - 能力任务：结构迁移计划、二次差异校验与订正、运行中订阅变更具备 API 状态、阶段进度和操作日志。
-- 错误中心：错误事件展示、重试、跳过并记录原因。
+- 错误中心：错误事件搜索、任务/状态/事件类型筛选、详情追踪、单条重试、批量重试、跳过并记录原因。
 - 操作日志：关键操作审计。
 - 持久化：Go 后端默认使用 `backend/data/store.json` 保存演示数据和运行态。
 
@@ -93,6 +93,14 @@ cp backend/.env.example backend/.env
 - `POST /api/sync-tasks/{id}/rerun`: 停止或异常任务按原配置重跑，并重新分配 node lease。
 - `GET /api/sync-tasks/{id}/export`: 导出任务配置、运行位点和 checksum。
 - `DELETE /api/sync-tasks/{id}`: 删除草稿或已停止任务，并清理运行态与 lease。
+
+## 错误事件 API
+
+- `GET /api/error-events`: 查看错误事件，可按 `status` 过滤。
+- `GET /api/error-events/{id}`: 查看单条错误事件详情。
+- `POST /api/error-events/{id}/retry`: 重新投递单条错误事件。
+- `POST /api/error-events/batch-retry`: 批量重试错误事件，请求体包含 `ids`。
+- `POST /api/error-events/{id}/skip`: 跳过错误事件，请求体包含 `reason`。
 
 ## 告警规则 API
 
