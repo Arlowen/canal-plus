@@ -110,6 +110,11 @@ func (s *Server) ServeHTTP(response http.ResponseWriter, request *http.Request) 
 		parts = strings.Split(path, "/")
 	}
 
+	if !canAccess(user, request.Method, parts) {
+		writeError(response, http.StatusForbidden, "权限不足：需要管理员权限")
+		return
+	}
+
 	switch {
 	case len(parts) == 1 && parts[0] == "me" && request.Method == http.MethodGet:
 		writeJSON(response, http.StatusOK, toPublicUser(user))
@@ -886,6 +891,39 @@ func (s *Server) currentUser(request *http.Request) (User, bool) {
 	}
 	userID := strings.TrimPrefix(token, "dev-token:")
 	return s.store.GetUserByID(userID)
+}
+
+func canAccess(user User, method string, parts []string) bool {
+	if user.Role == RoleAdmin {
+		return true
+	}
+	if method == http.MethodGet {
+		return true
+	}
+	if user.Role != RoleOperator {
+		return false
+	}
+	return operatorCanMutate(method, parts)
+}
+
+func operatorCanMutate(method string, parts []string) bool {
+	if method != http.MethodPost {
+		return false
+	}
+	switch {
+	case len(parts) == 3 && parts[0] == "datasources" && parts[2] == "test":
+		return true
+	case len(parts) == 3 && parts[0] == "sync-tasks" && isTaskAction(parts[2]):
+		return true
+	case len(parts) == 2 && parts[0] == "error-events" && parts[1] == "batch-retry":
+		return true
+	case len(parts) == 3 && parts[0] == "error-events" && (parts[2] == "retry" || parts[2] == "skip"):
+		return true
+	case len(parts) == 3 && parts[0] == "capability-jobs" && parts[2] == "run":
+		return true
+	default:
+		return false
+	}
 }
 
 func (s *Server) applyCORS(response http.ResponseWriter, request *http.Request) {

@@ -43,6 +43,14 @@ func createSeedData() (DatabaseShape, error) {
 				PasswordHash: hashPassword("admin123"),
 				CreatedAt:    createdAt,
 			},
+			{
+				ID:           "user-operator",
+				Name:         "运维操作员",
+				Username:     "operator",
+				Role:         RoleOperator,
+				PasswordHash: hashPassword("operator123"),
+				CreatedAt:    createdAt,
+			},
 		},
 		Datasources: []Datasource{
 			{

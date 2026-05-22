@@ -212,7 +212,7 @@ function App() {
             <div className="text-xs uppercase tracking-[0.16em] text-muted">当前账号</div>
             <div className="mt-3 rounded-lg border border-line bg-white p-3">
               <div className="text-sm font-medium text-coal">{user?.name || "admin"}</div>
-              <div className="mt-1 text-xs text-muted">{user?.role === "admin" ? "管理员" : "普通用户"}</div>
+              <div className="mt-1 text-xs text-muted">{roleLabel(user?.role)}</div>
             </div>
             <button
               onClick={handleLogout}
@@ -301,7 +301,7 @@ function Header({ view, user, onRefresh }: { view: View; user: User | null; onRe
       </div>
       <div className="flex items-center gap-3">
         <div className="hidden rounded-lg border border-line bg-white px-3 py-2 text-sm text-zinc-600 md:block">
-          {user?.name || "admin"}
+          {user?.name || "admin"} · {roleLabel(user?.role)}
         </div>
         <button
           onClick={onRefresh}
@@ -313,6 +313,11 @@ function Header({ view, user, onRefresh }: { view: View; user: User | null; onRe
       </div>
     </div>
   );
+}
+
+function roleLabel(role?: User["role"]) {
+  if (role === "admin") return "管理员";
+  return "运维操作员";
 }
 
 function LoginScreen({ onLogin }: { onLogin: (username: string, password: string) => Promise<void> }) {
@@ -381,6 +386,31 @@ function LoginScreen({ onLogin }: { onLogin: (username: string, password: string
               <ArrowRight size={16} />
               {loading ? "登录中" : "进入控制台"}
             </button>
+            <div className="rounded-lg border border-line bg-[#fcfcf8] p-3">
+              <div className="text-xs font-medium text-zinc-700">演示账号</div>
+              <div className="mt-3 grid gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setUsername("admin");
+                    setPassword("admin123");
+                  }}
+                  className="rounded-lg border border-line bg-white px-3 py-2 text-left text-xs text-zinc-700 transition hover:bg-zinc-50 active:scale-[0.98]"
+                >
+                  管理员：admin / admin123
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setUsername("operator");
+                    setPassword("operator123");
+                  }}
+                  className="rounded-lg border border-line bg-white px-3 py-2 text-left text-xs text-zinc-700 transition hover:bg-zinc-50 active:scale-[0.98]"
+                >
+                  运维操作员：operator / operator123
+                </button>
+              </div>
+            </div>
           </div>
         </form>
       </div>

@@ -34,6 +34,7 @@ func NewStore(path string) (*Store, error) {
 		if err := json.Unmarshal(bytes, &store.data); err != nil {
 			return nil, err
 		}
+		store.ensureUsersLocked()
 		store.ensureClusterLocked()
 		if err := store.saveLocked(); err != nil {
 			return nil, err
@@ -50,6 +51,34 @@ func NewStore(path string) (*Store, error) {
 		return nil, err
 	}
 	return store, nil
+}
+
+func (s *Store) ensureUsersLocked() {
+	createdAt := now()
+	ensureUser := func(user User) {
+		for _, existing := range s.data.Users {
+			if existing.Username == user.Username {
+				return
+			}
+		}
+		s.data.Users = append(s.data.Users, user)
+	}
+	ensureUser(User{
+		ID:           "user-admin",
+		Name:         "平台管理员",
+		Username:     "admin",
+		Role:         RoleAdmin,
+		PasswordHash: hashPassword("admin123"),
+		CreatedAt:    createdAt,
+	})
+	ensureUser(User{
+		ID:           "user-operator",
+		Name:         "运维操作员",
+		Username:     "operator",
+		Role:         RoleOperator,
+		PasswordHash: hashPassword("operator123"),
+		CreatedAt:    createdAt,
+	})
 }
 
 func (s *Store) Snapshot() DatabaseShape {
