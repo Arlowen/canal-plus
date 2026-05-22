@@ -6,6 +6,8 @@ import type {
   CapabilityJobType,
   DashboardSummary,
   ClusterSnapshot,
+  ClusterNode,
+  ClusterNodeInput,
   Datasource,
   ErrorEvent,
   FailoverDrillReport,
@@ -234,6 +236,12 @@ export const api = {
   },
   cluster() {
     return request<ClusterSnapshot>("/cluster");
+  },
+  registerNode(input: ClusterNodeInput) {
+    return request<ClusterNode>("/cluster/nodes", {
+      method: "POST",
+      body: JSON.stringify(input)
+    });
   },
   nodeAction(id: string, action: "online" | "offline" | "drain" | "heartbeat") {
     return request<ClusterSnapshot | unknown>(`/cluster/nodes/${id}/${action}`, { method: "POST" });

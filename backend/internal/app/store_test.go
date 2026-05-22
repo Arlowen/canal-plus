@@ -439,6 +439,74 @@ func TestAllNodesUnavailableReleasesLeases(t *testing.T) {
 	}
 }
 
+func TestRegisterNodeUpsertsAndTakesOverWaitingTasks(t *testing.T) {
+	store := newTestStore(t)
+
+	store.mu.Lock()
+	for index := range store.data.Nodes {
+		store.data.Nodes[index].Status = NodeOffline
+	}
+	for runtimeIndex := range store.data.RuntimeStates {
+		store.data.RuntimeStates[runtimeIndex].NodeID = ""
+		store.data.RuntimeStates[runtimeIndex].LeaseExpiresAt = ""
+	}
+	store.data.TaskLeases = nil
+	store.mu.Unlock()
+
+	node, created, err := store.RegisterNode(ClusterNodeInput{
+		ID:            "node-hangzhou-d",
+		Name:          "hangzhou-d",
+		Endpoint:      "10.8.0.14:4101",
+		Zone:          "hangzhou",
+		Role:          "worker",
+		Capacity:      3,
+		CPUPercent:    27,
+		MemoryPercent: 44,
+	})
+	if err != nil {
+		t.Fatalf("RegisterNode() error = %v", err)
+	}
+	if !created || node.ID != "node-hangzhou-d" || node.Status != NodeOnline {
+		t.Fatalf("unexpected registered node: created=%v node=%#v", created, node)
+	}
+
+	cluster := store.ClusterSnapshot()
+	if cluster.OnlineNodes != 1 {
+		t.Fatalf("expected exactly one online node, got %#v", cluster.Nodes)
+	}
+	if len(cluster.Leases) == 0 {
+		t.Fatalf("expected waiting tasks to be assigned to registered node")
+	}
+	for _, lease := range cluster.Leases {
+		if lease.NodeID != node.ID {
+			t.Fatalf("expected lease on registered node, got %#v", lease)
+		}
+	}
+
+	updated, created, err := store.RegisterNode(ClusterNodeInput{
+		ID:       node.ID,
+		Name:     "hangzhou-d-resized",
+		Endpoint: node.Endpoint,
+		Capacity: 5,
+	})
+	if err != nil {
+		t.Fatalf("RegisterNode(upsert) error = %v", err)
+	}
+	if created || updated.Name != "hangzhou-d-resized" || updated.Capacity != 5 {
+		t.Fatalf("expected existing node to be updated, created=%v node=%#v", created, updated)
+	}
+	nodes := store.ClusterSnapshot().Nodes
+	seen := 0
+	for _, item := range nodes {
+		if item.ID == node.ID {
+			seen++
+		}
+	}
+	if seen != 1 {
+		t.Fatalf("expected upsert to keep one node, seen %d in %#v", seen, nodes)
+	}
+}
+
 func TestRebalanceDistributesHotNode(t *testing.T) {
 	store := newTestStore(t)
 	snapshot := store.Snapshot()

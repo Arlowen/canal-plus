@@ -675,6 +675,76 @@ func (s *Store) ReconcileCluster() (ClusterSnapshot, error) {
 	return s.clusterSnapshotLocked(), nil
 }
 
+func (s *Store) RegisterNode(input ClusterNodeInput) (ClusterNode, bool, error) {
+	if err := validateClusterNodeInput(input); err != nil {
+		return ClusterNode{}, false, err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.ensureClusterLocked()
+
+	nodeID := strings.TrimSpace(input.ID)
+	if nodeID == "" {
+		for _, node := range s.data.Nodes {
+			if node.Endpoint == strings.TrimSpace(input.Endpoint) {
+				nodeID = node.ID
+				break
+			}
+		}
+	}
+	if nodeID == "" {
+		nodeID = "node-" + newID()
+	}
+
+	timestamp := now()
+	created := true
+	for index := range s.data.Nodes {
+		if s.data.Nodes[index].ID != nodeID {
+			continue
+		}
+		node := &s.data.Nodes[index]
+		node.Name = strings.TrimSpace(input.Name)
+		node.Endpoint = strings.TrimSpace(input.Endpoint)
+		node.Zone = valueOr(strings.TrimSpace(input.Zone), "default")
+		node.Role = valueOr(strings.TrimSpace(input.Role), "worker")
+		node.Capacity = normalizeNodeCapacity(input.Capacity)
+		node.CPUPercent = clampPercent(input.CPUPercent)
+		node.MemoryPercent = clampPercent(input.MemoryPercent)
+		node.Status = NodeOnline
+		node.LastHeartbeatAt = timestamp
+		node.UpdatedAt = timestamp
+		created = false
+		s.logLocked("admin", "node_register", "cluster_node", node.ID, "注册或更新 node："+node.Name)
+		s.reconcileClusterLocked()
+		if err := s.saveLocked(); err != nil {
+			return ClusterNode{}, false, err
+		}
+		return cloneJSON(*node), created, nil
+	}
+
+	node := ClusterNode{
+		ID:              nodeID,
+		Name:            strings.TrimSpace(input.Name),
+		Endpoint:        strings.TrimSpace(input.Endpoint),
+		Zone:            valueOr(strings.TrimSpace(input.Zone), "default"),
+		Status:          NodeOnline,
+		Role:            valueOr(strings.TrimSpace(input.Role), "worker"),
+		CPUPercent:      clampPercent(input.CPUPercent),
+		MemoryPercent:   clampPercent(input.MemoryPercent),
+		Capacity:        normalizeNodeCapacity(input.Capacity),
+		LastHeartbeatAt: timestamp,
+		StartedAt:       timestamp,
+		UpdatedAt:       timestamp,
+	}
+	s.data.Nodes = append(s.data.Nodes, node)
+	s.logLocked("admin", "node_register", "cluster_node", node.ID, "注册新 node："+node.Name)
+	s.reconcileClusterLocked()
+	if err := s.saveLocked(); err != nil {
+		return ClusterNode{}, false, err
+	}
+	return cloneJSON(node), created, nil
+}
+
 func (s *Store) MarkNodeStatus(id string, status NodeStatus) (ClusterNode, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -1430,6 +1500,36 @@ func (s *Store) clusterSnapshotLocked() ClusterSnapshot {
 
 func leaseRequired(status TaskStatus) bool {
 	return status == TaskPending || status == TaskFullSyncing || status == TaskIncrementalRunning || status == TaskFailed
+}
+
+func validateClusterNodeInput(input ClusterNodeInput) error {
+	if strings.TrimSpace(input.Name) == "" {
+		return errors.New("节点名称必填")
+	}
+	if strings.TrimSpace(input.Endpoint) == "" {
+		return errors.New("节点 endpoint 必填")
+	}
+	if input.Capacity < 0 {
+		return errors.New("节点容量不能为负数")
+	}
+	return nil
+}
+
+func normalizeNodeCapacity(capacity int) int {
+	if capacity <= 0 {
+		return 4
+	}
+	return capacity
+}
+
+func clampPercent(value int) int {
+	if value < 0 {
+		return 0
+	}
+	if value > 100 {
+		return 100
+	}
+	return value
 }
 
 func validateAlertRuleInput(input AlertRuleInput) error {

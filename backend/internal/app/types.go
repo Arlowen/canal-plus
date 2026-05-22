@@ -398,6 +398,17 @@ type ClusterNode struct {
 	UpdatedAt       string     `json:"updatedAt"`
 }
 
+type ClusterNodeInput struct {
+	ID            string `json:"id,omitempty"`
+	Name          string `json:"name"`
+	Endpoint      string `json:"endpoint"`
+	Zone          string `json:"zone,omitempty"`
+	Role          string `json:"role,omitempty"`
+	Capacity      int    `json:"capacity,omitempty"`
+	CPUPercent    int    `json:"cpuPercent,omitempty"`
+	MemoryPercent int    `json:"memoryPercent,omitempty"`
+}
+
 type TaskLease struct {
 	TaskID        string `json:"taskId"`
 	NodeID        string `json:"nodeId"`

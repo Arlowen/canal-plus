@@ -24,6 +24,7 @@ canal-plus/
 - 运行监控：任务数量、异常数量、延迟、吞吐、binlog 位点、全量进度。
 - 告警规则：支持配置延迟阈值、错误阈值、任务范围、Webhook，并实时评估触发状态。
 - 分布式部署：内置 node 节点、任务 lease、后台 supervisor、心跳超时下线、任务自动接管、故障演练报告和重新均衡 API。
+- Node 接入：支持通过控制台或 API 注册/更新 worker node，新节点上线后会参与 lease 调度并接管等待任务。
 - 产品模块：任务中心、结构迁移、数据校验订正、订阅变更、节点集群、错误中心、操作审计。
 - 能力任务：结构迁移计划、二次差异校验与订正、运行中订阅变更具备 API 状态、阶段进度和操作日志。
 - 错误中心：错误事件搜索、任务/状态/事件类型筛选、详情追踪、单条重试、批量重试、跳过并记录原因。
@@ -75,6 +76,7 @@ cp backend/.env.example backend/.env
 
 - `GET /api/cluster`: 查看节点、租约和接管次数。
 - `GET /api/cluster/nodes`: 查看 node 状态、心跳时间和运行任务数。
+- `POST /api/cluster/nodes`: 注册或更新 worker node，支持 `id`、`name`、`endpoint`、`zone`、`role`、`capacity`。
 - `GET /api/cluster/leases`: 查看任务租约、epoch 和接管次数。
 - `POST /api/cluster/nodes/{id}/heartbeat`: 上报 node 心跳，超时未上报会自动下线并触发接管。
 - `POST /api/cluster/nodes/{id}/offline`: 模拟节点故障，任务会迁移到其他在线节点。

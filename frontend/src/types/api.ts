@@ -308,6 +308,17 @@ export interface ClusterNode {
   updatedAt: string;
 }
 
+export interface ClusterNodeInput {
+  id?: string;
+  name: string;
+  endpoint: string;
+  zone?: string;
+  role?: string;
+  capacity?: number;
+  cpuPercent?: number;
+  memoryPercent?: number;
+}
+
 export interface TaskLease {
   taskId: string;
   nodeId: string;

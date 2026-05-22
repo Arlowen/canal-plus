@@ -826,6 +826,22 @@ func (s *Server) handleCluster(response http.ResponseWriter, request *http.Reque
 		writeJSON(response, http.StatusOK, s.store.ClusterSnapshot())
 	case len(parts) == 2 && parts[1] == "nodes" && request.Method == http.MethodGet:
 		writeJSON(response, http.StatusOK, s.store.ClusterSnapshot().Nodes)
+	case len(parts) == 2 && parts[1] == "nodes" && request.Method == http.MethodPost:
+		var input ClusterNodeInput
+		if err := decodeJSON(request, &input); err != nil {
+			writeError(response, http.StatusBadRequest, "请求体格式错误")
+			return
+		}
+		node, created, err := s.store.RegisterNode(input)
+		if err != nil {
+			writeError(response, http.StatusBadRequest, err.Error())
+			return
+		}
+		if created {
+			writeJSON(response, http.StatusCreated, node)
+			return
+		}
+		writeJSON(response, http.StatusOK, node)
 	case len(parts) == 2 && parts[1] == "leases" && request.Method == http.MethodGet:
 		writeJSON(response, http.StatusOK, s.store.ClusterSnapshot().Leases)
 	case len(parts) == 2 && parts[1] == "rebalance" && request.Method == http.MethodPost:

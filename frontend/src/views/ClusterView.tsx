@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type FormEvent } from "react";
 import {
   ArrowsClockwise,
   ChartLineUp,
@@ -12,7 +12,20 @@ import {
 import { PermissionNotice } from "../components/PermissionNotice";
 import { api } from "../lib/api";
 import { cx, formatDate, secondsSince } from "../lib/format";
-import type { ClusterNode, ClusterSnapshot, FailoverDrillReport, SyncTask } from "../types/api";
+import type { ClusterNode, ClusterNodeInput, ClusterSnapshot, FailoverDrillReport, SyncTask } from "../types/api";
+
+function emptyNodeForm(): ClusterNodeInput {
+  return {
+    id: "",
+    name: "",
+    endpoint: "",
+    zone: "default",
+    role: "worker",
+    capacity: 4,
+    cpuPercent: 12,
+    memoryPercent: 18
+  };
+}
 
 function NodeBadge({ status }: { status: ClusterNode["status"] }) {
   const label = status === "online" ? "在线" : status === "draining" ? "排空" : "离线";
@@ -67,7 +80,9 @@ export function ClusterView({
 }) {
   const [busyNode, setBusyNode] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
   const [drillReport, setDrillReport] = useState<FailoverDrillReport | null>(null);
+  const [nodeForm, setNodeForm] = useState<ClusterNodeInput>(emptyNodeForm);
   const nodes = cluster?.nodes ?? [];
   const leases = cluster?.leases ?? [];
   const taskById = new Map(tasks.map((task) => [task.id, task]));
@@ -82,6 +97,7 @@ export function ClusterView({
     }
     setBusyNode(node.id);
     setError(null);
+    setMessage(null);
     try {
       await api.nodeAction(node.id, action);
       await onChanged();
@@ -99,6 +115,7 @@ export function ClusterView({
     }
     setBusyNode("rebalance");
     setError(null);
+    setMessage(null);
     try {
       await api.rebalanceCluster();
       await onChanged();
@@ -116,12 +133,44 @@ export function ClusterView({
     }
     setBusyNode(`drill:${node.id}`);
     setError(null);
+    setMessage(null);
     try {
       const report = await api.failoverDrill(node.id);
       setDrillReport(report);
       await onChanged();
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "故障演练失败");
+    } finally {
+      setBusyNode(null);
+    }
+  };
+
+  const registerNode = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!canManage) {
+      setError("接入新 node 需要管理员权限");
+      return;
+    }
+    setBusyNode("register");
+    setError(null);
+    setMessage(null);
+    try {
+      const node = await api.registerNode({
+        ...nodeForm,
+        id: nodeForm.id?.trim() || undefined,
+        name: nodeForm.name.trim(),
+        endpoint: nodeForm.endpoint.trim(),
+        zone: nodeForm.zone?.trim() || "default",
+        role: nodeForm.role?.trim() || "worker",
+        capacity: Number(nodeForm.capacity) || 4,
+        cpuPercent: Number(nodeForm.cpuPercent) || 0,
+        memoryPercent: Number(nodeForm.memoryPercent) || 0
+      });
+      setMessage(`${node.name} 已接入集群`);
+      setNodeForm(emptyNodeForm());
+      await onChanged();
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "Node 接入失败");
     } finally {
       setBusyNode(null);
     }
@@ -145,7 +194,7 @@ export function ClusterView({
           </button>
         </div>
 
-        {(!canManage || error) && (
+        {(!canManage || error || message) && (
           <div className="grid gap-3 border-b border-line p-5">
             {!canManage && (
               <PermissionNotice compact description="当前角色可查看节点、租约和自动接管状态；节点上下线、排空和重新均衡需要管理员权限。" />
@@ -153,6 +202,11 @@ export function ClusterView({
             {error && (
               <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
                 {error}
+              </div>
+            )}
+            {message && (
+              <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-700">
+                {message}
               </div>
             )}
           </div>
@@ -223,6 +277,81 @@ export function ClusterView({
       </section>
 
       <aside className="space-y-5">
+        <div className="rounded-xl border border-line bg-white p-5 shadow-panel">
+          <div className="flex items-center gap-2 text-coal">
+            <HardDrives size={20} />
+            <h2 className="font-semibold tracking-tight">接入 Node</h2>
+          </div>
+          <form className="mt-4 grid gap-3" onSubmit={registerNode}>
+            <label className="grid gap-1 text-sm">
+              <span className="text-xs font-medium text-muted">节点 ID</span>
+              <input
+                value={nodeForm.id ?? ""}
+                onChange={(event) => setNodeForm((current) => ({ ...current, id: event.target.value }))}
+                className="rounded-lg border border-line bg-[#fcfcf8] px-3 py-2 text-sm outline-none transition focus:border-coal"
+                placeholder="可选，默认自动生成"
+              />
+            </label>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="grid gap-1 text-sm">
+                <span className="text-xs font-medium text-muted">名称</span>
+                <input
+                  required
+                  value={nodeForm.name}
+                  onChange={(event) => setNodeForm((current) => ({ ...current, name: event.target.value }))}
+                  className="rounded-lg border border-line bg-[#fcfcf8] px-3 py-2 text-sm outline-none transition focus:border-coal"
+                  placeholder="hangzhou-d"
+                />
+              </label>
+              <label className="grid gap-1 text-sm">
+                <span className="text-xs font-medium text-muted">可承载任务</span>
+                <input
+                  min={1}
+                  type="number"
+                  value={nodeForm.capacity ?? 4}
+                  onChange={(event) => setNodeForm((current) => ({ ...current, capacity: Number(event.target.value) }))}
+                  className="rounded-lg border border-line bg-[#fcfcf8] px-3 py-2 text-sm outline-none transition focus:border-coal"
+                />
+              </label>
+            </div>
+            <label className="grid gap-1 text-sm">
+              <span className="text-xs font-medium text-muted">Endpoint</span>
+              <input
+                required
+                value={nodeForm.endpoint}
+                onChange={(event) => setNodeForm((current) => ({ ...current, endpoint: event.target.value }))}
+                className="rounded-lg border border-line bg-[#fcfcf8] px-3 py-2 font-mono text-sm outline-none transition focus:border-coal"
+                placeholder="10.8.0.14:4101"
+              />
+            </label>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="grid gap-1 text-sm">
+                <span className="text-xs font-medium text-muted">可用区</span>
+                <input
+                  value={nodeForm.zone ?? ""}
+                  onChange={(event) => setNodeForm((current) => ({ ...current, zone: event.target.value }))}
+                  className="rounded-lg border border-line bg-[#fcfcf8] px-3 py-2 text-sm outline-none transition focus:border-coal"
+                />
+              </label>
+              <label className="grid gap-1 text-sm">
+                <span className="text-xs font-medium text-muted">角色</span>
+                <input
+                  value={nodeForm.role ?? ""}
+                  onChange={(event) => setNodeForm((current) => ({ ...current, role: event.target.value }))}
+                  className="rounded-lg border border-line bg-[#fcfcf8] px-3 py-2 text-sm outline-none transition focus:border-coal"
+                />
+              </label>
+            </div>
+            <button
+              disabled={!canManage || busyNode === "register"}
+              className="inline-flex items-center justify-center gap-2 rounded-lg bg-coal px-3 py-2.5 text-sm text-white transition hover:bg-zinc-800 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <HardDrives size={16} />
+              {busyNode === "register" ? "接入中" : "接入集群"}
+            </button>
+          </form>
+        </div>
+
         {drillReport && (
           <div className={cx(
             "rounded-xl border p-5 shadow-panel",

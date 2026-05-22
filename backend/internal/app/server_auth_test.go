@@ -95,6 +95,11 @@ func TestOperatorCannotMutateConfigurationOrCluster(t *testing.T) {
 		t.Fatalf("operator rebalance cluster status = %d body = %s", rebalanceResponse.Code, rebalanceResponse.Body.String())
 	}
 
+	registerNodeResponse := serveTestRequest(server, authRequest(http.MethodPost, "/api/cluster/nodes", operatorToken, `{"name":"blocked","endpoint":"10.0.0.1:4101"}`))
+	if registerNodeResponse.Code != http.StatusForbidden {
+		t.Fatalf("operator register node status = %d body = %s", registerNodeResponse.Code, registerNodeResponse.Body.String())
+	}
+
 	drillResponse := serveTestRequest(server, authRequest(http.MethodPost, "/api/cluster/nodes/node-a/failover-drill", operatorToken, ""))
 	if drillResponse.Code != http.StatusForbidden {
 		t.Fatalf("operator failover drill status = %d body = %s", drillResponse.Code, drillResponse.Body.String())
