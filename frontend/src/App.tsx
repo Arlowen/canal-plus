@@ -31,6 +31,7 @@ import { cx, formatDate, formatNumber } from "./lib/format";
 import { CapabilityView } from "./views/CapabilityView";
 import { ClusterView } from "./views/ClusterView";
 import type {
+  CapabilityJob,
   DashboardSummary,
   ClusterSnapshot,
   Datasource,
@@ -84,6 +85,7 @@ function App() {
   const [errors, setErrors] = useState<ErrorEvent[]>([]);
   const [logs, setLogs] = useState<OperationLog[]>([]);
   const [cluster, setCluster] = useState<ClusterSnapshot | null>(null);
+  const [capabilityJobs, setCapabilityJobs] = useState<CapabilityJob[]>([]);
   const [loading, setLoading] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -93,13 +95,14 @@ function App() {
     if (!quiet) setLoading(true);
     setError(null);
     try {
-      const [nextSummary, nextDatasources, nextTasks, nextErrors, nextLogs, nextCluster] = await Promise.all([
+      const [nextSummary, nextDatasources, nextTasks, nextErrors, nextLogs, nextCluster, nextCapabilityJobs] = await Promise.all([
         api.summary(),
         api.datasources(),
         api.tasks(),
         api.errors(),
         api.logs(),
-        api.cluster()
+        api.cluster(),
+        api.capabilityJobs()
       ]);
       setSummary(nextSummary);
       setDatasources(nextDatasources);
@@ -107,6 +110,7 @@ function App() {
       setErrors(nextErrors);
       setLogs(nextLogs);
       setCluster(nextCluster);
+      setCapabilityJobs(nextCapabilityJobs);
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "加载失败");
     } finally {
@@ -251,13 +255,13 @@ function App() {
                 }} />
               )}
               {view === "structure" && (
-                <CapabilityView mode="structure" tasks={tasks} datasources={datasources} />
+                <CapabilityView mode="structure" tasks={tasks} datasources={datasources} jobs={capabilityJobs} onChanged={() => refresh(true)} />
               )}
               {view === "quality" && (
-                <CapabilityView mode="quality" tasks={tasks} datasources={datasources} />
+                <CapabilityView mode="quality" tasks={tasks} datasources={datasources} jobs={capabilityJobs} onChanged={() => refresh(true)} />
               )}
               {view === "subscription" && (
-                <CapabilityView mode="subscription" tasks={tasks} datasources={datasources} />
+                <CapabilityView mode="subscription" tasks={tasks} datasources={datasources} jobs={capabilityJobs} onChanged={() => refresh(true)} />
               )}
               {view === "cluster" && (
                 <ClusterView cluster={cluster} tasks={tasks} onChanged={() => refresh(true)} />

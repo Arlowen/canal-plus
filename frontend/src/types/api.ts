@@ -141,6 +141,43 @@ export interface OperationLog {
   createdAt: string;
 }
 
+export type CapabilityJobType = "structure" | "quality" | "subscription";
+export type CapabilityJobStatus = "draft" | "running" | "completed" | "failed";
+
+export interface CapabilityStep {
+  name: string;
+  status: "waiting" | "running" | "done" | string;
+  detail: string;
+}
+
+export interface CapabilityJobSummary {
+  tables: number;
+  columns: number;
+  ddlCount: number;
+  diffRows: number;
+  correctedRows: number;
+  addedTables: number;
+  removedTables: number;
+  riskLevel: "low" | "medium" | "high" | string;
+}
+
+export interface CapabilityJob {
+  id: string;
+  type: CapabilityJobType;
+  name: string;
+  taskId: string;
+  mode: string;
+  status: CapabilityJobStatus;
+  progressPercent: number;
+  currentStep: number;
+  steps: CapabilityStep[];
+  summary: CapabilityJobSummary;
+  schedule?: string;
+  autoStart: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface DashboardSummary {
   taskTotal: number;
   runningTasks: number;

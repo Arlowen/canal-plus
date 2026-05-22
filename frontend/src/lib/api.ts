@@ -1,4 +1,6 @@
 import type {
+  CapabilityJob,
+  CapabilityJobType,
   DashboardSummary,
   ClusterSnapshot,
   Datasource,
@@ -120,6 +122,26 @@ export const api = {
   },
   logs() {
     return request<OperationLog[]>("/operation-logs");
+  },
+  capabilityJobs(type?: CapabilityJobType) {
+    const query = type ? `?type=${type}` : "";
+    return request<CapabilityJob[]>(`/capability-jobs${query}`);
+  },
+  createCapabilityJob(input: {
+    type: CapabilityJobType;
+    taskId: string;
+    name?: string;
+    mode?: string;
+    schedule?: string;
+    autoStart?: boolean;
+  }) {
+    return request<CapabilityJob>("/capability-jobs", {
+      method: "POST",
+      body: JSON.stringify(input)
+    });
+  },
+  runCapabilityJob(id: string) {
+    return request<CapabilityJob>(`/capability-jobs/${id}/run`, { method: "POST" });
   },
   cluster() {
     return request<ClusterSnapshot>("/cluster");

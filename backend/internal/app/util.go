@@ -99,6 +99,20 @@ func intToString(value int) string {
 	return strconv.Itoa(value)
 }
 
+func minInt(left int, right int) int {
+	if left < right {
+		return left
+	}
+	return right
+}
+
+func maxInt(left int, right int) int {
+	if left > right {
+		return left
+	}
+	return right
+}
+
 func loadDotEnv(path string) {
 	file, err := os.Open(path)
 	if err != nil {

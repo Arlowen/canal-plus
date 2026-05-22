@@ -19,6 +19,7 @@ canal-plus/
 - 运行监控：任务数量、异常数量、延迟、吞吐、binlog 位点、全量进度。
 - 分布式部署：内置 node 节点、任务 lease、心跳超时下线、任务自动接管和重新均衡 API。
 - 产品模块：任务中心、结构迁移、数据校验订正、订阅变更、节点集群、错误中心、操作审计。
+- 能力任务：结构迁移计划、二次差异校验与订正、运行中订阅变更具备 API 状态、阶段进度和操作日志。
 - 错误中心：错误事件展示、重试、跳过并记录原因。
 - 操作日志：关键操作审计。
 - 持久化：Go 后端默认使用 `backend/data/store.json` 保存演示数据和运行态。
@@ -71,6 +72,13 @@ cp backend/.env.example backend/.env
 - `POST /api/cluster/nodes/{id}/online`: 恢复节点心跳。
 - `POST /api/cluster/nodes/{id}/drain`: 标记节点排空。
 - `POST /api/cluster/rebalance`: 按当前节点负载重新均衡任务。
+
+## 能力任务 API
+
+- `GET /api/capability-jobs`: 查看结构迁移、校验订正、订阅变更任务。
+- `GET /api/capability-jobs?type=quality`: 按能力类型过滤。
+- `POST /api/capability-jobs`: 创建能力任务，请求体包含 `type`、`taskId`、`mode`、`autoStart`。
+- `POST /api/capability-jobs/{id}/run`: 重跑能力任务。
 
 ## 下一步建议
 

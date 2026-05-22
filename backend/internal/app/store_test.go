@@ -273,3 +273,71 @@ func TestRebalanceDistributesHotNode(t *testing.T) {
 		t.Fatalf("expected rebalance to distribute hot node leases, got %#v", counts)
 	}
 }
+
+func TestCreateCapabilityJobBuildsSummaryAndSteps(t *testing.T) {
+	store := newTestStore(t)
+	snapshot := store.Snapshot()
+	if len(snapshot.SyncTasks) == 0 {
+		t.Fatal("expected seed task")
+	}
+
+	job, err := store.CreateCapabilityJob(CapabilityJob{
+		Type:      CapabilityQuality,
+		TaskID:    snapshot.SyncTasks[0].ID,
+		Mode:      "verify_then_correct",
+		AutoStart: true,
+	})
+	if err != nil {
+		t.Fatalf("CreateCapabilityJob() error = %v", err)
+	}
+	if job.ID == "" || job.Name == "" {
+		t.Fatalf("expected persisted job identity: %#v", job)
+	}
+	if job.Status != CapabilityRunning {
+		t.Fatalf("expected running job, got %s", job.Status)
+	}
+	if len(job.Steps) < 4 {
+		t.Fatalf("expected CloudCanal-like multi-step job: %#v", job.Steps)
+	}
+	if job.Summary.Tables == 0 || job.Summary.Columns == 0 || job.Summary.DiffRows == 0 {
+		t.Fatalf("expected populated quality summary: %#v", job.Summary)
+	}
+}
+
+func TestCompletedSubscriptionJobAppliesTaskMapping(t *testing.T) {
+	store := newTestStore(t)
+	snapshot := store.Snapshot()
+	if len(snapshot.SyncTasks) == 0 {
+		t.Fatal("expected seed task")
+	}
+	taskID := snapshot.SyncTasks[0].ID
+	initialMappings := len(snapshot.SyncTasks[0].TableMappings)
+
+	job, err := store.CreateCapabilityJob(CapabilityJob{
+		Type:      CapabilitySubscription,
+		TaskID:    taskID,
+		Mode:      "add_tables",
+		AutoStart: true,
+	})
+	if err != nil {
+		t.Fatalf("CreateCapabilityJob() error = %v", err)
+	}
+
+	store.mu.Lock()
+	for index := range store.data.CapabilityJobs {
+		if store.data.CapabilityJobs[index].ID == job.ID {
+			store.data.CapabilityJobs[index].Status = CapabilityCompleted
+			store.applySubscriptionJobLocked(&store.data.CapabilityJobs[index])
+			break
+		}
+	}
+	store.mu.Unlock()
+
+	updated, ok := store.GetTask(taskID)
+	if !ok {
+		t.Fatalf("task %s not found", taskID)
+	}
+	if len(updated.TableMappings) <= initialMappings {
+		t.Fatalf("expected subscription mapping to be added, before %d after %d", initialMappings, len(updated.TableMappings))
+	}
+}

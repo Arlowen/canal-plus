@@ -107,6 +107,8 @@ func (s *Server) ServeHTTP(response http.ResponseWriter, request *http.Request) 
 		s.handleErrorEvents(response, request, parts)
 	case len(parts) >= 1 && parts[0] == "cluster":
 		s.handleCluster(response, request, parts)
+	case len(parts) >= 1 && parts[0] == "capability-jobs":
+		s.handleCapabilityJobs(response, request, parts)
 	case len(parts) == 1 && parts[0] == "operation-logs" && request.Method == http.MethodGet:
 		writeJSON(response, http.StatusOK, firstN(s.store.Logs(), 200))
 	case len(parts) == 1 && parts[0] == "alert-rules" && request.Method == http.MethodGet:
@@ -635,6 +637,47 @@ func (s *Server) handleCluster(response http.ResponseWriter, request *http.Reque
 	}
 }
 
+func (s *Server) handleCapabilityJobs(response http.ResponseWriter, request *http.Request, parts []string) {
+	switch {
+	case len(parts) == 1 && request.Method == http.MethodGet:
+		jobType := CapabilityJobType(request.URL.Query().Get("type"))
+		if jobType != "" && !validCapabilityType(jobType) {
+			writeError(response, http.StatusBadRequest, "能力任务类型不支持")
+			return
+		}
+		writeJSON(response, http.StatusOK, s.store.CapabilityJobs(jobType))
+	case len(parts) == 1 && request.Method == http.MethodPost:
+		var input CapabilityJob
+		if err := decodeJSON(request, &input); err != nil {
+			writeError(response, http.StatusBadRequest, "请求体格式错误")
+			return
+		}
+		if !validCapabilityType(input.Type) {
+			writeError(response, http.StatusBadRequest, "能力任务类型不支持")
+			return
+		}
+		job, err := s.store.CreateCapabilityJob(input)
+		if err != nil {
+			writeError(response, http.StatusBadRequest, err.Error())
+			return
+		}
+		writeJSON(response, http.StatusCreated, job)
+	case len(parts) == 3 && parts[2] == "run" && request.Method == http.MethodPost:
+		job, ok, err := s.store.RunCapabilityJob(parts[1])
+		if err != nil {
+			writeError(response, http.StatusInternalServerError, err.Error())
+			return
+		}
+		if !ok {
+			writeError(response, http.StatusNotFound, "能力任务不存在")
+			return
+		}
+		writeJSON(response, http.StatusOK, job)
+	default:
+		writeError(response, http.StatusNotFound, "not found")
+	}
+}
+
 func (s *Server) taskResponse(task SyncTask) TaskResponse {
 	runtime, _ := s.store.Runtime(task.ID)
 	response := TaskResponse{
@@ -714,6 +757,10 @@ func validateTask(task SyncTask) error {
 
 func isTaskAction(action string) bool {
 	return action == "start" || action == "pause" || action == "resume" || action == "stop"
+}
+
+func validCapabilityType(jobType CapabilityJobType) bool {
+	return jobType == CapabilityStructure || jobType == CapabilityQuality || jobType == CapabilitySubscription
 }
 
 func firstN[T any](items []T, count int) []T {

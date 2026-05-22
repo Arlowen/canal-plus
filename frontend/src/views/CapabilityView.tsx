@@ -1,7 +1,67 @@
-import { GitBranch, MagnifyingGlass, Plus, ShieldCheck, Stack } from "@phosphor-icons/react";
+import { useEffect, useMemo, useState } from "react";
+import {
+  ArrowsClockwise,
+  CheckCircle,
+  GitBranch,
+  MagnifyingGlass,
+  Play,
+  Plus,
+  ShieldCheck,
+  Stack,
+  WarningCircle
+} from "@phosphor-icons/react";
 import { StatusBadge } from "../components/StatusBadge";
-import { cx } from "../lib/format";
-import type { Datasource, SyncTask } from "../types/api";
+import { api } from "../lib/api";
+import { cx, formatDate } from "../lib/format";
+import type { CapabilityJob, CapabilityJobType, Datasource, SyncTask } from "../types/api";
+
+const capabilityConfig: Record<CapabilityJobType, {
+  title: string;
+  icon: typeof Stack;
+  accent: string;
+  primary: string;
+  modes: Array<{ value: string; label: string; description: string }>;
+}> = {
+  structure: {
+    title: "结构迁移与同步",
+    icon: Stack,
+    accent: "类型转换 / 方言适配 / 命名映射",
+    primary: "生成结构计划",
+    modes: [
+      { value: "schema_prepare", label: "结构准备", description: "检查目标端缺失库表列并生成 DDL" },
+      { value: "ddl_sync", label: "DDL 同步", description: "对运行中链路启用增量 DDL 变更" }
+    ]
+  },
+  quality: {
+    title: "数据校验与订正",
+    icon: ShieldCheck,
+    accent: "字段级对比 / 二次差异校验 / 安全订正",
+    primary: "创建校验任务",
+    modes: [
+      { value: "verify_only", label: "仅校验", description: "输出差异，不执行回写" },
+      { value: "verify_then_correct", label: "校验后订正", description: "二次确认差异后自动订正" },
+      { value: "periodic_verify", label: "周期校验", description: "按 cron 执行并保留历史" }
+    ]
+  },
+  subscription: {
+    title: "修改订阅",
+    icon: GitBranch,
+    accent: "运行中加库减库 / action 过滤 / 条件过滤",
+    primary: "发起订阅变更",
+    modes: [
+      { value: "add_tables", label: "新增订阅表", description: "预检后把新增表合入当前版本" },
+      { value: "filter_actions", label: "Action 过滤", description: "调整 insert/update/delete 订阅动作" },
+      { value: "condition_filter", label: "条件过滤", description: "发布行级过滤条件" }
+    ]
+  }
+};
+
+const statusLabel: Record<string, string> = {
+  draft: "草稿",
+  running: "运行中",
+  completed: "已完成",
+  failed: "失败"
+};
 
 function Info({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
   return (
@@ -12,31 +72,90 @@ function Info({ label, value, mono }: { label: string; value: string; mono?: boo
   );
 }
 
-export function CapabilityView({ mode, tasks, datasources }: { mode: "structure" | "quality" | "subscription"; tasks: SyncTask[]; datasources: Datasource[] }) {
-  const config = {
-    structure: {
-      title: "结构迁移与同步",
-      icon: Stack,
-      accent: "类型转换 / 方言适配 / 命名映射",
-      steps: ["结构扫描", "差异分析", "DDL 生成", "目标执行", "持续同步"],
-      primary: "生成结构计划"
-    },
-    quality: {
-      title: "数据校验与订正",
-      icon: ShieldCheck,
-      accent: "字段级对比 / 差异定位 / 安全订正",
-      steps: ["抽样计划", "全量对比", "差异分组", "订正预览", "执行回写"],
-      primary: "创建校验任务"
-    },
-    subscription: {
-      title: "修改订阅",
-      icon: GitBranch,
-      accent: "运行中加库减库 / action 过滤 / 条件过滤",
-      steps: ["读取订阅", "对象变更", "过滤预检", "发布版本", "增量生效"],
-      primary: "发起订阅变更"
-    }
-  }[mode];
+function JobBadge({ status }: { status: CapabilityJob["status"] }) {
+  const className = status === "completed"
+    ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+    : status === "running"
+      ? "border-amber-200 bg-amber-50 text-amber-700"
+      : status === "failed"
+        ? "border-red-200 bg-red-50 text-red-700"
+        : "border-zinc-200 bg-zinc-50 text-zinc-600";
+  return <span className={cx("rounded-full border px-2 py-0.5 text-xs", className)}>{statusLabel[status] || status}</span>;
+}
+
+function riskLabel(value: string) {
+  if (value === "high") return "高";
+  if (value === "medium") return "中";
+  return "低";
+}
+
+export function CapabilityView({
+  mode,
+  tasks,
+  datasources,
+  jobs,
+  onChanged
+}: {
+  mode: CapabilityJobType;
+  tasks: SyncTask[];
+  datasources: Datasource[];
+  jobs: CapabilityJob[];
+  onChanged: () => Promise<void> | void;
+}) {
+  const config = capabilityConfig[mode];
   const Icon = config.icon;
+  const availableTasks = tasks.filter((task) => task.status !== "draft" && task.status !== "stopped");
+  const [selectedTaskId, setSelectedTaskId] = useState(availableTasks[0]?.id || "");
+  const [selectedMode, setSelectedMode] = useState(config.modes[0]?.value || "");
+  const [schedule, setSchedule] = useState("0 2 * * *");
+  const [creating, setCreating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const relevantJobs = useMemo(() => jobs.filter((job) => job.type === mode), [jobs, mode]);
+  const selectedTask = tasks.find((task) => task.id === selectedTaskId) ?? availableTasks[0];
+  const latestJob = relevantJobs[0];
+
+  useEffect(() => {
+    setSelectedMode(config.modes[0]?.value || "");
+  }, [config.modes]);
+
+  useEffect(() => {
+    if (!selectedTaskId && availableTasks[0]) {
+      setSelectedTaskId(availableTasks[0].id);
+    }
+  }, [availableTasks, selectedTaskId]);
+
+  const createJob = async () => {
+    if (!selectedTask) {
+      setError("请先创建可执行的同步任务");
+      return;
+    }
+    setCreating(true);
+    setError(null);
+    try {
+      await api.createCapabilityJob({
+        type: mode,
+        taskId: selectedTask.id,
+        mode: selectedMode,
+        schedule: selectedMode === "periodic_verify" ? schedule : undefined,
+        autoStart: true
+      });
+      await onChanged();
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "创建失败");
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const runJob = async (job: CapabilityJob) => {
+    setError(null);
+    try {
+      await api.runCapabilityJob(job.id);
+      await onChanged();
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "运行失败");
+    }
+  };
 
   return (
     <div className="grid gap-5 xl:grid-cols-[0.95fr_1.05fr]">
@@ -51,27 +170,69 @@ export function CapabilityView({ mode, tasks, datasources }: { mode: "structure"
           </div>
         </div>
 
-        <div className="mt-6 grid gap-3">
-          {config.steps.map((step, index) => (
-            <div key={step} className="flex items-center gap-3 rounded-lg border border-line bg-[#fcfcf8] p-3">
-              <span className="flex h-7 w-7 items-center justify-center rounded-full bg-white font-mono text-xs text-accent">{index + 1}</span>
-              <span className="text-sm font-medium text-coal">{step}</span>
-              <span className="ml-auto text-xs text-muted">{index < 2 ? "ready" : "planned"}</span>
-            </div>
-          ))}
+        {error && (
+          <div className="mt-5 flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+            <WarningCircle size={18} />
+            {error}
+          </div>
+        )}
+
+        <div className="mt-6 grid gap-4">
+          <label className="block">
+            <span className="mb-2 block text-sm font-medium text-zinc-700">关联任务</span>
+            <select
+              className="control"
+              value={selectedTask?.id || ""}
+              onChange={(event) => setSelectedTaskId(event.target.value)}
+            >
+              {availableTasks.map((task) => (
+                <option key={task.id} value={task.id}>{task.name}</option>
+              ))}
+            </select>
+          </label>
+
+          <div className="grid gap-3">
+            {config.modes.map((item) => (
+              <button
+                key={item.value}
+                onClick={() => setSelectedMode(item.value)}
+                className={cx(
+                  "rounded-lg border p-3 text-left transition active:scale-[0.98]",
+                  selectedMode === item.value ? "border-coal bg-[#f4f6f2]" : "border-line bg-[#fcfcf8] hover:bg-zinc-50"
+                )}
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-sm font-medium text-coal">{item.label}</span>
+                  {selectedMode === item.value && <CheckCircle size={18} className="text-accent" />}
+                </div>
+                <div className="mt-1 text-xs text-muted">{item.description}</div>
+              </button>
+            ))}
+          </div>
+
+          {selectedMode === "periodic_verify" && (
+            <label className="block">
+              <span className="mb-2 block text-sm font-medium text-zinc-700">Cron</span>
+              <input className="control font-mono" value={schedule} onChange={(event) => setSchedule(event.target.value)} />
+            </label>
+          )}
         </div>
 
-        <button className="mt-6 inline-flex items-center justify-center gap-2 rounded-lg bg-coal px-4 py-2.5 text-sm text-white transition active:scale-[0.98]">
+        <button
+          onClick={createJob}
+          disabled={creating || !selectedTask}
+          className="mt-6 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-coal px-4 py-2.5 text-sm text-white transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
+        >
           <Plus size={16} />
-          {config.primary}
+          {creating ? "创建中" : config.primary}
         </button>
       </section>
 
       <section className="rounded-xl border border-line bg-white p-5 shadow-panel">
         <div className="flex items-center justify-between gap-3">
           <div>
-            <h2 className="font-semibold tracking-tight text-coal">链路影响面</h2>
-            <div className="mt-1 text-sm text-muted">基于现有任务和数据源生成的执行预览</div>
+            <h2 className="font-semibold tracking-tight text-coal">执行面板</h2>
+            <div className="mt-1 text-sm text-muted">创建、运行、查看结构/校验/订阅任务状态</div>
           </div>
           <MagnifyingGlass size={20} className="text-muted" />
         </div>
@@ -79,20 +240,70 @@ export function CapabilityView({ mode, tasks, datasources }: { mode: "structure"
         <div className="mt-5 grid gap-3 md:grid-cols-2">
           <Info label="数据源" value={`${datasources.length} 个`} mono />
           <Info label="任务" value={`${tasks.length} 条`} mono />
-          <Info label="运行中" value={`${tasks.filter((task) => task.status === "incremental_running" || task.status === "full_syncing").length} 条`} mono />
-          <Info label="待处理异常" value={`${tasks.filter((task) => task.status === "failed").length} 条`} mono />
+          <Info label="运行中能力任务" value={`${relevantJobs.filter((job) => job.status === "running").length} 条`} mono />
+          <Info label="最近风险" value={riskLabel(latestJob?.summary.riskLevel || "low")} />
         </div>
 
-        <div className="mt-5 divide-y divide-line rounded-lg border border-line">
-          {tasks.slice(0, 5).map((task) => (
-            <div key={task.id} className="grid gap-2 p-3 text-sm sm:grid-cols-[1fr_auto] sm:items-center">
+        {latestJob && (
+          <div className="mt-5 rounded-xl border border-line bg-[#fcfcf8] p-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <div className="font-medium text-coal">{task.name}</div>
-                <div className="mt-1 text-xs text-muted">{task.tableMappings.map((mapping) => `${mapping.sourceSchema}.${mapping.sourceTable}`).join(", ")}</div>
+                <div className="text-sm font-semibold text-coal">{latestJob.name}</div>
+                <div className="mt-1 text-xs text-muted">{formatDate(latestJob.updatedAt)} / {latestJob.mode}</div>
               </div>
-              <StatusBadge status={task.status} />
+              <JobBadge status={latestJob.status} />
             </div>
-          ))}
+            <div className="mt-4 h-2 overflow-hidden rounded-full bg-white">
+              <div className="h-full rounded-full bg-accent transition-all" style={{ width: `${latestJob.progressPercent}%` }} />
+            </div>
+            <div className="mt-4 grid gap-2 sm:grid-cols-4">
+              <Info label="表" value={`${latestJob.summary.tables}`} mono />
+              <Info label="字段" value={`${latestJob.summary.columns}`} mono />
+              <Info label={mode === "quality" ? "差异行" : mode === "subscription" ? "新增表" : "DDL"} value={`${mode === "quality" ? latestJob.summary.diffRows : mode === "subscription" ? latestJob.summary.addedTables : latestJob.summary.ddlCount}`} mono />
+              <Info label="风险" value={riskLabel(latestJob.summary.riskLevel)} />
+            </div>
+            <div className="mt-4 grid gap-2">
+              {latestJob.steps.map((step, index) => (
+                <div key={`${latestJob.id}-${step.name}`} className="grid gap-2 rounded-lg border border-line bg-white p-3 text-sm sm:grid-cols-[28px_140px_1fr_auto] sm:items-center">
+                  <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[#fcfcf8] font-mono text-xs text-accent">{index + 1}</span>
+                  <span className="font-medium text-coal">{step.name}</span>
+                  <span className="text-xs text-muted">{step.detail}</span>
+                  <span className="text-xs text-zinc-500">{step.status}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <div className="mt-5 divide-y divide-line rounded-lg border border-line">
+          {relevantJobs.length === 0 ? (
+            <div className="p-6 text-center text-sm text-muted">暂无能力任务，创建后会显示执行历史</div>
+          ) : relevantJobs.slice(0, 6).map((job) => {
+            const task = tasks.find((item) => item.id === job.taskId);
+            return (
+              <div key={job.id} className="grid gap-3 p-3 text-sm lg:grid-cols-[1fr_120px_auto] lg:items-center">
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-medium text-coal">{job.name}</span>
+                    <JobBadge status={job.status} />
+                  </div>
+                  <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted">
+                    <span>{task?.name || job.taskId}</span>
+                    {task && <StatusBadge status={task.status} />}
+                  </div>
+                </div>
+                <div className="font-mono text-zinc-700">{job.progressPercent}%</div>
+                <button
+                  onClick={() => runJob(job)}
+                  disabled={job.status === "running"}
+                  className="inline-flex items-center justify-center gap-2 rounded-lg border border-line bg-white px-3 py-2 text-sm text-zinc-700 transition hover:bg-zinc-50 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45"
+                >
+                  {job.status === "running" ? <ArrowsClockwise size={16} /> : <Play size={16} />}
+                  {job.status === "running" ? "执行中" : "重跑"}
+                </button>
+              </div>
+            );
+          })}
         </div>
       </section>
     </div>

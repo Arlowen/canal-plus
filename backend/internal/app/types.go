@@ -224,6 +224,57 @@ type AlertRule struct {
 	UpdatedAt             string `json:"updatedAt"`
 }
 
+type CapabilityJobType string
+
+const (
+	CapabilityStructure    CapabilityJobType = "structure"
+	CapabilityQuality      CapabilityJobType = "quality"
+	CapabilitySubscription CapabilityJobType = "subscription"
+)
+
+type CapabilityJobStatus string
+
+const (
+	CapabilityDraft     CapabilityJobStatus = "draft"
+	CapabilityRunning   CapabilityJobStatus = "running"
+	CapabilityCompleted CapabilityJobStatus = "completed"
+	CapabilityFailed    CapabilityJobStatus = "failed"
+)
+
+type CapabilityStep struct {
+	Name   string `json:"name"`
+	Status string `json:"status"`
+	Detail string `json:"detail"`
+}
+
+type CapabilityJobSummary struct {
+	Tables        int    `json:"tables"`
+	Columns       int    `json:"columns"`
+	DDLCount      int    `json:"ddlCount"`
+	DiffRows      int    `json:"diffRows"`
+	CorrectedRows int    `json:"correctedRows"`
+	AddedTables   int    `json:"addedTables"`
+	RemovedTables int    `json:"removedTables"`
+	RiskLevel     string `json:"riskLevel"`
+}
+
+type CapabilityJob struct {
+	ID              string               `json:"id"`
+	Type            CapabilityJobType    `json:"type"`
+	Name            string               `json:"name"`
+	TaskID          string               `json:"taskId"`
+	Mode            string               `json:"mode"`
+	Status          CapabilityJobStatus  `json:"status"`
+	ProgressPercent int                  `json:"progressPercent"`
+	CurrentStep     int                  `json:"currentStep"`
+	Steps           []CapabilityStep     `json:"steps"`
+	Summary         CapabilityJobSummary `json:"summary"`
+	Schedule        string               `json:"schedule,omitempty"`
+	AutoStart       bool                 `json:"autoStart"`
+	CreatedAt       string               `json:"createdAt"`
+	UpdatedAt       string               `json:"updatedAt"`
+}
+
 type NodeStatus string
 
 const (
@@ -270,15 +321,16 @@ type ClusterSnapshot struct {
 }
 
 type DatabaseShape struct {
-	Users         []User             `json:"users"`
-	Datasources   []Datasource       `json:"datasources"`
-	SyncTasks     []SyncTask         `json:"syncTasks"`
-	RuntimeStates []TaskRuntimeState `json:"runtimeStates"`
-	ErrorEvents   []ErrorEvent       `json:"errorEvents"`
-	OperationLogs []OperationLog     `json:"operationLogs"`
-	AlertRules    []AlertRule        `json:"alertRules"`
-	Nodes         []ClusterNode      `json:"nodes"`
-	TaskLeases    []TaskLease        `json:"taskLeases"`
+	Users          []User             `json:"users"`
+	Datasources    []Datasource       `json:"datasources"`
+	SyncTasks      []SyncTask         `json:"syncTasks"`
+	RuntimeStates  []TaskRuntimeState `json:"runtimeStates"`
+	ErrorEvents    []ErrorEvent       `json:"errorEvents"`
+	OperationLogs  []OperationLog     `json:"operationLogs"`
+	AlertRules     []AlertRule        `json:"alertRules"`
+	CapabilityJobs []CapabilityJob    `json:"capabilityJobs"`
+	Nodes          []ClusterNode      `json:"nodes"`
+	TaskLeases     []TaskLease        `json:"taskLeases"`
 }
 
 type DashboardSummary struct {

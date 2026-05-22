@@ -565,6 +565,90 @@ func (s *Store) AlertRules() []AlertRule {
 	return cloneJSON(s.data.AlertRules)
 }
 
+func (s *Store) CapabilityJobs(jobType CapabilityJobType) []CapabilityJob {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.refreshCapabilityJobsLocked()
+	jobs := make([]CapabilityJob, 0, len(s.data.CapabilityJobs))
+	for _, job := range s.data.CapabilityJobs {
+		if jobType == "" || job.Type == jobType {
+			jobs = append(jobs, job)
+		}
+	}
+	return cloneJSON(jobs)
+}
+
+func (s *Store) CreateCapabilityJob(input CapabilityJob) (CapabilityJob, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if input.Type == "" {
+		return CapabilityJob{}, errors.New("能力任务类型不能为空")
+	}
+	task, ok := s.getTaskLocked(input.TaskID)
+	if !ok {
+		return CapabilityJob{}, errors.New("关联同步任务不存在")
+	}
+	timestamp := now()
+	input.ID = newID()
+	if input.Name == "" {
+		input.Name = defaultCapabilityJobName(input.Type, task.Name)
+	}
+	if input.Mode == "" {
+		input.Mode = defaultCapabilityMode(input.Type)
+	}
+	if input.Status == "" {
+		if input.AutoStart {
+			input.Status = CapabilityRunning
+		} else {
+			input.Status = CapabilityDraft
+		}
+	}
+	if input.Status == CapabilityRunning {
+		input.AutoStart = true
+	}
+	input.Steps = defaultCapabilitySteps(input.Type)
+	if input.Status == CapabilityRunning {
+		input.ProgressPercent = 18
+	} else {
+		input.ProgressPercent = 0
+		for stepIndex := range input.Steps {
+			input.Steps[stepIndex].Status = "waiting"
+		}
+	}
+	input.CurrentStep = 0
+	input.Summary = buildCapabilitySummary(input.Type, task)
+	input.CreatedAt = timestamp
+	input.UpdatedAt = timestamp
+	s.data.CapabilityJobs = append([]CapabilityJob{input}, s.data.CapabilityJobs...)
+	s.logLocked("admin", "create", "capability_job", input.ID, "创建能力任务 "+input.Name)
+	if err := s.saveLocked(); err != nil {
+		return CapabilityJob{}, err
+	}
+	return cloneJSON(input), nil
+}
+
+func (s *Store) RunCapabilityJob(id string) (CapabilityJob, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for index := range s.data.CapabilityJobs {
+		if s.data.CapabilityJobs[index].ID != id {
+			continue
+		}
+		job := &s.data.CapabilityJobs[index]
+		job.Status = CapabilityRunning
+		job.AutoStart = true
+		if job.ProgressPercent == 0 || job.ProgressPercent >= 100 {
+			job.ProgressPercent = 18
+			job.CurrentStep = 0
+			job.Steps = defaultCapabilitySteps(job.Type)
+		}
+		job.UpdatedAt = now()
+		s.logLocked("admin", "run", "capability_job", id, "运行能力任务 "+job.Name)
+		return cloneJSON(*job), true, s.saveLocked()
+	}
+	return CapabilityJob{}, false, nil
+}
+
 func (s *Store) getDatasourceLocked(id string) (Datasource, bool) {
 	for _, datasource := range s.data.Datasources {
 		if datasource.ID == id {
@@ -572,6 +656,15 @@ func (s *Store) getDatasourceLocked(id string) (Datasource, bool) {
 		}
 	}
 	return Datasource{}, false
+}
+
+func (s *Store) getTaskLocked(id string) (SyncTask, bool) {
+	for _, task := range s.data.SyncTasks {
+		if task.ID == id {
+			return cloneJSON(task), true
+		}
+	}
+	return SyncTask{}, false
 }
 
 func (s *Store) ensureRuntimeLocked(taskID string) *TaskRuntimeState {
@@ -873,6 +966,182 @@ func (s *Store) refreshRuntimeStatesLocked() {
 		s.recountNodeTasksLocked()
 		_ = s.saveLocked()
 	}
+}
+
+func (s *Store) refreshCapabilityJobsLocked() {
+	timestamp := now()
+	changed := false
+	for index := range s.data.CapabilityJobs {
+		job := &s.data.CapabilityJobs[index]
+		if len(job.Steps) == 0 {
+			job.Steps = defaultCapabilitySteps(job.Type)
+			changed = true
+		}
+		if job.Status != CapabilityRunning {
+			continue
+		}
+		job.ProgressPercent += 17 + rand.Intn(14)
+		if job.ProgressPercent >= 100 {
+			job.ProgressPercent = 100
+			job.Status = CapabilityCompleted
+			job.CurrentStep = len(job.Steps) - 1
+		} else {
+			job.CurrentStep = minInt(len(job.Steps)-1, job.ProgressPercent/(100/maxInt(1, len(job.Steps))))
+		}
+		for stepIndex := range job.Steps {
+			switch {
+			case stepIndex < job.CurrentStep:
+				job.Steps[stepIndex].Status = "done"
+			case stepIndex == job.CurrentStep && job.Status == CapabilityRunning:
+				job.Steps[stepIndex].Status = "running"
+			case stepIndex <= job.CurrentStep && job.Status == CapabilityCompleted:
+				job.Steps[stepIndex].Status = "done"
+			default:
+				job.Steps[stepIndex].Status = "waiting"
+			}
+		}
+		if job.Status == CapabilityCompleted {
+			switch job.Type {
+			case CapabilityQuality:
+				job.Summary.CorrectedRows = job.Summary.DiffRows
+			case CapabilitySubscription:
+				s.applySubscriptionJobLocked(job)
+			}
+		}
+		job.UpdatedAt = timestamp
+		changed = true
+	}
+	if changed {
+		_ = s.saveLocked()
+	}
+}
+
+func (s *Store) applySubscriptionJobLocked(job *CapabilityJob) {
+	for taskIndex := range s.data.SyncTasks {
+		if s.data.SyncTasks[taskIndex].ID != job.TaskID {
+			continue
+		}
+		task := &s.data.SyncTasks[taskIndex]
+		if job.Summary.AddedTables > 0 {
+			for added := 0; added < job.Summary.AddedTables; added++ {
+				task.TableMappings = append(task.TableMappings, TableMapping{
+					ID:           newID(),
+					SourceSchema: "order_center",
+					SourceTable:  "auto_added_" + intToString(added+1),
+					TargetSchema: "reporting",
+					TargetTable:  "ods_auto_added_" + intToString(added+1),
+					Fields: []FieldMapping{
+						{SourceField: "id", TargetField: "id", SourceType: "bigint", TargetType: "bigint", PrimaryKey: true},
+						{SourceField: "updated_at", TargetField: "updated_at", SourceType: "datetime", TargetType: "datetime"},
+					},
+				})
+			}
+			task.ConfigVersion++
+			task.UpdatedAt = now()
+			s.logLocked("system", "subscription_apply", "sync_task", task.ID, "订阅变更已生效："+job.Name)
+		}
+		return
+	}
+}
+
+func defaultCapabilityJobName(jobType CapabilityJobType, taskName string) string {
+	switch jobType {
+	case CapabilityStructure:
+		return taskName + " 结构迁移计划"
+	case CapabilityQuality:
+		return taskName + " 校验订正"
+	case CapabilitySubscription:
+		return taskName + " 订阅变更"
+	default:
+		return taskName + " 能力任务"
+	}
+}
+
+func defaultCapabilityMode(jobType CapabilityJobType) string {
+	switch jobType {
+	case CapabilityStructure:
+		return "schema_prepare"
+	case CapabilityQuality:
+		return "verify_then_correct"
+	case CapabilitySubscription:
+		return "add_tables"
+	default:
+		return "standard"
+	}
+}
+
+func defaultCapabilitySteps(jobType CapabilityJobType) []CapabilityStep {
+	var names []string
+	switch jobType {
+	case CapabilityStructure:
+		names = []string{"结构扫描", "差异分析", "DDL 生成", "目标执行", "持续同步"}
+	case CapabilityQuality:
+		names = []string{"抽样计划", "一次校验", "二次差异校验", "订正预览", "执行回写"}
+	case CapabilitySubscription:
+		names = []string{"读取订阅", "对象变更", "过滤预检", "发布版本", "增量生效"}
+	default:
+		names = []string{"创建", "执行", "完成"}
+	}
+	steps := make([]CapabilityStep, 0, len(names))
+	for index, name := range names {
+		status := "waiting"
+		if index == 0 {
+			status = "running"
+		}
+		steps = append(steps, CapabilityStep{
+			Name:   name,
+			Status: status,
+			Detail: capabilityStepDetail(jobType, name),
+		})
+	}
+	return steps
+}
+
+func completedCapabilitySteps(jobType CapabilityJobType) []CapabilityStep {
+	steps := defaultCapabilitySteps(jobType)
+	for index := range steps {
+		steps[index].Status = "done"
+	}
+	return steps
+}
+
+func capabilityStepDetail(jobType CapabilityJobType, name string) string {
+	switch jobType {
+	case CapabilityStructure:
+		return "检查源端结构、目标端缺失对象和类型转换风险"
+	case CapabilityQuality:
+		return "使用两轮差异校验降低同步延迟造成的误判"
+	case CapabilitySubscription:
+		return "在运行中链路上预检加表、删表、过滤和版本发布"
+	default:
+		return name
+	}
+}
+
+func buildCapabilitySummary(jobType CapabilityJobType, task SyncTask) CapabilityJobSummary {
+	tables := len(task.TableMappings)
+	columns := 0
+	for _, mapping := range task.TableMappings {
+		columns += len(mapping.Fields)
+	}
+	summary := CapabilityJobSummary{
+		Tables:    maxInt(1, tables),
+		Columns:   maxInt(1, columns),
+		RiskLevel: "low",
+	}
+	switch jobType {
+	case CapabilityStructure:
+		summary.DDLCount = maxInt(1, tables+columns/3)
+	case CapabilityQuality:
+		summary.DiffRows = maxInt(3, columns*2+tables)
+		if summary.DiffRows > 12 {
+			summary.RiskLevel = "medium"
+		}
+	case CapabilitySubscription:
+		summary.AddedTables = 1
+		summary.RiskLevel = "medium"
+	}
+	return summary
 }
 
 func (s *Store) recoverTaskAfterErrorLocked(taskID string, eventsPerSecond int) {
