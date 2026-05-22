@@ -9,6 +9,7 @@ import {
   Pause,
   Play,
   Stop,
+  Trash,
   WarningCircle
 } from "@phosphor-icons/react";
 import { StatusBadge } from "../components/StatusBadge";
@@ -70,7 +71,7 @@ function ActionButton({
 }
 
 function TaskFunctionPanel({ task, onChanged }: { task: SyncTask; onChanged: () => Promise<void> | void }) {
-  const [activeTool, setActiveTool] = useState<"params" | "position" | "export">("params");
+  const [activeTool, setActiveTool] = useState<"params" | "position" | "export" | "lifecycle">("params");
   const [params, setParams] = useState({
     batchSize: task.strategy.batchSize,
     retryTimes: task.strategy.retryTimes,
@@ -84,8 +85,11 @@ function TaskFunctionPanel({ task, onChanged }: { task: SyncTask; onChanged: () 
     serverId: ""
   });
   const [exported, setExported] = useState<TaskExport | null>(null);
+  const [confirmText, setConfirmText] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const canRerun = task.status === "stopped" || task.status === "failed";
+  const canDelete = task.status === "stopped" || task.status === "draft";
 
   const updateParams = async () => {
     setError(null);
@@ -130,10 +134,33 @@ function TaskFunctionPanel({ task, onChanged }: { task: SyncTask; onChanged: () 
     setMessage("任务配置已生成导出包");
   };
 
+  const rerunTask = async () => {
+    setError(null);
+    const response = await api.rerunTask(task.id).catch((requestError) => {
+      setError(requestError instanceof Error ? requestError.message : "重跑失败");
+      return null;
+    });
+    if (!response) return;
+    setMessage(response.message);
+    await onChanged();
+  };
+
+  const deleteTask = async () => {
+    setError(null);
+    const deleted = await api.deleteTask(task.id).then(() => true).catch((requestError) => {
+      setError(requestError instanceof Error ? requestError.message : "删除失败");
+      return false;
+    });
+    if (!deleted) return;
+    setMessage("任务已删除");
+    await onChanged();
+  };
+
   const toolItems = [
     { id: "params", label: "修改参数", icon: GearSix },
     { id: "position", label: "重置位点", icon: ArrowsClockwise },
-    { id: "export", label: "导出任务", icon: FileText }
+    { id: "export", label: "导出任务", icon: FileText },
+    { id: "lifecycle", label: "生命周期", icon: Stop }
   ] as const;
 
   return (
@@ -146,7 +173,7 @@ function TaskFunctionPanel({ task, onChanged }: { task: SyncTask; onChanged: () 
         <span className="rounded-full border border-line bg-white px-2 py-1 text-xs text-muted">v{task.configVersion}</span>
       </div>
 
-      <div className="mt-4 grid grid-cols-3 gap-2">
+      <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
         {toolItems.map((item) => {
           const Icon = item.icon;
           return (
@@ -265,6 +292,38 @@ function TaskFunctionPanel({ task, onChanged }: { task: SyncTask; onChanged: () 
           )}
         </div>
       )}
+
+      {activeTool === "lifecycle" && (
+        <div className="mt-4 grid gap-3">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <button
+              onClick={rerunTask}
+              disabled={!canRerun}
+              className="inline-flex items-center justify-center gap-2 rounded-lg bg-coal px-3 py-2 text-sm text-white transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45"
+            >
+              <ArrowsClockwise size={16} />
+              重跑任务
+            </button>
+            <button
+              onClick={deleteTask}
+              disabled={!canDelete || confirmText !== "DELETE_TASK"}
+              className="inline-flex items-center justify-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45"
+            >
+              <Trash size={16} />
+              删除任务
+            </button>
+          </div>
+          {!canRerun && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+              重跑前需要先停止任务，异常任务可直接重跑。
+            </div>
+          )}
+          <label className="block">
+            <span className="mb-2 block text-xs font-medium text-zinc-700">删除确认</span>
+            <input className="control font-mono" value={confirmText} onChange={(event) => setConfirmText(event.target.value)} placeholder="DELETE_TASK" />
+          </label>
+        </div>
+      )}
     </div>
   );
 }
@@ -293,6 +352,7 @@ export function TaskView({
 
   useEffect(() => {
     if (!selectedId && tasks[0]) setSelectedId(tasks[0].id);
+    if (selectedId && !tasks.some((task) => task.id === selectedId)) setSelectedId(tasks[0]?.id ?? null);
   }, [selectedId, tasks]);
 
   if (tasks.length === 0) {

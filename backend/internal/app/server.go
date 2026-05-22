@@ -446,7 +446,7 @@ func (s *Server) handleSyncTasks(response http.ResponseWriter, request *http.Req
 	case len(parts) == 2 && request.Method == http.MethodDelete:
 		deleted, err := s.store.DeleteTask(parts[1])
 		if err != nil {
-			writeError(response, http.StatusInternalServerError, err.Error())
+			writeError(response, http.StatusBadRequest, err.Error())
 			return
 		}
 		if !deleted {
@@ -460,6 +460,8 @@ func (s *Server) handleSyncTasks(response http.ResponseWriter, request *http.Req
 		s.updateTaskParameters(response, request, parts[1])
 	case len(parts) == 3 && parts[2] == "reset-position" && request.Method == http.MethodPost:
 		s.resetTaskPosition(response, request, parts[1])
+	case len(parts) == 3 && parts[2] == "rerun" && request.Method == http.MethodPost:
+		s.rerunTask(response, parts[1])
 	case len(parts) == 3 && parts[2] == "export" && request.Method == http.MethodGet:
 		s.exportTask(response, parts[1])
 	case len(parts) == 3 && parts[2] == "copy" && request.Method == http.MethodPost:
@@ -588,6 +590,25 @@ func (s *Server) resetTaskPosition(response http.ResponseWriter, request *http.R
 		Meta: map[string]string{
 			"binlogFile":     input.BinlogFile,
 			"binlogPosition": intToString(int(input.BinlogPosition)),
+		},
+	})
+}
+
+func (s *Server) rerunTask(response http.ResponseWriter, id string) {
+	task, ok, err := s.store.RerunTask(id)
+	if err != nil {
+		writeError(response, http.StatusBadRequest, err.Error())
+		return
+	}
+	if !ok {
+		writeError(response, http.StatusNotFound, "同步任务不存在")
+		return
+	}
+	writeJSON(response, http.StatusOK, TaskOperationResult{
+		Task:    s.taskResponse(task),
+		Message: "任务已按原配置重跑",
+		Meta: map[string]string{
+			"status": string(task.Status),
 		},
 	})
 }

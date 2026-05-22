@@ -109,6 +109,12 @@ export const api = {
   taskAction(id: string, action: "start" | "pause" | "resume" | "stop" | "copy") {
     return request<SyncTask>(`/sync-tasks/${id}/${action}`, { method: "POST" });
   },
+  rerunTask(id: string) {
+    return request<TaskOperationResult>(`/sync-tasks/${id}/rerun`, { method: "POST" });
+  },
+  deleteTask(id: string) {
+    return request<void>(`/sync-tasks/${id}`, { method: "DELETE" });
+  },
   updateTaskParams(id: string, input: TaskParameterPatch) {
     return request<TaskOperationResult>(`/sync-tasks/${id}/params`, {
       method: "POST",

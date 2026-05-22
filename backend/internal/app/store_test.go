@@ -520,3 +520,67 @@ func TestResetTaskPositionRequiresStoppedTask(t *testing.T) {
 		t.Fatalf("position not reset: %#v", runtime)
 	}
 }
+
+func TestRerunTaskRequiresStoppedOrFailedTask(t *testing.T) {
+	store := newTestStore(t)
+	snapshot := store.Snapshot()
+	task := snapshot.SyncTasks[0]
+
+	if _, _, err := store.RerunTask(task.ID); err == nil {
+		t.Fatal("expected rerun to require stopped or failed task")
+	}
+	if _, ok, err := store.TransitionTask(task.ID, "stop"); err != nil || !ok {
+		t.Fatalf("TransitionTask(stop) ok %v err %v", ok, err)
+	}
+	rerun, ok, err := store.RerunTask(task.ID)
+	if err != nil || !ok {
+		t.Fatalf("RerunTask() ok %v err %v", ok, err)
+	}
+	if rerun.Status != TaskFullSyncing && rerun.Status != TaskIncrementalRunning && rerun.Status != TaskPending {
+		t.Fatalf("unexpected rerun status: %s", rerun.Status)
+	}
+	runtime, ok := store.Runtime(task.ID)
+	if !ok {
+		t.Fatalf("runtime missing for task %s", task.ID)
+	}
+	if runtime.BinlogFile != "mysql-bin.000001" || runtime.BinlogPosition != 4 {
+		t.Fatalf("rerun did not reset binlog position: %#v", runtime)
+	}
+	if rerun.Status != TaskPending && runtime.NodeID == "" {
+		t.Fatalf("rerun task should be assigned when online nodes exist: %#v", runtime)
+	}
+	cluster := store.ClusterSnapshot()
+	for _, lease := range cluster.Leases {
+		if lease.TaskID == task.ID && lease.TakeoverCount != 0 {
+			t.Fatalf("rerun assignment should not count as failover: %#v", lease)
+		}
+	}
+}
+
+func TestDeleteTaskRequiresDraftOrStoppedTask(t *testing.T) {
+	store := newTestStore(t)
+	snapshot := store.Snapshot()
+	task := snapshot.SyncTasks[0]
+
+	if _, ok, err := store.TransitionTask(task.ID, "start"); err != nil || !ok {
+		t.Fatalf("TransitionTask(start) ok %v err %v", ok, err)
+	}
+	if deleted, err := store.DeleteTask(task.ID); err == nil || deleted {
+		t.Fatalf("expected running task delete to be rejected, deleted %v err %v", deleted, err)
+	}
+	if _, ok, err := store.TransitionTask(task.ID, "stop"); err != nil || !ok {
+		t.Fatalf("TransitionTask(stop) ok %v err %v", ok, err)
+	}
+	if deleted, err := store.DeleteTask(task.ID); err != nil || !deleted {
+		t.Fatalf("DeleteTask(stopped) deleted %v err %v", deleted, err)
+	}
+	if _, ok := store.GetTask(task.ID); ok {
+		t.Fatalf("deleted task %s still exists", task.ID)
+	}
+	cluster := store.ClusterSnapshot()
+	for _, lease := range cluster.Leases {
+		if lease.TaskID == task.ID {
+			t.Fatalf("deleted task still holds lease: %#v", lease)
+		}
+	}
+}

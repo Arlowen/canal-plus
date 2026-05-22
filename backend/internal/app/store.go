@@ -304,6 +304,9 @@ func (s *Store) DeleteTask(id string) (bool, error) {
 		if task.ID != id {
 			continue
 		}
+		if task.Status != TaskStopped && task.Status != TaskDraft {
+			return false, errors.New("只有草稿或已停止任务允许删除")
+		}
 		s.data.SyncTasks = append(s.data.SyncTasks[:index], s.data.SyncTasks[index+1:]...)
 		for runtimeIndex := range s.data.RuntimeStates {
 			if s.data.RuntimeStates[runtimeIndex].TaskID == id {
@@ -327,6 +330,58 @@ func (s *Store) CopyTask(id string) (SyncTask, bool, error) {
 	source.Status = TaskDraft
 	task, err := s.CreateTask(source)
 	return task, err == nil, err
+}
+
+func (s *Store) RerunTask(id string) (SyncTask, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.reconcileClusterLocked()
+	for index := range s.data.SyncTasks {
+		if s.data.SyncTasks[index].ID != id {
+			continue
+		}
+		task := &s.data.SyncTasks[index]
+		if task.Status != TaskStopped && task.Status != TaskFailed {
+			return SyncTask{}, false, errors.New("只有已停止或异常任务允许重跑")
+		}
+		timestamp := now()
+		runtime := s.ensureRuntimeLocked(id)
+		runtime.Phase = "idle"
+		runtime.FullSyncedRows = 0
+		if runtime.FullTotalRows <= 0 {
+			runtime.FullTotalRows = int64(50000 + rand.Intn(90000))
+		}
+		runtime.DelaySeconds = 0
+		runtime.EventsPerSecond = 0
+		runtime.BinlogFile = "mysql-bin.000001"
+		runtime.BinlogPosition = 4
+		runtime.NodeID = ""
+		runtime.LeaseExpiresAt = ""
+		runtime.StartedAt = timestamp
+		runtime.LastErrorID = ""
+		runtime.UpdatedAt = timestamp
+		s.removeLeaseLocked(id)
+
+		if task.Strategy.InitMode == "incremental_only" {
+			task.Status = TaskIncrementalRunning
+			runtime.Phase = "incremental"
+			runtime.FullSyncedRows = runtime.FullTotalRows
+		} else {
+			task.Status = TaskFullSyncing
+			runtime.Phase = "full"
+		}
+		if node := s.selectNodeLocked(""); node != nil {
+			s.assignTaskToNodeLocked(runtime, node.ID, "任务重跑分配", false)
+		} else {
+			task.Status = TaskPending
+			runtime.Phase = "idle"
+		}
+		task.UpdatedAt = timestamp
+		s.recountNodeTasksLocked()
+		s.logLocked("admin", "rerun", "sync_task", id, "重跑同步任务 "+task.Name)
+		return cloneJSON(*task), true, s.saveLocked()
+	}
+	return SyncTask{}, false, nil
 }
 
 func (s *Store) TransitionTask(id string, action string) (SyncTask, bool, error) {
@@ -372,7 +427,7 @@ func (s *Store) TransitionTask(id string, action string) (SyncTask, bool, error)
 		}
 		if leaseRequired(task.Status) && runtime.NodeID == "" {
 			if node := s.selectNodeLocked(""); node != nil {
-				s.assignTaskToNodeLocked(runtime, node.ID, "任务状态恢复分配")
+				s.assignTaskToNodeLocked(runtime, node.ID, "任务状态恢复分配", false)
 			}
 		}
 		runtime.UpdatedAt = timestamp
@@ -637,7 +692,7 @@ func (s *Store) RebalanceCluster() (ClusterSnapshot, error) {
 			continue
 		}
 		if currentNode == nil || currentNode.Status != NodeOnline || targetNode.ID != runtime.NodeID {
-			s.assignTaskToNodeLocked(runtime, targetNode.ID, "任务重新均衡")
+			s.assignTaskToNodeLocked(runtime, targetNode.ID, "任务重新均衡", false)
 		} else {
 			runtime.LeaseExpiresAt = leaseExpiry()
 			s.upsertLeaseLocked(runtime.TaskID, runtime.NodeID, false)
@@ -898,7 +953,7 @@ func (s *Store) reconcileClusterLocked() {
 			s.removeLeaseLocked(task.ID)
 			continue
 		}
-		s.assignTaskToNodeLocked(runtime, target.ID, "节点故障自动接管")
+		s.assignTaskToNodeLocked(runtime, target.ID, "节点故障自动接管", true)
 	}
 	s.recountNodeTasksLocked()
 }
@@ -915,19 +970,21 @@ func (s *Store) markStaleNodesLocked() {
 	}
 }
 
-func (s *Store) assignTaskToNodeLocked(runtime *TaskRuntimeState, nodeID string, reason string) {
+func (s *Store) assignTaskToNodeLocked(runtime *TaskRuntimeState, nodeID string, reason string, takeover bool) {
 	if runtime.NodeID == nodeID && !expired(runtime.LeaseExpiresAt) {
 		return
 	}
 	previousNodeID := runtime.NodeID
 	runtime.NodeID = nodeID
 	runtime.LeaseExpiresAt = leaseExpiry()
-	runtime.FailoverCount++
-	runtime.LastTakeoverAt = now()
+	if takeover {
+		runtime.FailoverCount++
+		runtime.LastTakeoverAt = now()
+	}
 	runtime.UpdatedAt = now()
-	lease := s.upsertLeaseLocked(runtime.TaskID, nodeID, true)
+	lease := s.upsertLeaseLocked(runtime.TaskID, nodeID, takeover)
 	detail := reason + "：" + runtime.TaskID + " 从 " + valueOr(previousNodeID, "unassigned") + " 切换到 " + nodeID
-	if lease.TakeoverCount > 0 {
+	if takeover && lease.TakeoverCount > 0 {
 		s.logLocked("system", "failover", "sync_task", runtime.TaskID, detail)
 	}
 	s.recountNodeTasksLocked()
