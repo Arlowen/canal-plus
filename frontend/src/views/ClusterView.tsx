@@ -9,6 +9,7 @@ import {
   ShieldCheck,
   WarningCircle
 } from "@phosphor-icons/react";
+import { PermissionNotice } from "../components/PermissionNotice";
 import { api } from "../lib/api";
 import { cx, formatDate, secondsSince } from "../lib/format";
 import type { ClusterNode, ClusterSnapshot, SyncTask } from "../types/api";
@@ -53,8 +54,19 @@ function ClusterStat({ label, value, detail, tone }: { label: string; value: str
   );
 }
 
-export function ClusterView({ cluster, tasks, onChanged }: { cluster: ClusterSnapshot | null; tasks: SyncTask[]; onChanged: () => Promise<void> | void }) {
+export function ClusterView({
+  cluster,
+  tasks,
+  canManage,
+  onChanged
+}: {
+  cluster: ClusterSnapshot | null;
+  tasks: SyncTask[];
+  canManage: boolean;
+  onChanged: () => Promise<void> | void;
+}) {
   const [busyNode, setBusyNode] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const nodes = cluster?.nodes ?? [];
   const leases = cluster?.leases ?? [];
   const taskById = new Map(tasks.map((task) => [task.id, task]));
@@ -63,20 +75,34 @@ export function ClusterView({ cluster, tasks, onChanged }: { cluster: ClusterSna
   const heartbeatTimeoutSeconds = cluster?.heartbeatTimeoutSeconds ?? 30;
 
   const runNodeAction = async (node: ClusterNode, action: "online" | "offline" | "drain" | "heartbeat") => {
+    if (!canManage) {
+      setError("节点上下线和排空需要管理员权限");
+      return;
+    }
     setBusyNode(node.id);
+    setError(null);
     try {
       await api.nodeAction(node.id, action);
       await onChanged();
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "节点操作失败");
     } finally {
       setBusyNode(null);
     }
   };
 
   const rebalance = async () => {
+    if (!canManage) {
+      setError("重新均衡需要管理员权限");
+      return;
+    }
     setBusyNode("rebalance");
+    setError(null);
     try {
       await api.rebalanceCluster();
       await onChanged();
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "重新均衡失败");
     } finally {
       setBusyNode(null);
     }
@@ -92,13 +118,26 @@ export function ClusterView({ cluster, tasks, onChanged }: { cluster: ClusterSna
           </div>
           <button
             onClick={rebalance}
-            disabled={busyNode === "rebalance"}
-            className="inline-flex items-center justify-center gap-2 rounded-lg bg-coal px-3 py-2 text-sm text-white transition active:scale-[0.98] disabled:opacity-50"
+            disabled={!canManage || busyNode === "rebalance"}
+            className="inline-flex items-center justify-center gap-2 rounded-lg bg-coal px-3 py-2 text-sm text-white transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
           >
             <ArrowsClockwise size={16} />
             重新均衡
           </button>
         </div>
+
+        {(!canManage || error) && (
+          <div className="grid gap-3 border-b border-line p-5">
+            {!canManage && (
+              <PermissionNotice compact description="当前角色可查看节点、租约和自动接管状态；节点上下线、排空和重新均衡需要管理员权限。" />
+            )}
+            {error && (
+              <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                {error}
+              </div>
+            )}
+          </div>
+        )}
 
         <div className="grid gap-3 border-b border-line p-5 sm:grid-cols-2 xl:grid-cols-4">
           <ClusterStat label="在线节点" value={`${onlineNodes}/${nodes.length}`} detail="可承载任务的 worker" tone={degradedNodes === 0 ? "ok" : undefined} />
@@ -153,9 +192,9 @@ export function ClusterView({ cluster, tasks, onChanged }: { cluster: ClusterSna
                 </div>
 
                 <div className="mt-4 grid grid-cols-3 gap-2">
-                  <button onClick={() => runNodeAction(node, "offline")} disabled={busyNode === node.id || node.status === "offline"} className="node-action">下线</button>
-                  <button onClick={() => runNodeAction(node, "drain")} disabled={busyNode === node.id || node.status === "draining"} className="node-action">排空</button>
-                  <button onClick={() => runNodeAction(node, "online")} disabled={busyNode === node.id || node.status === "online"} className="node-action">恢复</button>
+                  <button onClick={() => runNodeAction(node, "offline")} disabled={!canManage || busyNode === node.id || node.status === "offline"} className="node-action">下线</button>
+                  <button onClick={() => runNodeAction(node, "drain")} disabled={!canManage || busyNode === node.id || node.status === "draining"} className="node-action">排空</button>
+                  <button onClick={() => runNodeAction(node, "online")} disabled={!canManage || busyNode === node.id || node.status === "online"} className="node-action">恢复</button>
                 </div>
               </div>
             );

@@ -13,6 +13,7 @@ import {
   WarningCircle,
   XCircle
 } from "@phosphor-icons/react";
+import { PermissionNotice } from "../components/PermissionNotice";
 import { api } from "../lib/api";
 import { cx, formatDateTime } from "../lib/format";
 import type { Datasource, DatasourcePurpose, DatasourceStatus, SyncTask } from "../types/api";
@@ -94,7 +95,7 @@ function Info({ label, value, mono }: { label: string; value: string; mono?: boo
   );
 }
 
-function EmptyDatasourceState({ onCreate }: { onCreate: () => void }) {
+function EmptyDatasourceState({ onCreate, canManage }: { onCreate: () => void; canManage: boolean }) {
   return (
     <div className="rounded-lg border border-dashed border-line bg-[#fcfcf8] p-8 text-center">
       <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-lg border border-line bg-white text-zinc-500">
@@ -104,11 +105,17 @@ function EmptyDatasourceState({ onCreate }: { onCreate: () => void }) {
       <div className="mt-1 text-sm text-muted">创建源端和目标端连接后即可配置同步任务</div>
       <button
         onClick={onCreate}
-        className="mt-4 inline-flex items-center justify-center gap-2 rounded-lg bg-coal px-3 py-2 text-sm text-white transition active:scale-[0.98]"
+        disabled={!canManage}
+        className="mt-4 inline-flex items-center justify-center gap-2 rounded-lg bg-coal px-3 py-2 text-sm text-white transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45"
       >
         <Plus size={16} />
         新增数据源
       </button>
+      {!canManage && (
+        <div className="mx-auto mt-4 max-w-md">
+          <PermissionNotice compact description="当前角色可查看和测试连接；新增数据源需要管理员权限。" />
+        </div>
+      )}
     </div>
   );
 }
@@ -214,10 +221,12 @@ function DatasourceForm({
 export function DatasourceView({
   datasources,
   tasks,
+  canManage,
   onChanged
 }: {
   datasources: Datasource[];
   tasks: SyncTask[];
+  canManage: boolean;
   onChanged: () => Promise<void> | void;
 }) {
   const [selectedId, setSelectedId] = useState<string | null>(datasources[0]?.id ?? null);
@@ -271,6 +280,10 @@ export function DatasourceView({
   };
 
   const openCreate = () => {
+    if (!canManage) {
+      setError("新增数据源需要管理员权限");
+      return;
+    }
     setFormMode("create");
     setForm({ ...emptyForm });
     setError(null);
@@ -278,6 +291,10 @@ export function DatasourceView({
   };
 
   const openEdit = (datasource: Datasource) => {
+    if (!canManage) {
+      setError("编辑数据源需要管理员权限");
+      return;
+    }
     setFormMode("edit");
     setForm({
       name: datasource.name,
@@ -300,6 +317,10 @@ export function DatasourceView({
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
+    if (!canManage) {
+      setError("保存数据源需要管理员权限");
+      return;
+    }
     setProcessing("save");
     setError(null);
     setMessage(null);
@@ -340,6 +361,10 @@ export function DatasourceView({
   };
 
   const deleteSelected = async () => {
+    if (!canManage) {
+      setError("删除数据源需要管理员权限");
+      return;
+    }
     if (!selected || selectedUsage > 0 || confirmName !== selected.name) return;
     setProcessing(`delete:${selected.id}`);
     setMessage(null);
@@ -359,16 +384,16 @@ export function DatasourceView({
   if (datasources.length === 0) {
     return (
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_400px]">
-        <EmptyDatasourceState onCreate={openCreate} />
+        <EmptyDatasourceState onCreate={openCreate} canManage={canManage} />
         <aside>
-          {formMode === "create" && (
+          {canManage && formMode === "create" && (
             <DatasourceForm
               mode="create"
               form={form}
               onFormChange={setForm}
               onSubmit={submit}
               onCancel={closeForm}
-              disabled={processing === "save"}
+              disabled={processing === "save" || !canManage}
             />
           )}
         </aside>
@@ -435,7 +460,8 @@ export function DatasourceView({
             <div className="flex items-end">
               <button
                 onClick={openCreate}
-                className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-coal px-3 py-2 text-sm text-white transition active:scale-[0.98] lg:w-auto"
+                disabled={!canManage}
+                className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-coal px-3 py-2 text-sm text-white transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45 lg:w-auto"
               >
                 <Plus size={16} />
                 新增
@@ -519,6 +545,9 @@ export function DatasourceView({
       </section>
 
       <aside className="space-y-4">
+        {!canManage && (
+          <PermissionNotice compact description="当前角色可测试连接和查看引用任务；新增、编辑、删除数据源需要管理员权限。" />
+        )}
         {message && (
           <div className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">
             <CheckCircle size={16} />
@@ -539,7 +568,7 @@ export function DatasourceView({
             onFormChange={setForm}
             onSubmit={submit}
             onCancel={closeForm}
-            disabled={processing === "save"}
+            disabled={processing === "save" || !canManage}
           />
         ) : selected ? (
           <div className="rounded-xl border border-line bg-white p-5 shadow-panel">
@@ -593,7 +622,8 @@ export function DatasourceView({
               </button>
               <button
                 onClick={() => openEdit(selected)}
-                className="inline-flex items-center justify-center gap-2 rounded-lg border border-line bg-white px-3 py-2 text-sm text-zinc-700 transition hover:bg-zinc-50 active:scale-[0.98]"
+                disabled={!canManage}
+                className="inline-flex items-center justify-center gap-2 rounded-lg border border-line bg-white px-3 py-2 text-sm text-zinc-700 transition hover:bg-zinc-50 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45"
               >
                 <PencilSimple size={16} />
                 编辑
@@ -612,12 +642,12 @@ export function DatasourceView({
                 className="control mt-3 border-red-200"
                 value={confirmName}
                 onChange={(event) => setConfirmName(event.target.value)}
-                disabled={selectedUsage > 0}
+                disabled={!canManage || selectedUsage > 0}
                 placeholder={selected.name}
               />
               <button
                 onClick={deleteSelected}
-                disabled={selectedUsage > 0 || confirmName !== selected.name || processing === `delete:${selected.id}`}
+                disabled={!canManage || selectedUsage > 0 || confirmName !== selected.name || processing === `delete:${selected.id}`}
                 className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-lg border border-red-200 bg-white px-3 py-2 text-sm text-red-700 transition hover:bg-red-50 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45"
               >
                 <Trash size={16} />

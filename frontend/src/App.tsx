@@ -21,8 +21,10 @@ import {
   XCircle
 } from "@phosphor-icons/react";
 import { StatusBadge } from "./components/StatusBadge";
+import { PermissionNotice } from "./components/PermissionNotice";
 import { api, clearToken, getToken, setToken } from "./lib/api";
 import { cx, formatDate, formatNumber } from "./lib/format";
+import { canManageConfig, roleLabel } from "./lib/permissions";
 import { CapabilityView } from "./views/CapabilityView";
 import { ClusterView } from "./views/ClusterView";
 import { DatasourceView } from "./views/DatasourceView";
@@ -93,6 +95,7 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const canManage = canManageConfig(user);
 
   const refresh = useCallback(async (quiet = false) => {
     if (!getToken()) return;
@@ -160,9 +163,18 @@ function App() {
   };
 
   const handleTaskAction = async (task: SyncTask, action: "start" | "pause" | "resume" | "stop" | "copy") => {
-    await api.taskAction(task.id, action);
-    setNotice(action === "copy" ? "任务已复制为草稿" : "任务状态已更新");
-    await refresh(true);
+    if (action === "copy" && !canManage) {
+      setError("复制任务会创建新配置，需要管理员权限");
+      return;
+    }
+    setError(null);
+    try {
+      await api.taskAction(task.id, action);
+      setNotice(action === "copy" ? "任务已复制为草稿" : "任务状态已更新");
+      await refresh(true);
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "任务操作失败");
+    }
   };
 
   if (!tokenState) {
@@ -250,29 +262,36 @@ function App() {
                 <Dashboard summary={summary} tasks={tasks} errors={errors} logs={logs} cluster={cluster} />
               )}
               {view === "datasources" && (
-                <DatasourceView datasources={datasources} tasks={tasks} onChanged={() => refresh(true)} />
+                <DatasourceView datasources={datasources} tasks={tasks} canManage={canManage} onChanged={() => refresh(true)} />
               )}
               {view === "tasks" && (
-                <TaskView tasks={tasks} errors={errors} logs={logs} cluster={cluster} onAction={handleTaskAction} onChanged={() => refresh(true)} />
+                <TaskView tasks={tasks} errors={errors} logs={logs} cluster={cluster} canManage={canManage} onAction={handleTaskAction} onChanged={() => refresh(true)} />
               )}
               {view === "wizard" && (
-                <TaskWizard datasources={datasources} onCreated={() => {
-                  setNotice("同步任务已创建");
-                  setView("tasks");
-                  refresh(true);
-                }} />
+                canManage ? (
+                  <TaskWizard datasources={datasources} onCreated={() => {
+                    setNotice("同步任务已创建");
+                    setView("tasks");
+                    refresh(true);
+                  }} />
+                ) : (
+                  <PermissionNotice
+                    title="新建任务需要管理员"
+                    description="运维操作员可以启停任务、处理错误和查看运行态；新增同步链路会改变配置版本，需要管理员执行。"
+                  />
+                )
               )}
               {view === "structure" && (
-                <CapabilityView mode="structure" tasks={tasks} datasources={datasources} jobs={capabilityJobs} onChanged={() => refresh(true)} />
+                <CapabilityView mode="structure" tasks={tasks} datasources={datasources} jobs={capabilityJobs} canManage={canManage} onChanged={() => refresh(true)} />
               )}
               {view === "quality" && (
-                <CapabilityView mode="quality" tasks={tasks} datasources={datasources} jobs={capabilityJobs} onChanged={() => refresh(true)} />
+                <CapabilityView mode="quality" tasks={tasks} datasources={datasources} jobs={capabilityJobs} canManage={canManage} onChanged={() => refresh(true)} />
               )}
               {view === "subscription" && (
-                <CapabilityView mode="subscription" tasks={tasks} datasources={datasources} jobs={capabilityJobs} onChanged={() => refresh(true)} />
+                <CapabilityView mode="subscription" tasks={tasks} datasources={datasources} jobs={capabilityJobs} canManage={canManage} onChanged={() => refresh(true)} />
               )}
               {view === "cluster" && (
-                <ClusterView cluster={cluster} tasks={tasks} onChanged={() => refresh(true)} />
+                <ClusterView cluster={cluster} tasks={tasks} canManage={canManage} onChanged={() => refresh(true)} />
               )}
               {view === "errors" && (
                 <ErrorCenterView errors={errors} tasks={tasks} onChanged={() => refresh(true)} />
@@ -281,7 +300,7 @@ function App() {
                 <OperationLogsView logs={logs} />
               )}
               {view === "settings" && (
-                <SettingsView alertRules={alertRules} evaluations={alertEvaluations} tasks={tasks} onChanged={() => refresh(true)} />
+                <SettingsView alertRules={alertRules} evaluations={alertEvaluations} tasks={tasks} canManage={canManage} onChanged={() => refresh(true)} />
               )}
             </>
           )}
@@ -313,11 +332,6 @@ function Header({ view, user, onRefresh }: { view: View; user: User | null; onRe
       </div>
     </div>
   );
-}
-
-function roleLabel(role?: User["role"]) {
-  if (role === "admin") return "管理员";
-  return "运维操作员";
 }
 
 function LoginScreen({ onLogin }: { onLogin: (username: string, password: string) => Promise<void> }) {

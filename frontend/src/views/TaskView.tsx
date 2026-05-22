@@ -15,6 +15,7 @@ import {
   Trash,
   WarningCircle
 } from "@phosphor-icons/react";
+import { PermissionNotice } from "../components/PermissionNotice";
 import { StatusBadge } from "../components/StatusBadge";
 import { api } from "../lib/api";
 import { cx } from "../lib/format";
@@ -151,8 +152,10 @@ function ActionButton({
   );
 }
 
-function TaskFunctionPanel({ task, onChanged }: { task: SyncTask; onChanged: () => Promise<void> | void }) {
-  const [activeTool, setActiveTool] = useState<"params" | "position" | "export" | "lifecycle">("params");
+type TaskTool = "params" | "position" | "export" | "lifecycle";
+
+function TaskFunctionPanel({ task, canManage, onChanged }: { task: SyncTask; canManage: boolean; onChanged: () => Promise<void> | void }) {
+  const [activeTool, setActiveTool] = useState<TaskTool>(canManage ? "params" : "export");
   const [params, setParams] = useState({
     batchSize: task.strategy.batchSize,
     retryTimes: task.strategy.retryTimes,
@@ -172,7 +175,15 @@ function TaskFunctionPanel({ task, onChanged }: { task: SyncTask; onChanged: () 
   const canRerun = task.status === "stopped" || task.status === "failed";
   const canDelete = task.status === "stopped" || task.status === "draft";
 
+  useEffect(() => {
+    if (!canManage && activeTool !== "export") setActiveTool("export");
+  }, [activeTool, canManage]);
+
   const updateParams = async () => {
+    if (!canManage) {
+      setError("修改任务参数需要管理员权限");
+      return;
+    }
     setError(null);
     const response = await api.updateTaskParams(task.id, {
       batchSize: Number(params.batchSize),
@@ -190,6 +201,10 @@ function TaskFunctionPanel({ task, onChanged }: { task: SyncTask; onChanged: () 
   };
 
   const resetPosition = async () => {
+    if (!canManage) {
+      setError("重置同步位点需要管理员权限");
+      return;
+    }
     setError(null);
     const response = await api.resetTaskPosition(task.id, {
       binlogFile: position.binlogFile,
@@ -216,6 +231,10 @@ function TaskFunctionPanel({ task, onChanged }: { task: SyncTask; onChanged: () 
   };
 
   const rerunTask = async () => {
+    if (!canManage) {
+      setError("重跑任务需要管理员权限");
+      return;
+    }
     setError(null);
     const response = await api.rerunTask(task.id).catch((requestError) => {
       setError(requestError instanceof Error ? requestError.message : "重跑失败");
@@ -227,6 +246,10 @@ function TaskFunctionPanel({ task, onChanged }: { task: SyncTask; onChanged: () 
   };
 
   const deleteTask = async () => {
+    if (!canManage) {
+      setError("删除任务需要管理员权限");
+      return;
+    }
     setError(null);
     const deleted = await api.deleteTask(task.id).then(() => true).catch((requestError) => {
       setError(requestError instanceof Error ? requestError.message : "删除失败");
@@ -238,10 +261,10 @@ function TaskFunctionPanel({ task, onChanged }: { task: SyncTask; onChanged: () 
   };
 
   const toolItems = [
-    { id: "params", label: "修改参数", icon: GearSix },
-    { id: "position", label: "重置位点", icon: ArrowsClockwise },
-    { id: "export", label: "导出任务", icon: FileText },
-    { id: "lifecycle", label: "生命周期", icon: Stop }
+    { id: "params", label: "修改参数", icon: GearSix, adminOnly: true },
+    { id: "position", label: "重置位点", icon: ArrowsClockwise, adminOnly: true },
+    { id: "export", label: "导出任务", icon: FileText, adminOnly: false },
+    { id: "lifecycle", label: "生命周期", icon: Stop, adminOnly: true }
   ] as const;
 
   return (
@@ -257,12 +280,16 @@ function TaskFunctionPanel({ task, onChanged }: { task: SyncTask; onChanged: () 
       <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
         {toolItems.map((item) => {
           const Icon = item.icon;
+          const disabled = item.adminOnly && !canManage;
           return (
             <button
               key={item.id}
-              onClick={() => setActiveTool(item.id)}
+              onClick={() => {
+                if (!disabled) setActiveTool(item.id);
+              }}
+              disabled={disabled}
               className={cx(
-                "inline-flex items-center justify-center gap-2 rounded-lg border px-2 py-2 text-sm transition active:scale-[0.98]",
+                "inline-flex items-center justify-center gap-2 rounded-lg border px-2 py-2 text-sm transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45",
                 activeTool === item.id ? "border-coal bg-coal text-white" : "border-line bg-white text-zinc-700 hover:bg-zinc-50"
               )}
             >
@@ -272,6 +299,12 @@ function TaskFunctionPanel({ task, onChanged }: { task: SyncTask; onChanged: () 
           );
         })}
       </div>
+
+      {!canManage && (
+        <div className="mt-4">
+          <PermissionNotice compact description="当前角色可启停任务和导出配置；参数、位点、重跑、删除等配置动作需要管理员权限。" />
+        </div>
+      )}
 
       {message && <div className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">{message}</div>}
       {error && (
@@ -286,21 +319,21 @@ function TaskFunctionPanel({ task, onChanged }: { task: SyncTask; onChanged: () 
           <div className="grid gap-3 sm:grid-cols-3">
             <label className="block">
               <span className="mb-2 block text-xs font-medium text-zinc-700">批量写入</span>
-              <input className="control" type="number" value={params.batchSize} onChange={(event) => setParams({ ...params, batchSize: Number(event.target.value) })} />
+              <input className="control" type="number" value={params.batchSize} disabled={!canManage} onChange={(event) => setParams({ ...params, batchSize: Number(event.target.value) })} />
             </label>
             <label className="block">
               <span className="mb-2 block text-xs font-medium text-zinc-700">重试次数</span>
-              <input className="control" type="number" value={params.retryTimes} onChange={(event) => setParams({ ...params, retryTimes: Number(event.target.value) })} />
+              <input className="control" type="number" value={params.retryTimes} disabled={!canManage} onChange={(event) => setParams({ ...params, retryTimes: Number(event.target.value) })} />
             </label>
             <label className="block">
               <span className="mb-2 block text-xs font-medium text-zinc-700">重试间隔</span>
-              <input className="control" type="number" value={params.retryIntervalSeconds} onChange={(event) => setParams({ ...params, retryIntervalSeconds: Number(event.target.value) })} />
+              <input className="control" type="number" value={params.retryIntervalSeconds} disabled={!canManage} onChange={(event) => setParams({ ...params, retryIntervalSeconds: Number(event.target.value) })} />
             </label>
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="block">
               <span className="mb-2 block text-xs font-medium text-zinc-700">冲突策略</span>
-              <select className="control" value={params.conflictStrategy} onChange={(event) => setParams({ ...params, conflictStrategy: event.target.value as SyncStrategy["conflictStrategy"] })}>
+              <select className="control" value={params.conflictStrategy} disabled={!canManage} onChange={(event) => setParams({ ...params, conflictStrategy: event.target.value as SyncStrategy["conflictStrategy"] })}>
                 <option value="overwrite">覆盖</option>
                 <option value="ignore">忽略</option>
                 <option value="fail">失败停止</option>
@@ -308,14 +341,14 @@ function TaskFunctionPanel({ task, onChanged }: { task: SyncTask; onChanged: () 
             </label>
             <label className="block">
               <span className="mb-2 block text-xs font-medium text-zinc-700">删除策略</span>
-              <select className="control" value={params.deleteStrategy} onChange={(event) => setParams({ ...params, deleteStrategy: event.target.value as SyncStrategy["deleteStrategy"] })}>
+              <select className="control" value={params.deleteStrategy} disabled={!canManage} onChange={(event) => setParams({ ...params, deleteStrategy: event.target.value as SyncStrategy["deleteStrategy"] })}>
                 <option value="physical">物理删除</option>
                 <option value="soft_delete">软删除字段更新</option>
                 <option value="ignore">忽略删除</option>
               </select>
             </label>
           </div>
-          <button onClick={updateParams} className="inline-flex items-center justify-center gap-2 rounded-lg bg-coal px-3 py-2 text-sm text-white transition active:scale-[0.98]">
+          <button onClick={updateParams} disabled={!canManage} className="inline-flex items-center justify-center gap-2 rounded-lg bg-coal px-3 py-2 text-sm text-white transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45">
             <GearSix size={16} />
             生效配置
           </button>
@@ -331,21 +364,21 @@ function TaskFunctionPanel({ task, onChanged }: { task: SyncTask; onChanged: () 
           )}
           <label className="block">
             <span className="mb-2 block text-xs font-medium text-zinc-700">Binlog 文件</span>
-            <input className="control font-mono" value={position.binlogFile} onChange={(event) => setPosition({ ...position, binlogFile: event.target.value })} />
+            <input className="control font-mono" value={position.binlogFile} disabled={!canManage} onChange={(event) => setPosition({ ...position, binlogFile: event.target.value })} />
           </label>
           <div className="grid gap-3 sm:grid-cols-[1fr_140px]">
             <label className="block">
               <span className="mb-2 block text-xs font-medium text-zinc-700">Position</span>
-              <input className="control font-mono" type="number" value={position.binlogPosition} onChange={(event) => setPosition({ ...position, binlogPosition: Number(event.target.value) })} />
+              <input className="control font-mono" type="number" value={position.binlogPosition} disabled={!canManage} onChange={(event) => setPosition({ ...position, binlogPosition: Number(event.target.value) })} />
             </label>
             <label className="block">
               <span className="mb-2 block text-xs font-medium text-zinc-700">Server ID</span>
-              <input className="control font-mono" value={position.serverId} onChange={(event) => setPosition({ ...position, serverId: event.target.value })} />
+              <input className="control font-mono" value={position.serverId} disabled={!canManage} onChange={(event) => setPosition({ ...position, serverId: event.target.value })} />
             </label>
           </div>
           <button
             onClick={resetPosition}
-            disabled={task.status !== "stopped"}
+            disabled={!canManage || task.status !== "stopped"}
             className="inline-flex items-center justify-center gap-2 rounded-lg bg-coal px-3 py-2 text-sm text-white transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45"
           >
             <ArrowsClockwise size={16} />
@@ -379,7 +412,7 @@ function TaskFunctionPanel({ task, onChanged }: { task: SyncTask; onChanged: () 
           <div className="grid gap-3 sm:grid-cols-2">
             <button
               onClick={rerunTask}
-              disabled={!canRerun}
+              disabled={!canManage || !canRerun}
               className="inline-flex items-center justify-center gap-2 rounded-lg bg-coal px-3 py-2 text-sm text-white transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45"
             >
               <ArrowsClockwise size={16} />
@@ -387,7 +420,7 @@ function TaskFunctionPanel({ task, onChanged }: { task: SyncTask; onChanged: () 
             </button>
             <button
               onClick={deleteTask}
-              disabled={!canDelete || confirmText !== "DELETE_TASK"}
+              disabled={!canManage || !canDelete || confirmText !== "DELETE_TASK"}
               className="inline-flex items-center justify-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45"
             >
               <Trash size={16} />
@@ -401,7 +434,7 @@ function TaskFunctionPanel({ task, onChanged }: { task: SyncTask; onChanged: () 
           )}
           <label className="block">
             <span className="mb-2 block text-xs font-medium text-zinc-700">删除确认</span>
-            <input className="control font-mono" value={confirmText} onChange={(event) => setConfirmText(event.target.value)} placeholder="DELETE_TASK" />
+            <input className="control font-mono" value={confirmText} disabled={!canManage} onChange={(event) => setConfirmText(event.target.value)} placeholder="DELETE_TASK" />
           </label>
         </div>
       )}
@@ -414,6 +447,7 @@ export function TaskView({
   errors,
   logs,
   cluster,
+  canManage,
   onAction,
   onChanged
 }: {
@@ -421,6 +455,7 @@ export function TaskView({
   errors: ErrorEvent[];
   logs: OperationLog[];
   cluster: ClusterSnapshot | null;
+  canManage: boolean;
   onAction: (task: SyncTask, action: TaskAction) => Promise<void>;
   onChanged: () => Promise<void> | void;
 }) {
@@ -650,12 +685,18 @@ export function TaskView({
             <ActionButton icon={Pause} label="暂停" onClick={() => onAction(selected, "pause")} disabled={selected.status === "paused" || selected.status === "stopped"} />
             <ActionButton icon={Play} label="恢复" onClick={() => onAction(selected, "resume")} disabled={selected.status !== "paused" && selected.status !== "failed"} />
             <ActionButton icon={Stop} label="停止" onClick={() => onAction(selected, "stop")} disabled={selected.status === "stopped"} />
-            <ActionButton icon={Copy} label="复制" onClick={() => onAction(selected, "copy")} />
+            <ActionButton icon={Copy} label="复制" onClick={() => onAction(selected, "copy")} disabled={!canManage} />
           </div>
+
+          {!canManage && (
+            <div className="mt-4">
+              <PermissionNotice compact description="当前角色可启停任务、查看运行态和处理异常；复制任务会创建新配置，需要管理员权限。" />
+            </div>
+          )}
 
           <TaskInsightPanel task={selected} lease={selectedLease} node={selectedNode} errors={selectedErrors} logs={selectedLogs} />
 
-          <TaskFunctionPanel key={selected.id} task={selected} onChanged={onChanged} />
+          <TaskFunctionPanel key={selected.id} task={selected} canManage={canManage} onChanged={onChanged} />
         </aside>
       )}
     </div>

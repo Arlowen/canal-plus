@@ -10,6 +10,7 @@ import {
   Stack,
   WarningCircle
 } from "@phosphor-icons/react";
+import { PermissionNotice } from "../components/PermissionNotice";
 import { StatusBadge } from "../components/StatusBadge";
 import { api } from "../lib/api";
 import { cx, formatDate } from "../lib/format";
@@ -94,12 +95,14 @@ export function CapabilityView({
   tasks,
   datasources,
   jobs,
+  canManage,
   onChanged
 }: {
   mode: CapabilityJobType;
   tasks: SyncTask[];
   datasources: Datasource[];
   jobs: CapabilityJob[];
+  canManage: boolean;
   onChanged: () => Promise<void> | void;
 }) {
   const config = capabilityConfig[mode];
@@ -125,6 +128,10 @@ export function CapabilityView({
   }, [availableTasks, selectedTaskId]);
 
   const createJob = async () => {
+    if (!canManage) {
+      setError("创建能力任务需要管理员权限");
+      return;
+    }
     if (!selectedTask) {
       setError("请先创建可执行的同步任务");
       return;
@@ -177,12 +184,19 @@ export function CapabilityView({
           </div>
         )}
 
+        {!canManage && (
+          <div className="mt-5">
+            <PermissionNotice compact description="当前角色可查看执行结果并重跑已有能力任务；生成结构、校验或订阅变更计划需要管理员权限。" />
+          </div>
+        )}
+
         <div className="mt-6 grid gap-4">
           <label className="block">
             <span className="mb-2 block text-sm font-medium text-zinc-700">关联任务</span>
             <select
               className="control"
               value={selectedTask?.id || ""}
+              disabled={!canManage}
               onChange={(event) => setSelectedTaskId(event.target.value)}
             >
               {availableTasks.map((task) => (
@@ -195,9 +209,12 @@ export function CapabilityView({
             {config.modes.map((item) => (
               <button
                 key={item.value}
-                onClick={() => setSelectedMode(item.value)}
+                onClick={() => {
+                  if (canManage) setSelectedMode(item.value);
+                }}
+                disabled={!canManage}
                 className={cx(
-                  "rounded-lg border p-3 text-left transition active:scale-[0.98]",
+                  "rounded-lg border p-3 text-left transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50",
                   selectedMode === item.value ? "border-coal bg-[#f4f6f2]" : "border-line bg-[#fcfcf8] hover:bg-zinc-50"
                 )}
               >
@@ -213,14 +230,14 @@ export function CapabilityView({
           {selectedMode === "periodic_verify" && (
             <label className="block">
               <span className="mb-2 block text-sm font-medium text-zinc-700">Cron</span>
-              <input className="control font-mono" value={schedule} onChange={(event) => setSchedule(event.target.value)} />
+              <input className="control font-mono" value={schedule} disabled={!canManage} onChange={(event) => setSchedule(event.target.value)} />
             </label>
           )}
         </div>
 
         <button
           onClick={createJob}
-          disabled={creating || !selectedTask}
+          disabled={!canManage || creating || !selectedTask}
           className="mt-6 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-coal px-4 py-2.5 text-sm text-white transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
         >
           <Plus size={16} />
