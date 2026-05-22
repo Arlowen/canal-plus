@@ -374,6 +374,39 @@ type CapabilityJob struct {
 	UpdatedAt       string               `json:"updatedAt"`
 }
 
+type QualityDiffStatus string
+
+const (
+	QualityDiffPending   QualityDiffStatus = "pending"
+	QualityDiffCorrected QualityDiffStatus = "corrected"
+)
+
+type QualityDiff struct {
+	ID            string            `json:"id"`
+	JobID         string            `json:"jobId"`
+	TaskID        string            `json:"taskId"`
+	SourceTable   string            `json:"sourceTable"`
+	TargetTable   string            `json:"targetTable"`
+	PrimaryKey    string            `json:"primaryKey"`
+	DiffType      string            `json:"diffType"`
+	FieldName     string            `json:"fieldName"`
+	SourceValue   string            `json:"sourceValue"`
+	TargetValue   string            `json:"targetValue"`
+	Severity      string            `json:"severity"`
+	Status        QualityDiffStatus `json:"status"`
+	CorrectionSQL string            `json:"correctionSql"`
+	CreatedAt     string            `json:"createdAt"`
+	UpdatedAt     string            `json:"updatedAt"`
+	CorrectedAt   string            `json:"correctedAt,omitempty"`
+	CorrectedBy   string            `json:"correctedBy,omitempty"`
+	HandledReason string            `json:"handledReason,omitempty"`
+}
+
+type QualityDiffCorrectionInput struct {
+	IDs    []string `json:"ids,omitempty"`
+	Reason string   `json:"reason,omitempty"`
+}
+
 type NodeStatus string
 
 const (
@@ -462,6 +495,7 @@ type DatabaseShape struct {
 	Nodes          []ClusterNode      `json:"nodes"`
 	TaskLeases     []TaskLease        `json:"taskLeases"`
 	TaskRevisions  []TaskRevision     `json:"taskRevisions"`
+	QualityDiffs   []QualityDiff      `json:"qualityDiffs"`
 }
 
 type DashboardSummary struct {

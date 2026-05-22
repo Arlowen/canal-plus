@@ -27,6 +27,7 @@ canal-plus/
 - Node 接入：支持通过控制台或 API 注册/更新 worker node，新节点上线后会参与 lease 调度并接管等待任务。
 - 产品模块：任务中心、结构迁移、数据校验订正、订阅变更、节点集群、错误中心、操作审计。
 - 能力任务：结构迁移计划、二次差异校验与订正、运行中订阅变更具备 API 状态、阶段进度和操作日志。
+- 数据校验：校验任务会生成字段级差异明细，支持查看源端/目标端值、风险等级、订正 SQL 和管理员单条/批量订正。
 - 错误中心：错误事件搜索、任务/状态/事件类型筛选、详情追踪、单条重试、批量重试、跳过并记录原因。
 - 操作日志：关键操作审计、关键词/操作者/对象/时间筛选、详情追踪和可见日志导出。
 - 持久化：Go 后端默认使用 `backend/data/store.json` 保存演示数据和运行态。
@@ -90,6 +91,8 @@ cp backend/.env.example backend/.env
 - `GET /api/capability-jobs?type=quality`: 按能力类型过滤。
 - `POST /api/capability-jobs`: 创建能力任务，请求体包含 `type`、`taskId`、`mode`、`autoStart`。
 - `POST /api/capability-jobs/{id}/run`: 重跑能力任务。
+- `GET /api/capability-jobs/{id}/quality-diffs`: 查看数据校验任务的字段级差异。
+- `POST /api/capability-jobs/{id}/quality-diffs/correct`: 订正数据校验差异，请求体可包含 `ids` 和 `reason`；`ids` 为空时订正全部待处理差异。
 
 ## 任务功能列表 API
 

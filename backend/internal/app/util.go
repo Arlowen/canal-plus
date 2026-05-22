@@ -109,6 +109,13 @@ func intToString(value int) string {
 	return strconv.Itoa(value)
 }
 
+func twoDigit(value int) string {
+	if value < 10 {
+		return "0" + strconv.Itoa(value)
+	}
+	return strconv.Itoa(value)
+}
+
 func minInt(left int, right int) int {
 	if left < right {
 		return left

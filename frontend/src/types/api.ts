@@ -277,6 +277,34 @@ export interface CapabilityJob {
   updatedAt: string;
 }
 
+export type QualityDiffStatus = "pending" | "corrected";
+
+export interface QualityDiff {
+  id: string;
+  jobId: string;
+  taskId: string;
+  sourceTable: string;
+  targetTable: string;
+  primaryKey: string;
+  diffType: "value_mismatch" | "target_missing" | "source_missing" | string;
+  fieldName: string;
+  sourceValue: string;
+  targetValue: string;
+  severity: "low" | "medium" | "high" | string;
+  status: QualityDiffStatus;
+  correctionSql: string;
+  createdAt: string;
+  updatedAt: string;
+  correctedAt?: string;
+  correctedBy?: string;
+  handledReason?: string;
+}
+
+export interface QualityDiffCorrectionInput {
+  ids?: string[];
+  reason?: string;
+}
+
 export interface DashboardSummary {
   taskTotal: number;
   runningTasks: number;

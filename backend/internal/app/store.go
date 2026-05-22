@@ -38,6 +38,7 @@ func NewStore(path string) (*Store, error) {
 		store.ensureUsersLocked()
 		store.ensureClusterLocked()
 		store.ensureTaskRevisionsLocked()
+		store.ensureQualityDiffsLocked()
 		if err := store.saveLocked(); err != nil {
 			return nil, err
 		}
@@ -50,6 +51,7 @@ func NewStore(path string) (*Store, error) {
 	}
 	store.data = seed
 	store.ensureTaskRevisionsLocked()
+	store.ensureQualityDiffsLocked()
 	if err := store.saveLocked(); err != nil {
 		return nil, err
 	}
@@ -1180,20 +1182,30 @@ func (s *Store) CreateCapabilityJob(input CapabilityJob) (CapabilityJob, error) 
 	if input.Status == CapabilityRunning {
 		input.AutoStart = true
 	}
-	input.Steps = defaultCapabilitySteps(input.Type)
+	if input.Status == CapabilityCompleted {
+		input.Steps = completedCapabilitySteps(input.Type)
+		input.ProgressPercent = 100
+		input.CurrentStep = maxInt(0, len(input.Steps)-1)
+	} else {
+		input.Steps = defaultCapabilitySteps(input.Type)
+	}
 	if input.Status == CapabilityRunning {
 		input.ProgressPercent = 18
-	} else {
+		input.CurrentStep = 0
+	} else if input.Status != CapabilityCompleted {
 		input.ProgressPercent = 0
 		for stepIndex := range input.Steps {
 			input.Steps[stepIndex].Status = "waiting"
 		}
+		input.CurrentStep = 0
 	}
-	input.CurrentStep = 0
 	input.Summary = buildCapabilitySummary(input.Type, task)
 	input.CreatedAt = timestamp
 	input.UpdatedAt = timestamp
 	s.data.CapabilityJobs = append([]CapabilityJob{input}, s.data.CapabilityJobs...)
+	if input.Type == CapabilityQuality {
+		s.createQualityDiffsLocked(input, task)
+	}
 	s.logLocked("admin", "create", "capability_job", input.ID, "创建能力任务 "+input.Name)
 	if err := s.saveLocked(); err != nil {
 		return CapabilityJob{}, err
@@ -1215,12 +1227,83 @@ func (s *Store) RunCapabilityJob(id string) (CapabilityJob, bool, error) {
 			job.ProgressPercent = 18
 			job.CurrentStep = 0
 			job.Steps = defaultCapabilitySteps(job.Type)
+			if job.Type == CapabilityQuality {
+				if task, ok := s.getTaskLocked(job.TaskID); ok {
+					job.Summary = buildCapabilitySummary(job.Type, task)
+					s.removeQualityDiffsLocked(job.ID)
+					s.createQualityDiffsLocked(*job, task)
+				}
+			}
 		}
 		job.UpdatedAt = now()
 		s.logLocked("admin", "run", "capability_job", id, "运行能力任务 "+job.Name)
 		return cloneJSON(*job), true, s.saveLocked()
 	}
 	return CapabilityJob{}, false, nil
+}
+
+func (s *Store) QualityDiffs(jobID string) ([]QualityDiff, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.ensureQualityDiffsLocked()
+	job, ok := s.getCapabilityJobLocked(jobID)
+	if !ok || job.Type != CapabilityQuality {
+		return nil, false
+	}
+	diffs := make([]QualityDiff, 0)
+	for _, diff := range s.data.QualityDiffs {
+		if diff.JobID == jobID {
+			diffs = append(diffs, diff)
+		}
+	}
+	sortQualityDiffs(diffs)
+	return cloneJSON(diffs), true
+}
+
+func (s *Store) CorrectQualityDiffs(jobID string, input QualityDiffCorrectionInput) (CapabilityJob, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	job := s.getCapabilityJobPointerLocked(jobID)
+	if job == nil {
+		return CapabilityJob{}, false, nil
+	}
+	if job.Type != CapabilityQuality {
+		return CapabilityJob{}, true, errors.New("只有数据校验任务支持差异订正")
+	}
+	if job.Status != CapabilityCompleted {
+		return CapabilityJob{}, true, errors.New("校验任务完成后才能订正")
+	}
+	selected := map[string]bool{}
+	for _, id := range input.IDs {
+		if strings.TrimSpace(id) != "" {
+			selected[id] = true
+		}
+	}
+	correctAll := len(selected) == 0
+	timestamp := now()
+	changed := 0
+	for index := range s.data.QualityDiffs {
+		diff := &s.data.QualityDiffs[index]
+		if diff.JobID != jobID || diff.Status == QualityDiffCorrected {
+			continue
+		}
+		if !correctAll && !selected[diff.ID] {
+			continue
+		}
+		diff.Status = QualityDiffCorrected
+		diff.CorrectedAt = timestamp
+		diff.CorrectedBy = "admin"
+		diff.HandledReason = strings.TrimSpace(input.Reason)
+		diff.UpdatedAt = timestamp
+		changed++
+	}
+	if changed == 0 {
+		return cloneJSON(*job), true, nil
+	}
+	job.Summary.CorrectedRows = s.countQualityDiffsLocked(jobID, QualityDiffCorrected)
+	job.UpdatedAt = timestamp
+	s.logLocked("admin", "quality_correct", "capability_job", jobID, "订正数据校验差异 "+intToString(changed)+" 条："+job.Name)
+	return cloneJSON(*job), true, s.saveLocked()
 }
 
 func (s *Store) getDatasourceLocked(id string) (Datasource, bool) {
@@ -1679,7 +1762,8 @@ func (s *Store) refreshCapabilityJobsLocked() {
 		if job.Status == CapabilityCompleted {
 			switch job.Type {
 			case CapabilityQuality:
-				job.Summary.CorrectedRows = job.Summary.DiffRows
+				s.ensureQualityDiffsForJobLocked(*job)
+				job.Summary.CorrectedRows = s.countQualityDiffsLocked(job.ID, QualityDiffCorrected)
 			case CapabilitySubscription:
 				s.applySubscriptionJobLocked(job)
 			}
@@ -1690,6 +1774,198 @@ func (s *Store) refreshCapabilityJobsLocked() {
 	if changed {
 		_ = s.saveLocked()
 	}
+}
+
+func (s *Store) ensureQualityDiffsLocked() {
+	for _, job := range s.data.CapabilityJobs {
+		if job.Type != CapabilityQuality {
+			continue
+		}
+		s.ensureQualityDiffsForJobLocked(job)
+	}
+}
+
+func (s *Store) ensureQualityDiffsForJobLocked(job CapabilityJob) {
+	if job.Type != CapabilityQuality || s.hasQualityDiffsLocked(job.ID) {
+		return
+	}
+	task, ok := s.getTaskLocked(job.TaskID)
+	if !ok {
+		return
+	}
+	s.createQualityDiffsLocked(job, task)
+}
+
+func (s *Store) createQualityDiffsLocked(job CapabilityJob, task SyncTask) int {
+	if job.Type != CapabilityQuality || s.hasQualityDiffsLocked(job.ID) {
+		return 0
+	}
+	limit := minInt(maxInt(3, job.Summary.DiffRows), 12)
+	if limit <= 0 {
+		limit = 3
+	}
+	timestamp := now()
+	type diffCandidate struct {
+		mapping      TableMapping
+		mappingIndex int
+		field        FieldMapping
+		fieldIndex   int
+		primaryKey   string
+	}
+	candidates := []diffCandidate{}
+	for mappingIndex, mapping := range task.TableMappings {
+		fields := activeDiffFields(mapping.Fields)
+		if len(fields) == 0 {
+			continue
+		}
+		primaryKey := primaryKeyField(mapping.Fields)
+		for fieldIndex, field := range fields {
+			candidates = append(candidates, diffCandidate{mapping: mapping, mappingIndex: mappingIndex, field: field, fieldIndex: fieldIndex, primaryKey: primaryKey})
+		}
+	}
+	if len(candidates) == 0 {
+		return 0
+	}
+	created := 0
+	for created < limit {
+		candidate := candidates[created%len(candidates)]
+		diffType := []string{"value_mismatch", "target_missing", "source_missing"}[(created+candidate.mappingIndex+candidate.fieldIndex)%3]
+		sourceValue, targetValue := sampleDiffValues(candidate.field.SourceField, created)
+		diff := QualityDiff{
+			ID:            newID(),
+			JobID:         job.ID,
+			TaskID:        task.ID,
+			SourceTable:   candidate.mapping.SourceSchema + "." + candidate.mapping.SourceTable,
+			TargetTable:   candidate.mapping.TargetSchema + "." + candidate.mapping.TargetTable,
+			PrimaryKey:    candidate.primaryKey + "=" + intToString(90000+created*37+candidate.mappingIndex),
+			DiffType:      diffType,
+			FieldName:     candidate.field.SourceField,
+			SourceValue:   sourceValue,
+			TargetValue:   targetValue,
+			Severity:      qualityDiffSeverity(candidate.field, diffType),
+			Status:        QualityDiffPending,
+			CorrectionSQL: buildCorrectionSQL(candidate.mapping, candidate.primaryKey, candidate.field.TargetField, sourceValue, created),
+			CreatedAt:     timestamp,
+			UpdatedAt:     timestamp,
+		}
+		s.data.QualityDiffs = append(s.data.QualityDiffs, diff)
+		created++
+	}
+	return created
+}
+
+func activeDiffFields(fields []FieldMapping) []FieldMapping {
+	active := make([]FieldMapping, 0, len(fields))
+	for _, field := range fields {
+		if !field.Ignored && !field.PrimaryKey {
+			active = append(active, field)
+		}
+	}
+	if len(active) > 0 {
+		return active
+	}
+	for _, field := range fields {
+		if !field.Ignored {
+			active = append(active, field)
+		}
+	}
+	return active
+}
+
+func primaryKeyField(fields []FieldMapping) string {
+	for _, field := range fields {
+		if field.PrimaryKey {
+			return valueOr(field.TargetField, field.SourceField)
+		}
+	}
+	return "id"
+}
+
+func sampleDiffValues(field string, index int) (string, string) {
+	field = strings.ToLower(field)
+	switch {
+	case strings.Contains(field, "amount") || strings.Contains(field, "price"):
+		return intToString(839+index*17) + ".42", intToString(839+index*17) + ".40"
+	case strings.Contains(field, "status"):
+		return "PAID", "PAYING"
+	case strings.Contains(field, "time") || strings.Contains(field, "date"):
+		return "2026-05-22 18:" + twoDigit(index+7) + ":31", "2026-05-22 18:" + twoDigit(index+5) + ":18"
+	default:
+		return "source_" + intToString(471+index*13), "target_" + intToString(469+index*11)
+	}
+}
+
+func qualityDiffSeverity(field FieldMapping, diffType string) string {
+	name := strings.ToLower(field.SourceField + field.TargetField)
+	if field.PrimaryKey || strings.Contains(name, "amount") || diffType == "target_missing" {
+		return "high"
+	}
+	if strings.Contains(name, "status") || strings.Contains(name, "time") {
+		return "medium"
+	}
+	return "low"
+}
+
+func buildCorrectionSQL(mapping TableMapping, primaryKey string, targetField string, sourceValue string, index int) string {
+	return "UPDATE " + mapping.TargetSchema + "." + mapping.TargetTable +
+		" SET " + targetField + " = '" + sourceValue + "'" +
+		" WHERE " + primaryKey + " = " + intToString(90000+index*37)
+}
+
+func (s *Store) hasQualityDiffsLocked(jobID string) bool {
+	for _, diff := range s.data.QualityDiffs {
+		if diff.JobID == jobID {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *Store) removeQualityDiffsLocked(jobID string) {
+	diffs := s.data.QualityDiffs[:0]
+	for _, diff := range s.data.QualityDiffs {
+		if diff.JobID != jobID {
+			diffs = append(diffs, diff)
+		}
+	}
+	s.data.QualityDiffs = diffs
+}
+
+func (s *Store) countQualityDiffsLocked(jobID string, status QualityDiffStatus) int {
+	count := 0
+	for _, diff := range s.data.QualityDiffs {
+		if diff.JobID == jobID && diff.Status == status {
+			count++
+		}
+	}
+	return count
+}
+
+func sortQualityDiffs(diffs []QualityDiff) {
+	sort.SliceStable(diffs, func(left, right int) bool {
+		if diffs[left].Status == diffs[right].Status {
+			return diffs[left].CreatedAt > diffs[right].CreatedAt
+		}
+		return diffs[left].Status == QualityDiffPending
+	})
+}
+
+func (s *Store) getCapabilityJobLocked(id string) (CapabilityJob, bool) {
+	for _, job := range s.data.CapabilityJobs {
+		if job.ID == id {
+			return job, true
+		}
+	}
+	return CapabilityJob{}, false
+}
+
+func (s *Store) getCapabilityJobPointerLocked(id string) *CapabilityJob {
+	for index := range s.data.CapabilityJobs {
+		if s.data.CapabilityJobs[index].ID == id {
+			return &s.data.CapabilityJobs[index]
+		}
+	}
+	return nil
 }
 
 func (s *Store) applySubscriptionJobLocked(job *CapabilityJob) {

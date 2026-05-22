@@ -926,6 +926,31 @@ func (s *Server) handleCapabilityJobs(response http.ResponseWriter, request *htt
 			return
 		}
 		writeJSON(response, http.StatusOK, job)
+	case len(parts) == 3 && parts[2] == "quality-diffs" && request.Method == http.MethodGet:
+		diffs, ok := s.store.QualityDiffs(parts[1])
+		if !ok {
+			writeError(response, http.StatusNotFound, "数据校验任务不存在")
+			return
+		}
+		writeJSON(response, http.StatusOK, diffs)
+	case len(parts) == 4 && parts[2] == "quality-diffs" && parts[3] == "correct" && request.Method == http.MethodPost:
+		var input QualityDiffCorrectionInput
+		if request.Body != nil && request.ContentLength != 0 {
+			if err := decodeJSON(request, &input); err != nil {
+				writeError(response, http.StatusBadRequest, "请求体格式错误")
+				return
+			}
+		}
+		job, ok, err := s.store.CorrectQualityDiffs(parts[1], input)
+		if err != nil {
+			writeError(response, http.StatusBadRequest, err.Error())
+			return
+		}
+		if !ok {
+			writeError(response, http.StatusNotFound, "数据校验任务不存在")
+			return
+		}
+		writeJSON(response, http.StatusOK, job)
 	default:
 		writeError(response, http.StatusNotFound, "not found")
 	}

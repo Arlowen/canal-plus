@@ -109,6 +109,11 @@ func TestOperatorCannotMutateConfigurationOrCluster(t *testing.T) {
 	if alertResponse.Code != http.StatusForbidden {
 		t.Fatalf("operator create alert rule status = %d body = %s", alertResponse.Code, alertResponse.Body.String())
 	}
+
+	correctQualityResponse := serveTestRequest(server, authRequest(http.MethodPost, "/api/capability-jobs/job-missing/quality-diffs/correct", operatorToken, `{}`))
+	if correctQualityResponse.Code != http.StatusForbidden {
+		t.Fatalf("operator correct quality diff status = %d body = %s", correctQualityResponse.Code, correctQualityResponse.Body.String())
+	}
 }
 
 func TestAdminCanMutateConfiguration(t *testing.T) {

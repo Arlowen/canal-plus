@@ -14,7 +14,7 @@ import { PermissionNotice } from "../components/PermissionNotice";
 import { StatusBadge } from "../components/StatusBadge";
 import { api } from "../lib/api";
 import { cx, formatDate } from "../lib/format";
-import type { CapabilityJob, CapabilityJobType, Datasource, SyncTask } from "../types/api";
+import type { CapabilityJob, CapabilityJobType, Datasource, QualityDiff, SyncTask } from "../types/api";
 
 const capabilityConfig: Record<CapabilityJobType, {
   title: string;
@@ -90,6 +90,26 @@ function riskLabel(value: string) {
   return "低";
 }
 
+function diffTypeLabel(value: string) {
+  if (value === "target_missing") return "目标缺失";
+  if (value === "source_missing") return "源端缺失";
+  return "值不一致";
+}
+
+function diffStatusLabel(value: QualityDiff["status"]) {
+  return value === "corrected" ? "已订正" : "待订正";
+}
+
+function severityClass(value: string) {
+  if (value === "high") return "border-red-200 bg-red-50 text-red-700";
+  if (value === "medium") return "border-amber-200 bg-amber-50 text-amber-700";
+  return "border-emerald-200 bg-emerald-50 text-emerald-700";
+}
+
+function diffStatusClass(value: QualityDiff["status"]) {
+  return value === "corrected" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-amber-200 bg-amber-50 text-amber-700";
+}
+
 export function CapabilityView({
   mode,
   tasks,
@@ -113,9 +133,15 @@ export function CapabilityView({
   const [schedule, setSchedule] = useState("0 2 * * *");
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const [qualityDiffs, setQualityDiffs] = useState<QualityDiff[]>([]);
+  const [loadingDiffs, setLoadingDiffs] = useState(false);
+  const [correctingDiff, setCorrectingDiff] = useState<string | null>(null);
   const relevantJobs = useMemo(() => jobs.filter((job) => job.type === mode), [jobs, mode]);
   const selectedTask = tasks.find((task) => task.id === selectedTaskId) ?? availableTasks[0];
   const latestJob = relevantJobs[0];
+  const latestQualityJobId = mode === "quality" ? latestJob?.id ?? "" : "";
+  const pendingDiffs = qualityDiffs.filter((diff) => diff.status === "pending");
 
   useEffect(() => {
     setSelectedMode(config.modes[0]?.value || "");
@@ -126,6 +152,28 @@ export function CapabilityView({
       setSelectedTaskId(availableTasks[0].id);
     }
   }, [availableTasks, selectedTaskId]);
+
+  useEffect(() => {
+    if (!latestQualityJobId) {
+      setQualityDiffs([]);
+      return;
+    }
+    let cancelled = false;
+    setLoadingDiffs(true);
+    api.qualityDiffs(latestQualityJobId)
+      .then((diffs) => {
+        if (!cancelled) setQualityDiffs(diffs);
+      })
+      .catch((requestError) => {
+        if (!cancelled) setError(requestError instanceof Error ? requestError.message : "加载差异失败");
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingDiffs(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [latestQualityJobId]);
 
   const createJob = async () => {
     if (!canManage) {
@@ -138,6 +186,7 @@ export function CapabilityView({
     }
     setCreating(true);
     setError(null);
+    setMessage(null);
     try {
       await api.createCapabilityJob({
         type: mode,
@@ -156,11 +205,38 @@ export function CapabilityView({
 
   const runJob = async (job: CapabilityJob) => {
     setError(null);
+    setMessage(null);
     try {
       await api.runCapabilityJob(job.id);
       await onChanged();
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "运行失败");
+    }
+  };
+
+  const correctDiffs = async (ids?: string[]) => {
+    if (!canManage) {
+      setError("执行差异订正需要管理员权限");
+      return;
+    }
+    if (!latestJob) return;
+    const marker = ids?.[0] ?? "all";
+    setCorrectingDiff(marker);
+    setError(null);
+    setMessage(null);
+    try {
+      const updated = await api.correctQualityDiffs(latestJob.id, {
+        ids,
+        reason: ids?.length ? "人工确认单条差异订正" : "人工确认批量差异订正"
+      });
+      const diffs = await api.qualityDiffs(latestJob.id);
+      setQualityDiffs(diffs);
+      setMessage(`已订正 ${updated.summary.correctedRows}/${diffs.length} 条差异`);
+      await onChanged();
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "差异订正失败");
+    } finally {
+      setCorrectingDiff(null);
     }
   };
 
@@ -181,6 +257,13 @@ export function CapabilityView({
           <div className="mt-5 flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
             <WarningCircle size={18} />
             {error}
+          </div>
+        )}
+
+        {message && (
+          <div className="mt-5 flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-700">
+            <CheckCircle size={18} />
+            {message}
           </div>
         )}
 
@@ -289,6 +372,83 @@ export function CapabilityView({
                 </div>
               ))}
             </div>
+          </div>
+        )}
+
+        {mode === "quality" && latestJob && (
+          <div className="mt-5 rounded-xl border border-line bg-[#fcfcf8] p-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <h3 className="font-semibold tracking-tight text-coal">字段级差异</h3>
+                <div className="mt-1 text-sm text-muted">逐字段对比源端与目标端，确认后可按源端值订正。</div>
+              </div>
+              <button
+                onClick={() => correctDiffs()}
+                disabled={!canManage || loadingDiffs || pendingDiffs.length === 0 || correctingDiff === "all" || latestJob.status !== "completed"}
+                className="inline-flex items-center justify-center gap-2 rounded-lg bg-coal px-3 py-2 text-sm text-white transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {correctingDiff === "all" ? <ArrowsClockwise size={16} /> : <ShieldCheck size={16} />}
+                {correctingDiff === "all" ? "订正中" : `订正待处理 ${pendingDiffs.length}`}
+              </button>
+            </div>
+
+            <div className="mt-4 grid gap-3 sm:grid-cols-3">
+              <Info label="差异明细" value={loadingDiffs ? "加载中" : `${qualityDiffs.length} 条`} mono />
+              <Info label="待订正" value={`${pendingDiffs.length} 条`} mono />
+              <Info label="已订正" value={`${qualityDiffs.length - pendingDiffs.length} 条`} mono />
+            </div>
+
+            <div className="mt-4 divide-y divide-line overflow-hidden rounded-lg border border-line bg-white">
+              {loadingDiffs ? (
+                <div className="grid gap-3 p-4">
+                  <div className="h-4 w-2/5 animate-pulse rounded bg-zinc-100" />
+                  <div className="h-4 w-4/5 animate-pulse rounded bg-zinc-100" />
+                  <div className="h-4 w-3/5 animate-pulse rounded bg-zinc-100" />
+                </div>
+              ) : qualityDiffs.length === 0 ? (
+                <div className="p-6 text-center text-sm text-muted">当前校验任务暂无字段差异</div>
+              ) : qualityDiffs.slice(0, 8).map((diff) => (
+                <div key={diff.id} className="grid gap-3 p-3 text-sm xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1.3fr)_auto] xl:items-center">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="truncate font-medium text-coal">{diff.sourceTable}</span>
+                      <span className="text-muted">to</span>
+                      <span className="truncate font-medium text-coal">{diff.targetTable}</span>
+                    </div>
+                    <div className="mt-1 flex flex-wrap gap-2 text-xs text-muted">
+                      <span className="font-mono">{diff.primaryKey}</span>
+                      <span>{diff.fieldName}</span>
+                      <span>{diffTypeLabel(diff.diffType)}</span>
+                    </div>
+                  </div>
+                  <div className="grid gap-2 text-xs sm:grid-cols-2">
+                    <div className="rounded-lg border border-line bg-[#fcfcf8] p-2">
+                      <div className="text-muted">源端</div>
+                      <div className="mt-1 truncate font-mono text-coal">{diff.sourceValue}</div>
+                    </div>
+                    <div className="rounded-lg border border-line bg-[#fcfcf8] p-2">
+                      <div className="text-muted">目标端</div>
+                      <div className="mt-1 truncate font-mono text-coal">{diff.targetValue}</div>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2 xl:justify-end">
+                    <span className={cx("rounded-full border px-2 py-1 text-xs", severityClass(diff.severity))}>{riskLabel(diff.severity)}</span>
+                    <span className={cx("rounded-full border px-2 py-1 text-xs", diffStatusClass(diff.status))}>{diffStatusLabel(diff.status)}</span>
+                    <button
+                      onClick={() => correctDiffs([diff.id])}
+                      disabled={!canManage || diff.status === "corrected" || correctingDiff === diff.id || latestJob.status !== "completed"}
+                      className="rounded-lg border border-line bg-white px-3 py-2 text-xs text-zinc-700 transition hover:bg-zinc-50 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45"
+                    >
+                      {correctingDiff === diff.id ? "订正中" : "订正"}
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {qualityDiffs.length > 8 && (
+              <div className="mt-3 text-xs text-muted">已展示前 8 条高优先级差异，其余差异可通过批量订正处理。</div>
+            )}
           </div>
         )}
 

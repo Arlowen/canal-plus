@@ -14,6 +14,8 @@ import type {
   LoginResponse,
   OperationLog,
   PositionResetInput,
+  QualityDiff,
+  QualityDiffCorrectionInput,
   SyncStrategy,
   SyncTask,
   TableColumn,
@@ -233,6 +235,15 @@ export const api = {
   },
   runCapabilityJob(id: string) {
     return request<CapabilityJob>(`/capability-jobs/${id}/run`, { method: "POST" });
+  },
+  qualityDiffs(jobId: string) {
+    return request<QualityDiff[]>(`/capability-jobs/${jobId}/quality-diffs`);
+  },
+  correctQualityDiffs(jobId: string, input: QualityDiffCorrectionInput = {}) {
+    return request<CapabilityJob>(`/capability-jobs/${jobId}/quality-diffs/correct`, {
+      method: "POST",
+      body: JSON.stringify(input)
+    });
   },
   cluster() {
     return request<ClusterSnapshot>("/cluster");

@@ -592,6 +592,72 @@ func TestCreateCapabilityJobBuildsSummaryAndSteps(t *testing.T) {
 	}
 }
 
+func TestQualityDiffCorrectionUpdatesSummary(t *testing.T) {
+	store := newTestStore(t)
+	snapshot := store.Snapshot()
+	if len(snapshot.SyncTasks) == 0 {
+		t.Fatal("expected seed task")
+	}
+
+	job, err := store.CreateCapabilityJob(CapabilityJob{
+		Type:      CapabilityQuality,
+		TaskID:    snapshot.SyncTasks[0].ID,
+		Mode:      "verify_then_correct",
+		AutoStart: true,
+	})
+	if err != nil {
+		t.Fatalf("CreateCapabilityJob() error = %v", err)
+	}
+	diffs, ok := store.QualityDiffs(job.ID)
+	if !ok || len(diffs) == 0 {
+		t.Fatalf("expected quality diffs, ok=%v diffs=%#v", ok, diffs)
+	}
+
+	store.mu.Lock()
+	for index := range store.data.CapabilityJobs {
+		if store.data.CapabilityJobs[index].ID == job.ID {
+			store.data.CapabilityJobs[index].Status = CapabilityCompleted
+			store.data.CapabilityJobs[index].ProgressPercent = 100
+			break
+		}
+	}
+	store.mu.Unlock()
+
+	updated, ok, err := store.CorrectQualityDiffs(job.ID, QualityDiffCorrectionInput{
+		IDs:    []string{diffs[0].ID},
+		Reason: "确认源端为准",
+	})
+	if err != nil || !ok {
+		t.Fatalf("CorrectQualityDiffs() ok %v err %v", ok, err)
+	}
+	if updated.Summary.CorrectedRows != 1 {
+		t.Fatalf("expected one corrected row, got %#v", updated.Summary)
+	}
+
+	updatedDiffs, ok := store.QualityDiffs(job.ID)
+	if !ok {
+		t.Fatalf("quality job missing after correction")
+	}
+	foundCorrected := false
+	for _, diff := range updatedDiffs {
+		if diff.ID == diffs[0].ID {
+			foundCorrected = diff.Status == QualityDiffCorrected && diff.CorrectedBy == "admin"
+			break
+		}
+	}
+	if !foundCorrected {
+		t.Fatalf("selected diff was not corrected: %#v", updatedDiffs)
+	}
+
+	updated, ok, err = store.CorrectQualityDiffs(job.ID, QualityDiffCorrectionInput{})
+	if err != nil || !ok {
+		t.Fatalf("CorrectQualityDiffs(all) ok %v err %v", ok, err)
+	}
+	if updated.Summary.CorrectedRows != len(diffs) {
+		t.Fatalf("expected all diffs corrected, got summary %#v diff count %d", updated.Summary, len(diffs))
+	}
+}
+
 func TestCompletedSubscriptionJobAppliesTaskMapping(t *testing.T) {
 	store := newTestStore(t)
 	snapshot := store.Snapshot()
