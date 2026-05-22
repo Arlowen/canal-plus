@@ -869,6 +869,71 @@ func TestCompletedSubscriptionJobAppliesTaskMapping(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateCapabilityJob() error = %v", err)
 	}
+	changes, ok := store.SubscriptionChanges(job.ID)
+	if !ok {
+		t.Fatalf("SubscriptionChanges(%q) not found", job.ID)
+	}
+	if len(changes) == 0 || changes[0].ChangeType != "add_table" || changes[0].Status != SubscriptionChangePending {
+		t.Fatalf("expected pending add table change, got %#v", changes)
+	}
+
+	store.mu.Lock()
+	for index := range store.data.CapabilityJobs {
+		if store.data.CapabilityJobs[index].ID == job.ID {
+			store.data.CapabilityJobs[index].Status = CapabilityCompleted
+			store.applySubscriptionJobLocked(&store.data.CapabilityJobs[index])
+			store.applySubscriptionJobLocked(&store.data.CapabilityJobs[index])
+			break
+		}
+	}
+	store.mu.Unlock()
+
+	updated, ok := store.GetTask(taskID)
+	if !ok {
+		t.Fatalf("task %s not found", taskID)
+	}
+	if len(updated.TableMappings) <= initialMappings {
+		t.Fatalf("expected subscription mapping to be added, before %d after %d", initialMappings, len(updated.TableMappings))
+	}
+	if len(updated.TableMappings) != initialMappings+len(changes) {
+		t.Fatalf("expected subscription apply to be idempotent, before %d after %d changes %d", initialMappings, len(updated.TableMappings), len(changes))
+	}
+	updatedChanges, ok := store.SubscriptionChanges(job.ID)
+	if !ok {
+		t.Fatalf("SubscriptionChanges(%q) not found after apply", job.ID)
+	}
+	for _, change := range updatedChanges {
+		if change.Status != SubscriptionChangeApplied || change.AppliedAt == "" || change.ResultMessage == "" {
+			t.Fatalf("expected applied change with result: %#v", change)
+		}
+	}
+}
+
+func TestSubscriptionActionFilterUpdatesTaskActions(t *testing.T) {
+	store := newTestStore(t)
+	snapshot := store.Snapshot()
+	if len(snapshot.SyncTasks) == 0 {
+		t.Fatal("expected seed task")
+	}
+	taskID := snapshot.SyncTasks[0].ID
+	originalVersion := snapshot.SyncTasks[0].ConfigVersion
+
+	job, err := store.CreateCapabilityJob(CapabilityJob{
+		Type:      CapabilitySubscription,
+		TaskID:    taskID,
+		Mode:      "filter_actions",
+		AutoStart: true,
+	})
+	if err != nil {
+		t.Fatalf("CreateCapabilityJob() error = %v", err)
+	}
+	changes, ok := store.SubscriptionChanges(job.ID)
+	if !ok || len(changes) != 1 {
+		t.Fatalf("expected one subscription action change, ok %v changes %#v", ok, changes)
+	}
+	if !containsString(changes[0].BeforeActions, "delete") || containsString(changes[0].AfterActions, "delete") {
+		t.Fatalf("expected delete action to be filtered out: %#v", changes[0])
+	}
 
 	store.mu.Lock()
 	for index := range store.data.CapabilityJobs {
@@ -884,8 +949,16 @@ func TestCompletedSubscriptionJobAppliesTaskMapping(t *testing.T) {
 	if !ok {
 		t.Fatalf("task %s not found", taskID)
 	}
-	if len(updated.TableMappings) <= initialMappings {
-		t.Fatalf("expected subscription mapping to be added, before %d after %d", initialMappings, len(updated.TableMappings))
+	if updated.ConfigVersion != originalVersion+1 {
+		t.Fatalf("expected config version increment, before %d after %d", originalVersion, updated.ConfigVersion)
+	}
+	if updated.Strategy.WriteMode.Delete {
+		t.Fatalf("expected delete action disabled: %#v", updated.Strategy.WriteMode)
+	}
+	for _, mapping := range updated.TableMappings {
+		if containsString(mapping.EventActions, "delete") || !containsString(mapping.EventActions, "insert") || !containsString(mapping.EventActions, "update") {
+			t.Fatalf("unexpected mapping event actions: %#v", mapping.EventActions)
+		}
 	}
 }
 

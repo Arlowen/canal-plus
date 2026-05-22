@@ -14,7 +14,7 @@ import { PermissionNotice } from "../components/PermissionNotice";
 import { StatusBadge } from "../components/StatusBadge";
 import { api } from "../lib/api";
 import { cx, formatDate } from "../lib/format";
-import type { CapabilityJob, CapabilityJobType, Datasource, QualityDiff, StructureDDL, SyncTask } from "../types/api";
+import type { CapabilityJob, CapabilityJobType, Datasource, QualityDiff, StructureDDL, SubscriptionChange, SyncTask } from "../types/api";
 
 const capabilityConfig: Record<CapabilityJobType, {
   title: string;
@@ -124,6 +124,25 @@ function ddlChangeLabel(value: string) {
   return value;
 }
 
+function subscriptionChangeLabel(value: string) {
+  if (value === "add_table") return "新增表";
+  if (value === "action_filter") return "Action 过滤";
+  if (value === "condition_filter") return "条件过滤";
+  return value;
+}
+
+function subscriptionStatusLabel(value: SubscriptionChange["status"]) {
+  return value === "applied" ? "已发布" : "待发布";
+}
+
+function subscriptionStatusClass(value: SubscriptionChange["status"]) {
+  return value === "applied" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-amber-200 bg-amber-50 text-amber-700";
+}
+
+function actionList(actions?: string[]) {
+  return actions && actions.length > 0 ? actions.join(" / ") : "继承任务策略";
+}
+
 export function CapabilityView({
   mode,
   tasks,
@@ -154,13 +173,17 @@ export function CapabilityView({
   const [qualityDiffs, setQualityDiffs] = useState<QualityDiff[]>([]);
   const [loadingDiffs, setLoadingDiffs] = useState(false);
   const [correctingDiff, setCorrectingDiff] = useState<string | null>(null);
+  const [subscriptionChanges, setSubscriptionChanges] = useState<SubscriptionChange[]>([]);
+  const [loadingSubscriptionChanges, setLoadingSubscriptionChanges] = useState(false);
   const relevantJobs = useMemo(() => jobs.filter((job) => job.type === mode), [jobs, mode]);
   const selectedTask = tasks.find((task) => task.id === selectedTaskId) ?? availableTasks[0];
   const latestJob = relevantJobs[0];
   const latestStructureJobId = mode === "structure" ? latestJob?.id ?? "" : "";
   const latestQualityJobId = mode === "quality" ? latestJob?.id ?? "" : "";
+  const latestSubscriptionJobId = mode === "subscription" ? latestJob?.id ?? "" : "";
   const pendingDDLs = structureDDLs.filter((statement) => statement.status === "pending");
   const pendingDiffs = qualityDiffs.filter((diff) => diff.status === "pending");
+  const pendingSubscriptionChanges = subscriptionChanges.filter((change) => change.status === "pending");
 
   useEffect(() => {
     setSelectedMode(config.modes[0]?.value || "");
@@ -215,6 +238,28 @@ export function CapabilityView({
       cancelled = true;
     };
   }, [latestQualityJobId]);
+
+  useEffect(() => {
+    if (!latestSubscriptionJobId) {
+      setSubscriptionChanges([]);
+      return;
+    }
+    let cancelled = false;
+    setLoadingSubscriptionChanges(true);
+    api.subscriptionChanges(latestSubscriptionJobId)
+      .then((changes) => {
+        if (!cancelled) setSubscriptionChanges(changes);
+      })
+      .catch((requestError) => {
+        if (!cancelled) setError(requestError instanceof Error ? requestError.message : "加载订阅变更计划失败");
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingSubscriptionChanges(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [latestSubscriptionJobId]);
 
   const createJob = async () => {
     if (!canManage) {
@@ -583,6 +628,73 @@ export function CapabilityView({
 
             {qualityDiffs.length > 8 && (
               <div className="mt-3 text-xs text-muted">已展示前 8 条高优先级差异，其余差异可通过批量订正处理。</div>
+            )}
+          </div>
+        )}
+
+        {mode === "subscription" && latestJob && (
+          <div className="mt-5 rounded-xl border border-line bg-[#fcfcf8] p-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <h3 className="font-semibold tracking-tight text-coal">订阅变更计划</h3>
+                <div className="mt-1 text-sm text-muted">预览运行中链路的加表、action 过滤和条件过滤发布状态。</div>
+              </div>
+              <span className={cx("rounded-full border px-2 py-1 text-xs", latestJob.status === "completed" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-amber-200 bg-amber-50 text-amber-700")}>
+                {latestJob.status === "completed" ? "已发布" : "发布中"}
+              </span>
+            </div>
+
+            <div className="mt-4 grid gap-3 sm:grid-cols-3">
+              <Info label="变更项" value={loadingSubscriptionChanges ? "加载中" : `${subscriptionChanges.length} 项`} mono />
+              <Info label="待发布" value={`${pendingSubscriptionChanges.length} 项`} mono />
+              <Info label="已发布" value={`${subscriptionChanges.length - pendingSubscriptionChanges.length} 项`} mono />
+            </div>
+
+            <div className="mt-4 divide-y divide-line overflow-hidden rounded-lg border border-line bg-white">
+              {loadingSubscriptionChanges ? (
+                <div className="grid gap-3 p-4">
+                  <div className="h-4 w-2/5 animate-pulse rounded bg-zinc-100" />
+                  <div className="h-16 w-full animate-pulse rounded bg-zinc-100" />
+                </div>
+              ) : subscriptionChanges.length === 0 ? (
+                <div className="p-6 text-center text-sm text-muted">当前订阅任务暂无变更计划</div>
+              ) : subscriptionChanges.slice(0, 8).map((change) => (
+                <div key={change.id} className="grid gap-3 p-3 text-sm xl:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)_auto] xl:items-start">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="truncate font-medium text-coal">{change.sourceObject}</span>
+                      <span className="text-muted">to</span>
+                      <span className="truncate font-medium text-coal">{change.targetObject}</span>
+                    </div>
+                    <div className="mt-1 flex flex-wrap gap-2 text-xs text-muted">
+                      <span>{subscriptionChangeLabel(change.changeType)}</span>
+                      <span>{change.fieldCount} 字段</span>
+                      <span>风险 {riskLabel(change.riskLevel)}</span>
+                    </div>
+                  </div>
+                  <div className="grid gap-2 text-xs">
+                    <div className="rounded-lg border border-line bg-[#fcfcf8] p-2">
+                      <div className="text-muted">动作</div>
+                      <div className="mt-1 font-mono text-coal">{actionList(change.beforeActions)} → {actionList(change.afterActions)}</div>
+                    </div>
+                    {(change.beforeFilter || change.afterFilter) && (
+                      <div className="rounded-lg border border-line bg-[#fcfcf8] p-2">
+                        <div className="text-muted">过滤条件</div>
+                        <div className="mt-1 break-all font-mono text-coal">{change.beforeFilter || "无"} → {change.afterFilter || "无"}</div>
+                      </div>
+                    )}
+                    {change.resultMessage && <div className="text-xs text-muted">{change.resultMessage}</div>}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2 xl:justify-end">
+                    <span className={cx("rounded-full border px-2 py-1 text-xs", severityClass(change.riskLevel))}>{riskLabel(change.riskLevel)}</span>
+                    <span className={cx("rounded-full border px-2 py-1 text-xs", subscriptionStatusClass(change.status))}>{subscriptionStatusLabel(change.status)}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {subscriptionChanges.length > 8 && (
+              <div className="mt-3 text-xs text-muted">已展示前 8 项订阅变更，其余变更会随任务完成自动发布。</div>
             )}
           </div>
         )}

@@ -101,12 +101,14 @@ type FieldMapping struct {
 }
 
 type TableMapping struct {
-	ID           string         `json:"id,omitempty"`
-	SourceSchema string         `json:"sourceSchema"`
-	SourceTable  string         `json:"sourceTable"`
-	TargetSchema string         `json:"targetSchema"`
-	TargetTable  string         `json:"targetTable"`
-	Fields       []FieldMapping `json:"fields"`
+	ID               string         `json:"id,omitempty"`
+	SourceSchema     string         `json:"sourceSchema"`
+	SourceTable      string         `json:"sourceTable"`
+	TargetSchema     string         `json:"targetSchema"`
+	TargetTable      string         `json:"targetTable"`
+	Fields           []FieldMapping `json:"fields"`
+	EventActions     []string       `json:"eventActions,omitempty"`
+	FilterExpression string         `json:"filterExpression,omitempty"`
 }
 
 type TaskStatus string
@@ -453,6 +455,35 @@ type QualityDiffCorrectionInput struct {
 	Reason string   `json:"reason,omitempty"`
 }
 
+type SubscriptionChangeStatus string
+
+const (
+	SubscriptionChangePending SubscriptionChangeStatus = "pending"
+	SubscriptionChangeApplied SubscriptionChangeStatus = "applied"
+)
+
+type SubscriptionChange struct {
+	ID            string                   `json:"id"`
+	JobID         string                   `json:"jobId"`
+	TaskID        string                   `json:"taskId"`
+	ChangeType    string                   `json:"changeType"`
+	SourceObject  string                   `json:"sourceObject"`
+	TargetObject  string                   `json:"targetObject"`
+	BeforeActions []string                 `json:"beforeActions,omitempty"`
+	AfterActions  []string                 `json:"afterActions,omitempty"`
+	BeforeFilter  string                   `json:"beforeFilter,omitempty"`
+	AfterFilter   string                   `json:"afterFilter,omitempty"`
+	FieldCount    int                      `json:"fieldCount"`
+	RiskLevel     string                   `json:"riskLevel"`
+	Status        SubscriptionChangeStatus `json:"status"`
+	ResultMessage string                   `json:"resultMessage,omitempty"`
+	CreatedAt     string                   `json:"createdAt"`
+	UpdatedAt     string                   `json:"updatedAt"`
+	AppliedAt     string                   `json:"appliedAt,omitempty"`
+	AppliedBy     string                   `json:"appliedBy,omitempty"`
+	HandledReason string                   `json:"handledReason,omitempty"`
+}
+
 type NodeStatus string
 
 const (
@@ -557,20 +588,21 @@ type ClusterSnapshot struct {
 }
 
 type DatabaseShape struct {
-	Users           []User             `json:"users"`
-	Datasources     []Datasource       `json:"datasources"`
-	SyncTasks       []SyncTask         `json:"syncTasks"`
-	RuntimeStates   []TaskRuntimeState `json:"runtimeStates"`
-	ErrorEvents     []ErrorEvent       `json:"errorEvents"`
-	OperationLogs   []OperationLog     `json:"operationLogs"`
-	AlertRules      []AlertRule        `json:"alertRules"`
-	CapabilityJobs  []CapabilityJob    `json:"capabilityJobs"`
-	Nodes           []ClusterNode      `json:"nodes"`
-	TaskLeases      []TaskLease        `json:"taskLeases"`
-	TaskRevisions   []TaskRevision     `json:"taskRevisions"`
-	TaskCheckpoints []TaskCheckpoint   `json:"taskCheckpoints"`
-	QualityDiffs    []QualityDiff      `json:"qualityDiffs"`
-	StructureDDLs   []StructureDDL     `json:"structureDdls"`
+	Users               []User               `json:"users"`
+	Datasources         []Datasource         `json:"datasources"`
+	SyncTasks           []SyncTask           `json:"syncTasks"`
+	RuntimeStates       []TaskRuntimeState   `json:"runtimeStates"`
+	ErrorEvents         []ErrorEvent         `json:"errorEvents"`
+	OperationLogs       []OperationLog       `json:"operationLogs"`
+	AlertRules          []AlertRule          `json:"alertRules"`
+	CapabilityJobs      []CapabilityJob      `json:"capabilityJobs"`
+	Nodes               []ClusterNode        `json:"nodes"`
+	TaskLeases          []TaskLease          `json:"taskLeases"`
+	TaskRevisions       []TaskRevision       `json:"taskRevisions"`
+	TaskCheckpoints     []TaskCheckpoint     `json:"taskCheckpoints"`
+	QualityDiffs        []QualityDiff        `json:"qualityDiffs"`
+	StructureDDLs       []StructureDDL       `json:"structureDdls"`
+	SubscriptionChanges []SubscriptionChange `json:"subscriptionChanges"`
 }
 
 type DashboardSummary struct {

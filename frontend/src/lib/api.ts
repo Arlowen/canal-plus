@@ -18,6 +18,7 @@ import type {
   PositionResetInput,
   QualityDiff,
   QualityDiffCorrectionInput,
+  SubscriptionChange,
   StructureDDL,
   StructureDDLApplyInput,
   SyncStrategy,
@@ -261,6 +262,9 @@ export const api = {
       method: "POST",
       body: JSON.stringify(input)
     });
+  },
+  subscriptionChanges(jobId: string) {
+    return request<SubscriptionChange[]>(`/capability-jobs/${jobId}/subscription-changes`);
   },
   cluster() {
     return request<ClusterSnapshot>("/cluster");

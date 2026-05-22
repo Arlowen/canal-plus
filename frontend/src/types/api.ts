@@ -61,6 +61,8 @@ export interface TableMapping {
   targetSchema: string;
   targetTable: string;
   fields: FieldMapping[];
+  eventActions?: string[];
+  filterExpression?: string;
 }
 
 export interface SyncStrategy {
@@ -344,6 +346,30 @@ export interface QualityDiff {
 export interface QualityDiffCorrectionInput {
   ids?: string[];
   reason?: string;
+}
+
+export type SubscriptionChangeStatus = "pending" | "applied";
+
+export interface SubscriptionChange {
+  id: string;
+  jobId: string;
+  taskId: string;
+  changeType: "add_table" | "action_filter" | "condition_filter" | string;
+  sourceObject: string;
+  targetObject: string;
+  beforeActions?: string[];
+  afterActions?: string[];
+  beforeFilter?: string;
+  afterFilter?: string;
+  fieldCount: number;
+  riskLevel: "low" | "medium" | "high" | string;
+  status: SubscriptionChangeStatus;
+  resultMessage?: string;
+  createdAt: string;
+  updatedAt: string;
+  appliedAt?: string;
+  appliedBy?: string;
+  handledReason?: string;
 }
 
 export interface DashboardSummary {

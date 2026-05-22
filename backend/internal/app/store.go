@@ -41,6 +41,7 @@ func NewStore(path string) (*Store, error) {
 		store.ensureTaskCheckpointsLocked()
 		store.ensureStructureDDLsLocked()
 		store.ensureQualityDiffsLocked()
+		store.ensureSubscriptionChangesLocked()
 		if err := store.saveLocked(); err != nil {
 			return nil, err
 		}
@@ -56,6 +57,7 @@ func NewStore(path string) (*Store, error) {
 	store.ensureTaskCheckpointsLocked()
 	store.ensureStructureDDLsLocked()
 	store.ensureQualityDiffsLocked()
+	store.ensureSubscriptionChangesLocked()
 	if err := store.saveLocked(); err != nil {
 		return nil, err
 	}
@@ -1273,7 +1275,7 @@ func (s *Store) CreateCapabilityJob(input CapabilityJob) (CapabilityJob, error) 
 		}
 		input.CurrentStep = 0
 	}
-	input.Summary = buildCapabilitySummary(input.Type, task)
+	input.Summary = buildCapabilitySummary(input.Type, task, input.Mode)
 	input.CreatedAt = timestamp
 	input.UpdatedAt = timestamp
 	s.data.CapabilityJobs = append([]CapabilityJob{input}, s.data.CapabilityJobs...)
@@ -1282,6 +1284,8 @@ func (s *Store) CreateCapabilityJob(input CapabilityJob) (CapabilityJob, error) 
 		s.createStructureDDLsLocked(input, task)
 	case CapabilityQuality:
 		s.createQualityDiffsLocked(input, task)
+	case CapabilitySubscription:
+		s.createSubscriptionChangesLocked(input, task)
 	}
 	s.logLocked("admin", "create", "capability_job", input.ID, "创建能力任务 "+input.Name)
 	if err := s.saveLocked(); err != nil {
@@ -1306,16 +1310,23 @@ func (s *Store) RunCapabilityJob(id string) (CapabilityJob, bool, error) {
 			job.Steps = defaultCapabilitySteps(job.Type)
 			if job.Type == CapabilityStructure {
 				if task, ok := s.getTaskLocked(job.TaskID); ok {
-					job.Summary = buildCapabilitySummary(job.Type, task)
+					job.Summary = buildCapabilitySummary(job.Type, task, job.Mode)
 					s.removeStructureDDLsLocked(job.ID)
 					s.createStructureDDLsLocked(*job, task)
 				}
 			}
 			if job.Type == CapabilityQuality {
 				if task, ok := s.getTaskLocked(job.TaskID); ok {
-					job.Summary = buildCapabilitySummary(job.Type, task)
+					job.Summary = buildCapabilitySummary(job.Type, task, job.Mode)
 					s.removeQualityDiffsLocked(job.ID)
 					s.createQualityDiffsLocked(*job, task)
+				}
+			}
+			if job.Type == CapabilitySubscription {
+				if task, ok := s.getTaskLocked(job.TaskID); ok {
+					job.Summary = buildCapabilitySummary(job.Type, task, job.Mode)
+					s.removeSubscriptionChangesLocked(job.ID)
+					s.createSubscriptionChangesLocked(*job, task)
 				}
 			}
 		}
@@ -1451,6 +1462,24 @@ func (s *Store) CorrectQualityDiffs(jobID string, input QualityDiffCorrectionInp
 	job.UpdatedAt = timestamp
 	s.logLocked("admin", "quality_correct", "capability_job", jobID, "订正数据校验差异 "+intToString(changed)+" 条："+job.Name)
 	return cloneJSON(*job), true, s.saveLocked()
+}
+
+func (s *Store) SubscriptionChanges(jobID string) ([]SubscriptionChange, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.ensureSubscriptionChangesLocked()
+	job, ok := s.getCapabilityJobLocked(jobID)
+	if !ok || job.Type != CapabilitySubscription {
+		return nil, false
+	}
+	changes := make([]SubscriptionChange, 0)
+	for _, change := range s.data.SubscriptionChanges {
+		if change.JobID == jobID {
+			changes = append(changes, change)
+		}
+	}
+	sortSubscriptionChanges(changes)
+	return cloneJSON(changes), true
 }
 
 func (s *Store) getDatasourceLocked(id string) (Datasource, bool) {
@@ -2087,6 +2116,7 @@ func (s *Store) refreshCapabilityJobsLocked() {
 				s.ensureQualityDiffsForJobLocked(*job)
 				job.Summary.CorrectedRows = s.countQualityDiffsLocked(job.ID, QualityDiffCorrected)
 			case CapabilitySubscription:
+				s.ensureSubscriptionChangesForJobLocked(*job)
 				s.applySubscriptionJobLocked(job)
 			}
 		}
@@ -2441,6 +2471,143 @@ func sortQualityDiffs(diffs []QualityDiff) {
 	})
 }
 
+func (s *Store) ensureSubscriptionChangesLocked() {
+	for _, job := range s.data.CapabilityJobs {
+		if job.Type != CapabilitySubscription {
+			continue
+		}
+		s.ensureSubscriptionChangesForJobLocked(job)
+	}
+}
+
+func (s *Store) ensureSubscriptionChangesForJobLocked(job CapabilityJob) {
+	if job.Type != CapabilitySubscription || s.hasSubscriptionChangesLocked(job.ID) {
+		return
+	}
+	task, ok := s.getTaskLocked(job.TaskID)
+	if !ok {
+		return
+	}
+	created := s.createSubscriptionChangesLocked(job, task)
+	if created > 0 && job.Status == CapabilityCompleted {
+		s.markSubscriptionChangesAppliedLocked(job.ID, valueOr(job.UpdatedAt, now()), "历史订阅任务已完成，补齐发布记录")
+	}
+}
+
+func (s *Store) createSubscriptionChangesLocked(job CapabilityJob, task SyncTask) int {
+	if job.Type != CapabilitySubscription || s.hasSubscriptionChangesLocked(job.ID) {
+		return 0
+	}
+	timestamp := now()
+	changes := []SubscriptionChange{}
+	switch job.Mode {
+	case "filter_actions":
+		changes = append(changes, SubscriptionChange{
+			ID:            newID(),
+			JobID:         job.ID,
+			TaskID:        task.ID,
+			ChangeType:    "action_filter",
+			SourceObject:  task.Name,
+			TargetObject:  task.Name,
+			BeforeActions: writeActionsFromStrategy(task.Strategy),
+			AfterActions:  []string{"insert", "update"},
+			FieldCount:    mappedFieldCount(task.TableMappings),
+			RiskLevel:     "medium",
+			Status:        SubscriptionChangePending,
+			ResultMessage: "等待发布 action 过滤",
+			CreatedAt:     timestamp,
+			UpdatedAt:     timestamp,
+		})
+	case "condition_filter":
+		mapping := firstTableMapping(task)
+		changes = append(changes, SubscriptionChange{
+			ID:            newID(),
+			JobID:         job.ID,
+			TaskID:        task.ID,
+			ChangeType:    "condition_filter",
+			SourceObject:  objectName(mapping.SourceSchema, mapping.SourceTable),
+			TargetObject:  objectName(mapping.TargetSchema, mapping.TargetTable),
+			BeforeActions: tableActions(mapping, task.Strategy),
+			AfterActions:  tableActions(mapping, task.Strategy),
+			BeforeFilter:  mapping.FilterExpression,
+			AfterFilter:   "updated_at >= DATE_SUB(CURRENT_DATE, INTERVAL 90 DAY)",
+			FieldCount:    len(mapping.Fields),
+			RiskLevel:     "high",
+			Status:        SubscriptionChangePending,
+			ResultMessage: "等待发布条件过滤",
+			CreatedAt:     timestamp,
+			UpdatedAt:     timestamp,
+		})
+	default:
+		count := maxInt(1, job.Summary.AddedTables)
+		for index := 0; index < count; index++ {
+			tableIndex := len(task.TableMappings) + index + 1
+			sourceTable := "auto_added_" + intToString(tableIndex)
+			targetTable := "ods_auto_added_" + intToString(tableIndex)
+			changes = append(changes, SubscriptionChange{
+				ID:            newID(),
+				JobID:         job.ID,
+				TaskID:        task.ID,
+				ChangeType:    "add_table",
+				SourceObject:  objectName("order_center", sourceTable),
+				TargetObject:  objectName("reporting", targetTable),
+				AfterActions:  writeActionsFromStrategy(task.Strategy),
+				FieldCount:    2,
+				RiskLevel:     "medium",
+				Status:        SubscriptionChangePending,
+				ResultMessage: "等待发布新增订阅表",
+				CreatedAt:     timestamp,
+				UpdatedAt:     timestamp,
+			})
+		}
+	}
+	s.data.SubscriptionChanges = append(s.data.SubscriptionChanges, changes...)
+	return len(changes)
+}
+
+func (s *Store) hasSubscriptionChangesLocked(jobID string) bool {
+	for _, change := range s.data.SubscriptionChanges {
+		if change.JobID == jobID {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *Store) removeSubscriptionChangesLocked(jobID string) {
+	changes := s.data.SubscriptionChanges[:0]
+	for _, change := range s.data.SubscriptionChanges {
+		if change.JobID != jobID {
+			changes = append(changes, change)
+		}
+	}
+	s.data.SubscriptionChanges = changes
+}
+
+func (s *Store) markSubscriptionChangesAppliedLocked(jobID string, timestamp string, message string) {
+	for index := range s.data.SubscriptionChanges {
+		change := &s.data.SubscriptionChanges[index]
+		if change.JobID != jobID || change.Status == SubscriptionChangeApplied {
+			continue
+		}
+		change.Status = SubscriptionChangeApplied
+		change.AppliedAt = timestamp
+		change.AppliedBy = "system"
+		change.HandledReason = message
+		change.ResultMessage = message
+		change.UpdatedAt = timestamp
+	}
+}
+
+func sortSubscriptionChanges(changes []SubscriptionChange) {
+	sort.SliceStable(changes, func(left, right int) bool {
+		if changes[left].Status == changes[right].Status {
+			return changes[left].CreatedAt > changes[right].CreatedAt
+		}
+		return changes[left].Status == SubscriptionChangePending
+	})
+}
+
 func (s *Store) getCapabilityJobLocked(id string) (CapabilityJob, bool) {
 	for _, job := range s.data.CapabilityJobs {
 		if job.ID == id {
@@ -2465,27 +2632,151 @@ func (s *Store) applySubscriptionJobLocked(job *CapabilityJob) {
 			continue
 		}
 		task := &s.data.SyncTasks[taskIndex]
-		if job.Summary.AddedTables > 0 {
-			for added := 0; added < job.Summary.AddedTables; added++ {
-				task.TableMappings = append(task.TableMappings, TableMapping{
-					ID:           newID(),
-					SourceSchema: "order_center",
-					SourceTable:  "auto_added_" + intToString(added+1),
-					TargetSchema: "reporting",
-					TargetTable:  "ods_auto_added_" + intToString(added+1),
-					Fields: []FieldMapping{
-						{SourceField: "id", TargetField: "id", SourceType: "bigint", TargetType: "bigint", PrimaryKey: true},
-						{SourceField: "updated_at", TargetField: "updated_at", SourceType: "datetime", TargetType: "datetime"},
-					},
-				})
+		timestamp := now()
+		applied := 0
+		for changeIndex := range s.data.SubscriptionChanges {
+			change := &s.data.SubscriptionChanges[changeIndex]
+			if change.JobID != job.ID || change.Status == SubscriptionChangeApplied {
+				continue
 			}
+			switch change.ChangeType {
+			case "add_table":
+				if !taskHasMapping(*task, change.SourceObject, change.TargetObject) {
+					sourceSchema, sourceTable := splitObjectName(change.SourceObject)
+					targetSchema, targetTable := splitObjectName(change.TargetObject)
+					task.TableMappings = append(task.TableMappings, TableMapping{
+						ID:           newID(),
+						SourceSchema: sourceSchema,
+						SourceTable:  sourceTable,
+						TargetSchema: targetSchema,
+						TargetTable:  targetTable,
+						EventActions: change.AfterActions,
+						Fields: []FieldMapping{
+							{SourceField: "id", TargetField: "id", SourceType: "bigint", TargetType: "bigint", PrimaryKey: true},
+							{SourceField: "updated_at", TargetField: "updated_at", SourceType: "datetime", TargetType: "datetime"},
+						},
+					})
+				}
+			case "action_filter":
+				for mappingIndex := range task.TableMappings {
+					task.TableMappings[mappingIndex].EventActions = append([]string{}, change.AfterActions...)
+				}
+				task.Strategy.WriteMode.Insert = containsString(change.AfterActions, "insert")
+				task.Strategy.WriteMode.Update = containsString(change.AfterActions, "update")
+				task.Strategy.WriteMode.Delete = containsString(change.AfterActions, "delete")
+			case "condition_filter":
+				for mappingIndex := range task.TableMappings {
+					if objectName(task.TableMappings[mappingIndex].SourceSchema, task.TableMappings[mappingIndex].SourceTable) == change.SourceObject {
+						task.TableMappings[mappingIndex].FilterExpression = change.AfterFilter
+						break
+					}
+				}
+			}
+			change.Status = SubscriptionChangeApplied
+			change.AppliedAt = timestamp
+			change.AppliedBy = "system"
+			change.HandledReason = "能力任务完成后自动发布"
+			change.ResultMessage = "已发布到任务配置 v" + intToString(task.ConfigVersion+1)
+			change.UpdatedAt = timestamp
+			applied++
+		}
+		if applied > 0 {
 			task.ConfigVersion++
-			task.UpdatedAt = now()
+			task.UpdatedAt = timestamp
+			job.Summary.AddedTables = s.countSubscriptionChangesLocked(job.ID, "add_table")
+			job.UpdatedAt = timestamp
 			s.recordTaskRevisionLocked(*task, "subscription", "订阅变更已生效", "system")
-			s.logLocked("system", "subscription_apply", "sync_task", task.ID, "订阅变更已生效："+job.Name)
+			s.logLocked("system", "subscription_apply", "sync_task", task.ID, "订阅变更已生效："+job.Name+"，发布 "+intToString(applied)+" 项变更")
 		}
 		return
 	}
+}
+
+func (s *Store) countSubscriptionChangesLocked(jobID string, changeType string) int {
+	count := 0
+	for _, change := range s.data.SubscriptionChanges {
+		if change.JobID != jobID {
+			continue
+		}
+		if changeType == "" || change.ChangeType == changeType {
+			count++
+		}
+	}
+	return count
+}
+
+func mappedFieldCount(mappings []TableMapping) int {
+	count := 0
+	for _, mapping := range mappings {
+		count += len(mapping.Fields)
+	}
+	return count
+}
+
+func firstTableMapping(task SyncTask) TableMapping {
+	if len(task.TableMappings) == 0 {
+		return TableMapping{
+			SourceSchema: "source",
+			SourceTable:  "unknown",
+			TargetSchema: "target",
+			TargetTable:  "unknown",
+		}
+	}
+	return task.TableMappings[0]
+}
+
+func tableActions(mapping TableMapping, strategy SyncStrategy) []string {
+	if len(mapping.EventActions) > 0 {
+		return append([]string{}, mapping.EventActions...)
+	}
+	return writeActionsFromStrategy(strategy)
+}
+
+func writeActionsFromStrategy(strategy SyncStrategy) []string {
+	actions := []string{}
+	if strategy.WriteMode.Insert {
+		actions = append(actions, "insert")
+	}
+	if strategy.WriteMode.Update {
+		actions = append(actions, "update")
+	}
+	if strategy.WriteMode.Delete {
+		actions = append(actions, "delete")
+	}
+	return actions
+}
+
+func objectName(schema string, table string) string {
+	if strings.TrimSpace(schema) == "" {
+		return strings.TrimSpace(table)
+	}
+	return strings.TrimSpace(schema) + "." + strings.TrimSpace(table)
+}
+
+func splitObjectName(value string) (string, string) {
+	parts := strings.SplitN(strings.TrimSpace(value), ".", 2)
+	if len(parts) == 2 {
+		return parts[0], parts[1]
+	}
+	return "", strings.TrimSpace(value)
+}
+
+func taskHasMapping(task SyncTask, sourceObject string, targetObject string) bool {
+	for _, mapping := range task.TableMappings {
+		if objectName(mapping.SourceSchema, mapping.SourceTable) == sourceObject && objectName(mapping.TargetSchema, mapping.TargetTable) == targetObject {
+			return true
+		}
+	}
+	return false
+}
+
+func containsString(values []string, needle string) bool {
+	for _, value := range values {
+		if value == needle {
+			return true
+		}
+	}
+	return false
 }
 
 func defaultCapabilityJobName(jobType CapabilityJobType, taskName string) string {
@@ -2562,7 +2853,7 @@ func capabilityStepDetail(jobType CapabilityJobType, name string) string {
 	}
 }
 
-func buildCapabilitySummary(jobType CapabilityJobType, task SyncTask) CapabilityJobSummary {
+func buildCapabilitySummary(jobType CapabilityJobType, task SyncTask, mode string) CapabilityJobSummary {
 	tables := len(task.TableMappings)
 	columns := 0
 	for _, mapping := range task.TableMappings {
@@ -2582,8 +2873,15 @@ func buildCapabilitySummary(jobType CapabilityJobType, task SyncTask) Capability
 			summary.RiskLevel = "medium"
 		}
 	case CapabilitySubscription:
-		summary.AddedTables = 1
-		summary.RiskLevel = "medium"
+		switch mode {
+		case "filter_actions":
+			summary.RiskLevel = "medium"
+		case "condition_filter":
+			summary.RiskLevel = "high"
+		default:
+			summary.AddedTables = 1
+			summary.RiskLevel = "medium"
+		}
 	}
 	return summary
 }

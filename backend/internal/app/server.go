@@ -995,6 +995,13 @@ func (s *Server) handleCapabilityJobs(response http.ResponseWriter, request *htt
 			return
 		}
 		writeJSON(response, http.StatusOK, job)
+	case len(parts) == 3 && parts[2] == "subscription-changes" && request.Method == http.MethodGet:
+		changes, ok := s.store.SubscriptionChanges(parts[1])
+		if !ok {
+			writeError(response, http.StatusNotFound, "订阅变更任务不存在")
+			return
+		}
+		writeJSON(response, http.StatusOK, changes)
 	default:
 		writeError(response, http.StatusNotFound, "not found")
 	}
