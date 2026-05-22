@@ -4,15 +4,17 @@
   "version": "0.1.0",
   "description": "Canal Plus web console and API workspace.",
   "workspaces": [
-    "backend",
     "frontend"
   ],
   "scripts": {
-    "dev": "concurrently -n backend,frontend -c cyan,green \"npm run dev -w backend\" \"npm run dev -w frontend\"",
-    "build": "npm run build -w backend && npm run build -w frontend",
-    "typecheck": "npm run typecheck -w backend && npm run typecheck -w frontend",
+    "dev": "concurrently -n backend,frontend -c cyan,green \"npm run dev:backend\" \"npm run dev -w frontend\"",
+    "dev:backend": "cd backend && go run ./cmd/server",
+    "build": "npm run build:backend && npm run build -w frontend",
+    "build:backend": "cd backend && go build -o bin/canal-plus-backend ./cmd/server",
+    "typecheck": "npm run test:backend && npm run typecheck -w frontend",
+    "test:backend": "cd backend && go test ./...",
     "lint": "npm run lint -w frontend",
-    "start": "npm run start -w backend"
+    "start": "cd backend && ./bin/canal-plus-backend"
   },
   "devDependencies": {
     "concurrently": "^9.1.2"
