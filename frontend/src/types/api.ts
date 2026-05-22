@@ -165,7 +165,7 @@ export interface OperationLog {
   id: string;
   actor: string;
   action: string;
-  targetType: "datasource" | "sync_task" | "error_event" | "auth";
+  targetType: "datasource" | "sync_task" | "error_event" | "auth" | "cluster_node" | "capability_job";
   targetId?: string;
   detail: string;
   createdAt: string;

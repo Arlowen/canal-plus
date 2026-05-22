@@ -14,7 +14,8 @@ import {
 import { StatusBadge } from "../components/StatusBadge";
 import { api } from "../lib/api";
 import { cx } from "../lib/format";
-import type { SyncStrategy, SyncTask, TaskExport } from "../types/api";
+import type { ClusterSnapshot, ErrorEvent, OperationLog, SyncStrategy, SyncTask, TaskExport } from "../types/api";
+import { TaskInsightPanel } from "./TaskInsightPanel";
 
 type TaskAction = "start" | "pause" | "resume" | "stop" | "copy";
 
@@ -270,15 +271,25 @@ function TaskFunctionPanel({ task, onChanged }: { task: SyncTask; onChanged: () 
 
 export function TaskView({
   tasks,
+  errors,
+  logs,
+  cluster,
   onAction,
   onChanged
 }: {
   tasks: SyncTask[];
+  errors: ErrorEvent[];
+  logs: OperationLog[];
+  cluster: ClusterSnapshot | null;
   onAction: (task: SyncTask, action: TaskAction) => Promise<void>;
   onChanged: () => Promise<void> | void;
 }) {
   const [selectedId, setSelectedId] = useState<string | null>(tasks[0]?.id ?? null);
   const selected = tasks.find((task) => task.id === selectedId) ?? tasks[0];
+  const selectedErrors = selected ? errors.filter((event) => event.taskId === selected.id) : [];
+  const selectedLogs = selected ? logs.filter((log) => log.targetId === selected.id || log.detail.includes(selected.name)) : [];
+  const selectedLease = selected ? cluster?.leases.find((lease) => lease.taskId === selected.id) : undefined;
+  const selectedNode = cluster?.nodes.find((node) => node.id === (selectedLease?.nodeId || selected?.runtime?.nodeId));
 
   useEffect(() => {
     if (!selectedId && tasks[0]) setSelectedId(tasks[0].id);
@@ -360,6 +371,8 @@ export function TaskView({
             <ActionButton icon={Stop} label="停止" onClick={() => onAction(selected, "stop")} disabled={selected.status === "stopped"} />
             <ActionButton icon={Copy} label="复制" onClick={() => onAction(selected, "copy")} />
           </div>
+
+          <TaskInsightPanel task={selected} lease={selectedLease} node={selectedNode} errors={selectedErrors} logs={selectedLogs} />
 
           <TaskFunctionPanel key={selected.id} task={selected} onChanged={onChanged} />
         </aside>

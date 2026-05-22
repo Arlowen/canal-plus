@@ -242,7 +242,7 @@ function App() {
                 <DatasourceView datasources={datasources} onChanged={() => refresh(true)} />
               )}
               {view === "tasks" && (
-                <TaskView tasks={tasks} onAction={handleTaskAction} onChanged={() => refresh(true)} />
+                <TaskView tasks={tasks} errors={errors} logs={logs} cluster={cluster} onAction={handleTaskAction} onChanged={() => refresh(true)} />
               )}
               {view === "wizard" && (
                 <TaskWizard datasources={datasources} onCreated={() => {
