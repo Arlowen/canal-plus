@@ -872,6 +872,17 @@ func (s *Server) handleCluster(response http.ResponseWriter, request *http.Reque
 			return
 		}
 		writeJSON(response, http.StatusOK, report)
+	case len(parts) == 4 && parts[1] == "nodes" && parts[3] == "drain" && request.Method == http.MethodPost:
+		report, ok, err := s.store.DrainNode(parts[2])
+		if err != nil {
+			writeError(response, http.StatusBadRequest, err.Error())
+			return
+		}
+		if !ok {
+			writeError(response, http.StatusNotFound, "节点不存在")
+			return
+		}
+		writeJSON(response, http.StatusOK, report)
 	case len(parts) == 4 && parts[1] == "nodes" && request.Method == http.MethodPost:
 		var status NodeStatus
 		switch parts[3] {
@@ -879,8 +890,6 @@ func (s *Server) handleCluster(response http.ResponseWriter, request *http.Reque
 			status = NodeOnline
 		case "offline":
 			status = NodeOffline
-		case "drain":
-			status = NodeDraining
 		default:
 			writeError(response, http.StatusNotFound, "not found")
 			return

@@ -169,6 +169,67 @@ func TestFailoverDrillReturnsTakeoverReport(t *testing.T) {
 	}
 }
 
+func TestDrainNodeReturnsMaintenanceHandoffReport(t *testing.T) {
+	store := newTestStore(t)
+	before := store.ClusterSnapshot()
+
+	var activeNode ClusterNode
+	for _, node := range before.Nodes {
+		if node.Status == NodeOnline && node.RunningTasks > 0 {
+			activeNode = node
+			break
+		}
+	}
+	if activeNode.ID == "" {
+		t.Fatalf("expected active node in snapshot: %#v", before.Nodes)
+	}
+
+	affectedBefore := map[string]TaskLease{}
+	for _, lease := range before.Leases {
+		if lease.NodeID == activeNode.ID {
+			affectedBefore[lease.TaskID] = lease
+		}
+	}
+
+	report, ok, err := store.DrainNode(activeNode.ID)
+	if err != nil || !ok {
+		t.Fatalf("DrainNode(%q) = ok %v, err %v", activeNode.ID, ok, err)
+	}
+	if !report.Success {
+		t.Fatalf("expected drain to succeed: %#v", report)
+	}
+	if report.Node.Status != NodeDraining {
+		t.Fatalf("expected report node to be draining: %#v", report.Node)
+	}
+	if len(report.AffectedTasks) != len(affectedBefore) {
+		t.Fatalf("affected task count mismatch, before %d report %d", len(affectedBefore), len(report.AffectedTasks))
+	}
+	for _, transition := range report.AffectedTasks {
+		if transition.PreviousNodeID != activeNode.ID {
+			t.Fatalf("unexpected previous node in transition: %#v", transition)
+		}
+		if transition.NewNodeID == "" || transition.NewNodeID == activeNode.ID {
+			t.Fatalf("task was not moved to another node: %#v", transition)
+		}
+		if transition.LeaseEpoch <= transition.PreviousLeaseEpoch {
+			t.Fatalf("expected lease epoch to advance: %#v", transition)
+		}
+		if transition.RecoveryBinlogFile == "" || transition.RecoveryBinlogPosition <= 0 {
+			t.Fatalf("recovery position missing: %#v", transition)
+		}
+	}
+	for _, node := range report.After.Nodes {
+		if node.ID == activeNode.ID {
+			if node.Status != NodeDraining {
+				t.Fatalf("drained node should stay draining: %#v", node)
+			}
+			if node.RunningTasks != 0 {
+				t.Fatalf("drained node should not own tasks: %#v", node)
+			}
+		}
+	}
+}
+
 func TestRebalanceKeepsLeasesOnOnlineNodes(t *testing.T) {
 	store := newTestStore(t)
 	before := store.ClusterSnapshot()

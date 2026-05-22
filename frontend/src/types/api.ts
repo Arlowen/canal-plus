@@ -425,6 +425,17 @@ export interface FailoverDrillReport {
   after: ClusterSnapshot;
 }
 
+export interface NodeDrainReport {
+  id: string;
+  drainedAt: string;
+  node: ClusterNode;
+  success: boolean;
+  message: string;
+  affectedTasks: FailoverDrillTask[];
+  before: ClusterSnapshot;
+  after: ClusterSnapshot;
+}
+
 export interface ClusterSnapshot {
   nodes: ClusterNode[];
   leases: TaskLease[];

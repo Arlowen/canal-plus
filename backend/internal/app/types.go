@@ -525,6 +525,17 @@ type FailoverDrillReport struct {
 	After         ClusterSnapshot     `json:"after"`
 }
 
+type NodeDrainReport struct {
+	ID            string              `json:"id"`
+	DrainedAt     string              `json:"drainedAt"`
+	Node          ClusterNode         `json:"node"`
+	Success       bool                `json:"success"`
+	Message       string              `json:"message"`
+	AffectedTasks []FailoverDrillTask `json:"affectedTasks"`
+	Before        ClusterSnapshot     `json:"before"`
+	After         ClusterSnapshot     `json:"after"`
+}
+
 type ClusterSnapshot struct {
 	Nodes                   []ClusterNode `json:"nodes"`
 	Leases                  []TaskLease   `json:"leases"`

@@ -12,6 +12,7 @@ import type {
   ErrorEvent,
   FailoverDrillReport,
   LoginResponse,
+  NodeDrainReport,
   OperationLog,
   PositionResetInput,
   QualityDiff,
@@ -269,8 +270,11 @@ export const api = {
       body: JSON.stringify(input)
     });
   },
-  nodeAction(id: string, action: "online" | "offline" | "drain" | "heartbeat") {
+  nodeAction(id: string, action: "online" | "offline" | "heartbeat") {
     return request<ClusterSnapshot | unknown>(`/cluster/nodes/${id}/${action}`, { method: "POST" });
+  },
+  drainNode(id: string) {
+    return request<NodeDrainReport>(`/cluster/nodes/${id}/drain`, { method: "POST" });
   },
   failoverDrill(id: string) {
     return request<FailoverDrillReport>(`/cluster/nodes/${id}/failover-drill`, { method: "POST" });

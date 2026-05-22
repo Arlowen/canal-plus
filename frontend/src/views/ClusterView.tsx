@@ -14,7 +14,19 @@ import {
 import { PermissionNotice } from "../components/PermissionNotice";
 import { api } from "../lib/api";
 import { cx, formatDate, formatNumber, secondsSince } from "../lib/format";
-import type { ClusterNode, ClusterNodeInput, ClusterSnapshot, FailoverDrillReport, SyncTask } from "../types/api";
+import type { ClusterNode, ClusterNodeInput, ClusterSnapshot, FailoverDrillTask, NodeDrainReport, SyncTask } from "../types/api";
+
+type HandoffReport = {
+  id: string;
+  kind: "drill" | "drain";
+  happenedAt: string;
+  node: ClusterNode;
+  success: boolean;
+  message: string;
+  affectedTasks: FailoverDrillTask[];
+  before: ClusterSnapshot;
+  after: ClusterSnapshot;
+};
 
 function emptyNodeForm(): ClusterNodeInput {
   return {
@@ -82,6 +94,20 @@ function phaseText(phase: string) {
   return runtimePhaseText[phase] || phase || "-";
 }
 
+function fromDrainReport(report: NodeDrainReport): HandoffReport {
+  return {
+    id: report.id,
+    kind: "drain",
+    happenedAt: report.drainedAt,
+    node: report.node,
+    success: report.success,
+    message: report.message,
+    affectedTasks: report.affectedTasks,
+    before: report.before,
+    after: report.after
+  };
+}
+
 export function ClusterView({
   cluster,
   tasks,
@@ -96,7 +122,7 @@ export function ClusterView({
   const [busyNode, setBusyNode] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
-  const [drillReport, setDrillReport] = useState<FailoverDrillReport | null>(null);
+  const [handoffReport, setHandoffReport] = useState<HandoffReport | null>(null);
   const [nodeForm, setNodeForm] = useState<ClusterNodeInput>(emptyNodeForm);
   const nodes = cluster?.nodes ?? [];
   const leases = cluster?.leases ?? [];
@@ -108,11 +134,11 @@ export function ClusterView({
 
   const nodeName = (id?: string) => {
     if (!id) return "待分配";
-    const node = nodeById.get(id) || drillReport?.after.nodes.find((item) => item.id === id) || drillReport?.before.nodes.find((item) => item.id === id);
+    const node = nodeById.get(id) || handoffReport?.after.nodes.find((item) => item.id === id) || handoffReport?.before.nodes.find((item) => item.id === id);
     return node ? `${node.name} / ${id}` : id;
   };
 
-  const runNodeAction = async (node: ClusterNode, action: "online" | "offline" | "drain" | "heartbeat") => {
+  const runNodeAction = async (node: ClusterNode, action: "online" | "offline" | "heartbeat") => {
     if (!canManage) {
       setError("节点上下线和排空需要管理员权限");
       return;
@@ -158,10 +184,39 @@ export function ClusterView({
     setMessage(null);
     try {
       const report = await api.failoverDrill(node.id);
-      setDrillReport(report);
+      setHandoffReport({
+        id: report.id,
+        kind: "drill",
+        happenedAt: report.drilledAt,
+        node: report.node,
+        success: report.success,
+        message: report.message,
+        affectedTasks: report.affectedTasks,
+        before: report.before,
+        after: report.after
+      });
       await onChanged();
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "故障演练失败");
+    } finally {
+      setBusyNode(null);
+    }
+  };
+
+  const drainNode = async (node: ClusterNode) => {
+    if (!canManage) {
+      setError("维护排空需要管理员权限");
+      return;
+    }
+    setBusyNode(`drain:${node.id}`);
+    setError(null);
+    setMessage(null);
+    try {
+      const report = await api.drainNode(node.id);
+      setHandoffReport(fromDrainReport(report));
+      await onChanged();
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "维护排空失败");
     } finally {
       setBusyNode(null);
     }
@@ -288,7 +343,7 @@ export function ClusterView({
 
                 <div className="mt-4 grid grid-cols-2 gap-2 xl:grid-cols-4">
                   <button onClick={() => runNodeAction(node, "offline")} disabled={!canManage || busyNode === node.id || node.status === "offline"} className="node-action">下线</button>
-                  <button onClick={() => runNodeAction(node, "drain")} disabled={!canManage || busyNode === node.id || node.status === "draining"} className="node-action">排空</button>
+                  <button onClick={() => drainNode(node)} disabled={!canManage || busyNode === `drain:${node.id}` || node.status !== "online"} className="node-action">排空</button>
                   <button onClick={() => runNodeAction(node, "online")} disabled={!canManage || busyNode === node.id || node.status === "online"} className="node-action">恢复</button>
                   <button onClick={() => runFailoverDrill(node)} disabled={!canManage || busyNode === `drill:${node.id}` || node.status !== "online"} className="node-action">演练</button>
                 </div>
@@ -374,50 +429,50 @@ export function ClusterView({
           </form>
         </div>
 
-        {drillReport && (
+        {handoffReport && (
           <div className="rounded-xl border border-line bg-white p-5 shadow-panel">
             <div className="flex items-start justify-between gap-3">
               <div>
                 <div className="flex items-center gap-2">
                   <span className={cx(
                     "flex h-9 w-9 items-center justify-center rounded-lg border",
-                    drillReport.success ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-red-200 bg-red-50 text-red-700"
+                    handoffReport.success ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-red-200 bg-red-50 text-red-700"
                   )}>
-                    {drillReport.success ? <ShieldCheck size={18} /> : <WarningCircle size={18} />}
+                    {handoffReport.success ? <ShieldCheck size={18} /> : <WarningCircle size={18} />}
                   </span>
                   <div>
-                    <h2 className="font-semibold tracking-tight text-coal">最近故障演练</h2>
-                    <p className="mt-1 text-sm text-zinc-600">{drillReport.message}</p>
+                    <h2 className="font-semibold tracking-tight text-coal">{handoffReport.kind === "drill" ? "最近故障演练" : "最近维护排空"}</h2>
+                    <p className="mt-1 text-sm text-zinc-600">{handoffReport.message}</p>
                   </div>
                 </div>
               </div>
               <span className="rounded-full border border-line bg-[#fcfcf8] px-2 py-1 font-mono text-xs text-muted">
-                {formatDate(drillReport.drilledAt)}
+                {formatDate(handoffReport.happenedAt)}
               </span>
             </div>
 
             <div className="mt-4 grid gap-2 sm:grid-cols-3">
-              <ClusterStat label="演练节点" value={drillReport.node.name} detail={`${drillReport.node.zone} / ${drillReport.node.id}`} tone={drillReport.success ? "ok" : "warn"} />
-              <ClusterStat label="影响任务" value={drillReport.affectedTasks.length} detail="自动接管链路" />
-              <ClusterStat label="接管累计" value={drillReport.after.failovers} detail={`演练前 ${drillReport.before.failovers}`} />
+              <ClusterStat label={handoffReport.kind === "drill" ? "演练节点" : "排空节点"} value={handoffReport.node.name} detail={`${handoffReport.node.zone} / ${handoffReport.node.id}`} tone={handoffReport.success ? "ok" : "warn"} />
+              <ClusterStat label="影响任务" value={handoffReport.affectedTasks.length} detail="自动接管链路" />
+              <ClusterStat label="接管累计" value={handoffReport.after.failovers} detail={`操作前 ${handoffReport.before.failovers}`} />
             </div>
 
             <div className="mt-4 rounded-xl border border-line bg-[#fcfcf8] p-3">
               <div className="flex items-center gap-2 text-sm font-medium text-coal">
                 <MapPinLine size={16} />
-                演练轨迹
+                {handoffReport.kind === "drill" ? "演练轨迹" : "排空轨迹"}
               </div>
               <div className="mt-3 grid gap-2 text-xs text-zinc-600 sm:grid-cols-[1fr_auto_1fr] sm:items-center">
                 <div className="rounded-lg border border-line bg-white p-3">
-                  <div className="text-muted">故障节点</div>
-                  <div className="mt-1 truncate font-mono text-coal">{nodeName(drillReport.node.id)}</div>
+                  <div className="text-muted">{handoffReport.kind === "drill" ? "故障节点" : "排空节点"}</div>
+                  <div className="mt-1 truncate font-mono text-coal">{nodeName(handoffReport.node.id)}</div>
                 </div>
                 <ArrowRight className="hidden text-zinc-400 sm:block" size={18} />
                 <div className="rounded-lg border border-line bg-white p-3">
                   <div className="text-muted">接管目标</div>
                   <div className="mt-1 truncate font-mono text-coal">
-                    {drillReport.affectedTasks.length > 0
-                      ? Array.from(new Set(drillReport.affectedTasks.map((task) => nodeName(task.newNodeId)))).join(", ")
+                    {handoffReport.affectedTasks.length > 0
+                      ? Array.from(new Set(handoffReport.affectedTasks.map((task) => nodeName(task.newNodeId)))).join(", ")
                       : "无任务迁移"}
                   </div>
                 </div>
@@ -425,9 +480,11 @@ export function ClusterView({
             </div>
 
             <div className="mt-4 space-y-3">
-              {drillReport.affectedTasks.length === 0 ? (
-                <div className="rounded-lg border border-dashed border-line bg-[#fcfcf8] p-4 text-center text-sm text-muted">该节点没有承载任务，演练只验证节点离线流程。</div>
-              ) : drillReport.affectedTasks.map((task) => (
+              {handoffReport.affectedTasks.length === 0 ? (
+                <div className="rounded-lg border border-dashed border-line bg-[#fcfcf8] p-4 text-center text-sm text-muted">
+                  {handoffReport.kind === "drill" ? "该节点没有承载任务，演练只验证节点离线流程。" : "该节点没有承载任务，排空只更新维护状态。"}
+                </div>
+              ) : handoffReport.affectedTasks.map((task) => (
                 <div key={task.taskId} className="rounded-xl border border-line bg-[#fcfcf8] p-4 text-sm">
                   <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                     <div className="min-w-0">

@@ -823,16 +823,8 @@ func (s *Store) FailoverDrill(nodeID string) (FailoverDrillReport, bool, error) 
 		return FailoverDrillReport{}, true, errors.New("只有在线节点可以发起故障演练")
 	}
 
-	tasksByID := map[string]SyncTask{}
-	for _, task := range s.data.SyncTasks {
-		tasksByID[task.ID] = task
-	}
-	affectedBefore := map[string]TaskLease{}
-	for _, lease := range before.Leases {
-		if lease.NodeID == nodeID {
-			affectedBefore[lease.TaskID] = lease
-		}
-	}
+	tasksByID := s.tasksByIDLocked()
+	affectedBefore := leasesOnNode(before.Leases, nodeID)
 
 	timestamp := now()
 	node.Status = NodeOffline
@@ -840,43 +832,16 @@ func (s *Store) FailoverDrill(nodeID string) (FailoverDrillReport, bool, error) 
 	s.logLocked("admin", "failover_drill", "cluster_node", nodeID, "故障演练触发节点离线："+node.Name)
 	s.reconcileClusterLocked()
 	after := s.clusterSnapshotLocked()
-	afterLeaseByTask := map[string]TaskLease{}
-	for _, lease := range after.Leases {
-		afterLeaseByTask[lease.TaskID] = lease
-	}
+	handoffs, success := s.buildClusterHandoffsLocked(affectedBefore, after.Leases, tasksByID, nodeID)
 
 	report := FailoverDrillReport{
-		ID:        newID(),
-		DrilledAt: timestamp,
-		Node:      cloneJSON(*node),
-		Success:   true,
-		Before:    before,
-		After:     after,
-	}
-	for taskID, previous := range affectedBefore {
-		next := afterLeaseByTask[taskID]
-		runtime := s.ensureRuntimeLocked(taskID)
-		taskName := taskID
-		if task, ok := tasksByID[taskID]; ok {
-			taskName = task.Name
-		}
-		if next.TaskID == "" || next.NodeID == "" || next.NodeID == nodeID {
-			report.Success = false
-		}
-		report.AffectedTasks = append(report.AffectedTasks, FailoverDrillTask{
-			TaskID:                  taskID,
-			TaskName:                taskName,
-			PreviousNodeID:          previous.NodeID,
-			NewNodeID:               next.NodeID,
-			PreviousLeaseEpoch:      previous.Epoch,
-			LeaseEpoch:              next.Epoch,
-			TakeoverCount:           next.TakeoverCount,
-			RuntimePhase:            runtime.Phase,
-			RecoveryBinlogFile:      runtime.BinlogFile,
-			RecoveryBinlogPosition:  runtime.BinlogPosition,
-			RecoveryDelaySeconds:    runtime.DelaySeconds,
-			RecoveryEventsPerSecond: runtime.EventsPerSecond,
-		})
+		ID:            newID(),
+		DrilledAt:     timestamp,
+		Node:          cloneJSON(*node),
+		Success:       success,
+		AffectedTasks: handoffs,
+		Before:        before,
+		After:         after,
 	}
 	if len(report.AffectedTasks) == 0 {
 		report.Message = "节点已离线，该节点当前没有承载同步任务"
@@ -887,6 +852,52 @@ func (s *Store) FailoverDrill(nodeID string) (FailoverDrillReport, bool, error) 
 	}
 	if err := s.saveLocked(); err != nil {
 		return FailoverDrillReport{}, true, err
+	}
+	return cloneJSON(report), true, nil
+}
+
+func (s *Store) DrainNode(nodeID string) (NodeDrainReport, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.ensureClusterLocked()
+	before := s.clusterSnapshotLocked()
+	node := s.getNodeLocked(nodeID)
+	if node == nil {
+		return NodeDrainReport{}, false, nil
+	}
+	if node.Status == NodeOffline {
+		return NodeDrainReport{}, true, errors.New("离线节点不能执行维护排空")
+	}
+
+	tasksByID := s.tasksByIDLocked()
+	affectedBefore := leasesOnNode(before.Leases, nodeID)
+
+	timestamp := now()
+	node.Status = NodeDraining
+	node.UpdatedAt = timestamp
+	s.logLocked("admin", "node_drain", "cluster_node", nodeID, "维护排空节点："+node.Name)
+	s.reconcileClusterLocked()
+	after := s.clusterSnapshotLocked()
+	handoffs, success := s.buildClusterHandoffsLocked(affectedBefore, after.Leases, tasksByID, nodeID)
+
+	report := NodeDrainReport{
+		ID:            newID(),
+		DrainedAt:     timestamp,
+		Node:          cloneJSON(*node),
+		Success:       success,
+		AffectedTasks: handoffs,
+		Before:        before,
+		After:         after,
+	}
+	if len(report.AffectedTasks) == 0 {
+		report.Message = "节点已进入排空状态，该节点当前没有承载同步任务"
+	} else if report.Success {
+		report.Message = "节点已进入排空状态，承载任务已迁移到其他在线 node"
+	} else {
+		report.Message = "节点已进入排空状态，但存在未迁移任务，请检查在线 node 容量"
+	}
+	if err := s.saveLocked(); err != nil {
+		return NodeDrainReport{}, true, err
 	}
 	return cloneJSON(report), true, nil
 }
@@ -1465,6 +1476,14 @@ func (s *Store) defaultRuntimeLocked(taskID string) TaskRuntimeState {
 	}
 }
 
+func (s *Store) tasksByIDLocked() map[string]SyncTask {
+	tasksByID := map[string]SyncTask{}
+	for _, task := range s.data.SyncTasks {
+		tasksByID[task.ID] = task
+	}
+	return tasksByID
+}
+
 func (s *Store) ensureClusterLocked() {
 	timestamp := now()
 	if len(s.data.Nodes) == 0 {
@@ -1606,6 +1625,57 @@ func (s *Store) removeLeaseLocked(taskID string) {
 			return
 		}
 	}
+}
+
+func leasesOnNode(leases []TaskLease, nodeID string) map[string]TaskLease {
+	affected := map[string]TaskLease{}
+	for _, lease := range leases {
+		if lease.NodeID == nodeID {
+			affected[lease.TaskID] = lease
+		}
+	}
+	return affected
+}
+
+func (s *Store) buildClusterHandoffsLocked(previousByTask map[string]TaskLease, afterLeases []TaskLease, tasksByID map[string]SyncTask, blockedNodeID string) ([]FailoverDrillTask, bool) {
+	afterLeaseByTask := map[string]TaskLease{}
+	for _, lease := range afterLeases {
+		afterLeaseByTask[lease.TaskID] = lease
+	}
+	handoffs := []FailoverDrillTask{}
+	success := true
+	for taskID, previous := range previousByTask {
+		next := afterLeaseByTask[taskID]
+		runtime := s.ensureRuntimeLocked(taskID)
+		taskName := taskID
+		if task, ok := tasksByID[taskID]; ok {
+			taskName = task.Name
+		}
+		if next.TaskID == "" || next.NodeID == "" || next.NodeID == blockedNodeID {
+			success = false
+		}
+		handoffs = append(handoffs, FailoverDrillTask{
+			TaskID:                  taskID,
+			TaskName:                taskName,
+			PreviousNodeID:          previous.NodeID,
+			NewNodeID:               next.NodeID,
+			PreviousLeaseEpoch:      previous.Epoch,
+			LeaseEpoch:              next.Epoch,
+			TakeoverCount:           next.TakeoverCount,
+			RuntimePhase:            runtime.Phase,
+			RecoveryBinlogFile:      runtime.BinlogFile,
+			RecoveryBinlogPosition:  runtime.BinlogPosition,
+			RecoveryDelaySeconds:    runtime.DelaySeconds,
+			RecoveryEventsPerSecond: runtime.EventsPerSecond,
+		})
+	}
+	sort.SliceStable(handoffs, func(left, right int) bool {
+		if handoffs[left].TaskName == handoffs[right].TaskName {
+			return handoffs[left].TaskID < handoffs[right].TaskID
+		}
+		return handoffs[left].TaskName < handoffs[right].TaskName
+	})
+	return handoffs, success
 }
 
 func (s *Store) selectNodeLocked(excludeID string) *ClusterNode {
