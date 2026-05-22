@@ -972,11 +972,13 @@ func (s *Store) StartClusterSupervisor(interval time.Duration) func() {
 	}
 }
 
-func (s *Store) RebalanceCluster() (ClusterSnapshot, error) {
+func (s *Store) RebalanceCluster() (ClusterRebalanceReport, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.ensureClusterLocked()
 	s.markStaleNodesLocked()
+	before := s.clusterSnapshotLocked()
+	tasksByID := s.tasksByIDLocked()
 	plannedLoads := map[string]int{}
 	for index := range s.data.Nodes {
 		if s.data.Nodes[index].Status == NodeOnline {
@@ -1007,9 +1009,27 @@ func (s *Store) RebalanceCluster() (ClusterSnapshot, error) {
 		plannedLoads[targetNode.ID]++
 	}
 	if err := s.saveLocked(); err != nil {
-		return ClusterSnapshot{}, err
+		return ClusterRebalanceReport{}, err
 	}
-	return s.clusterSnapshotLocked(), nil
+	after := s.clusterSnapshotLocked()
+	movedBefore := movedLeases(before.Leases, after.Leases)
+	handoffs, success := s.buildClusterHandoffsLocked(movedBefore, after.Leases, tasksByID, "")
+	report := ClusterRebalanceReport{
+		ID:           newID(),
+		RebalancedAt: now(),
+		Success:      success,
+		MovedTasks:   handoffs,
+		Before:       before,
+		After:        after,
+	}
+	if len(report.MovedTasks) == 0 {
+		report.Message = "集群已经均衡，没有任务需要迁移"
+	} else if report.Success {
+		report.Message = "重新均衡完成，任务已按在线 node 负载重新分布"
+	} else {
+		report.Message = "重新均衡完成，但存在未分配任务，请检查在线 node 容量"
+	}
+	return cloneJSON(report), nil
 }
 
 func (s *Store) ErrorEvents() []ErrorEvent {
@@ -1635,6 +1655,21 @@ func leasesOnNode(leases []TaskLease, nodeID string) map[string]TaskLease {
 		}
 	}
 	return affected
+}
+
+func movedLeases(before []TaskLease, after []TaskLease) map[string]TaskLease {
+	afterByTask := map[string]TaskLease{}
+	for _, lease := range after {
+		afterByTask[lease.TaskID] = lease
+	}
+	moved := map[string]TaskLease{}
+	for _, previous := range before {
+		next := afterByTask[previous.TaskID]
+		if next.TaskID == "" || next.NodeID != previous.NodeID {
+			moved[previous.TaskID] = previous
+		}
+	}
+	return moved
 }
 
 func (s *Store) buildClusterHandoffsLocked(previousByTask map[string]TaskLease, afterLeases []TaskLease, tasksByID map[string]SyncTask, blockedNodeID string) ([]FailoverDrillTask, bool) {

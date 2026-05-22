@@ -24,7 +24,7 @@ canal-plus/
 - 任务运行剖面：在任务详情内聚合链路拓扑、node lease、接管次数、待处理错误和最近操作。
 - 运行监控：任务数量、异常数量、延迟、吞吐、binlog 位点、全量进度。
 - 告警规则：支持配置延迟阈值、错误阈值、任务范围、Webhook，并实时评估触发状态。
-- 分布式部署：内置 node 节点、任务 lease、后台 supervisor、心跳超时下线、任务自动接管、任务级故障演练/维护排空报告和重新均衡 API。
+- 分布式部署：内置 node 节点、任务 lease、后台 supervisor、心跳超时下线、任务自动接管、任务级故障演练/维护排空/重新均衡报告和 API。
 - Node 接入：支持通过控制台或 API 注册/更新 worker node，新节点上线后会参与 lease 调度并接管等待任务。
 - 产品模块：任务中心、结构迁移、数据校验订正、订阅变更、节点集群、错误中心、操作审计。
 - 能力任务：结构迁移计划、二次差异校验与订正、运行中订阅变更具备 API 状态、阶段进度和操作日志。
@@ -86,7 +86,7 @@ cp backend/.env.example backend/.env
 - `POST /api/cluster/nodes/{id}/online`: 恢复节点心跳。
 - `POST /api/cluster/nodes/{id}/drain`: 维护排空节点，返回受影响任务、接管节点、lease epoch 变化和恢复 binlog 位点。
 - `POST /api/cluster/nodes/{id}/failover-drill`: 触发节点故障演练，返回受影响任务、接管节点、lease epoch 变化和恢复 binlog 位点。
-- `POST /api/cluster/rebalance`: 按当前节点负载重新均衡任务。
+- `POST /api/cluster/rebalance`: 按当前节点负载重新均衡任务，返回迁移任务、新旧 node、lease epoch 变化和恢复 binlog 位点。
 
 ## 能力任务 API
 

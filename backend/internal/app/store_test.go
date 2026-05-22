@@ -238,10 +238,11 @@ func TestRebalanceKeepsLeasesOnOnlineNodes(t *testing.T) {
 		t.Fatalf("MarkNodeStatus(%q, offline) = ok %v, err %v", offlineID, ok, err)
 	}
 
-	after, err := store.RebalanceCluster()
+	report, err := store.RebalanceCluster()
 	if err != nil {
 		t.Fatalf("RebalanceCluster() error = %v", err)
 	}
+	after := report.After
 
 	onlineNodes := map[string]bool{}
 	for _, node := range after.Nodes {
@@ -649,9 +650,21 @@ func TestRebalanceDistributesHotNode(t *testing.T) {
 	store.recountNodeTasksLocked()
 	store.mu.Unlock()
 
-	cluster, err := store.RebalanceCluster()
+	report, err := store.RebalanceCluster()
 	if err != nil {
 		t.Fatalf("RebalanceCluster() error = %v", err)
+	}
+	cluster := report.After
+	if len(report.MovedTasks) == 0 {
+		t.Fatalf("expected rebalance report to include moved tasks: %#v", report)
+	}
+	for _, moved := range report.MovedTasks {
+		if moved.PreviousNodeID == moved.NewNodeID || moved.NewNodeID == "" {
+			t.Fatalf("expected moved task to include node handoff: %#v", moved)
+		}
+		if moved.RecoveryBinlogFile == "" || moved.RecoveryBinlogPosition <= 0 {
+			t.Fatalf("expected moved task to include recovery position: %#v", moved)
+		}
 	}
 
 	counts := map[string]int{}

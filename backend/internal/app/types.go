@@ -536,6 +536,16 @@ type NodeDrainReport struct {
 	After         ClusterSnapshot     `json:"after"`
 }
 
+type ClusterRebalanceReport struct {
+	ID           string              `json:"id"`
+	RebalancedAt string              `json:"rebalancedAt"`
+	Success      bool                `json:"success"`
+	Message      string              `json:"message"`
+	MovedTasks   []FailoverDrillTask `json:"movedTasks"`
+	Before       ClusterSnapshot     `json:"before"`
+	After        ClusterSnapshot     `json:"after"`
+}
+
 type ClusterSnapshot struct {
 	Nodes                   []ClusterNode `json:"nodes"`
 	Leases                  []TaskLease   `json:"leases"`

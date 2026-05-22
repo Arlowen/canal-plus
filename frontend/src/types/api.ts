@@ -436,6 +436,16 @@ export interface NodeDrainReport {
   after: ClusterSnapshot;
 }
 
+export interface ClusterRebalanceReport {
+  id: string;
+  rebalancedAt: string;
+  success: boolean;
+  message: string;
+  movedTasks: FailoverDrillTask[];
+  before: ClusterSnapshot;
+  after: ClusterSnapshot;
+}
+
 export interface ClusterSnapshot {
   nodes: ClusterNode[];
   leases: TaskLease[];

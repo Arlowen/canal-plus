@@ -4,6 +4,7 @@ import type {
   AlertRuleInput,
   CapabilityJob,
   CapabilityJobType,
+  ClusterRebalanceReport,
   DashboardSummary,
   ClusterSnapshot,
   ClusterNode,
@@ -280,6 +281,6 @@ export const api = {
     return request<FailoverDrillReport>(`/cluster/nodes/${id}/failover-drill`, { method: "POST" });
   },
   rebalanceCluster() {
-    return request<ClusterSnapshot>("/cluster/rebalance", { method: "POST" });
+    return request<ClusterRebalanceReport>("/cluster/rebalance", { method: "POST" });
   }
 };

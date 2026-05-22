@@ -855,12 +855,12 @@ func (s *Server) handleCluster(response http.ResponseWriter, request *http.Reque
 	case len(parts) == 2 && parts[1] == "leases" && request.Method == http.MethodGet:
 		writeJSON(response, http.StatusOK, s.store.ClusterSnapshot().Leases)
 	case len(parts) == 2 && parts[1] == "rebalance" && request.Method == http.MethodPost:
-		snapshot, err := s.store.RebalanceCluster()
+		report, err := s.store.RebalanceCluster()
 		if err != nil {
 			writeError(response, http.StatusInternalServerError, err.Error())
 			return
 		}
-		writeJSON(response, http.StatusOK, snapshot)
+		writeJSON(response, http.StatusOK, report)
 	case len(parts) == 4 && parts[1] == "nodes" && parts[3] == "failover-drill" && request.Method == http.MethodPost:
 		report, ok, err := s.store.FailoverDrill(parts[2])
 		if err != nil {

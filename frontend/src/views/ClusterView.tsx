@@ -14,13 +14,13 @@ import {
 import { PermissionNotice } from "../components/PermissionNotice";
 import { api } from "../lib/api";
 import { cx, formatDate, formatNumber, secondsSince } from "../lib/format";
-import type { ClusterNode, ClusterNodeInput, ClusterSnapshot, FailoverDrillTask, NodeDrainReport, SyncTask } from "../types/api";
+import type { ClusterNode, ClusterNodeInput, ClusterRebalanceReport, ClusterSnapshot, FailoverDrillTask, NodeDrainReport, SyncTask } from "../types/api";
 
 type HandoffReport = {
   id: string;
-  kind: "drill" | "drain";
+  kind: "drill" | "drain" | "rebalance";
   happenedAt: string;
-  node: ClusterNode;
+  node?: ClusterNode;
   success: boolean;
   message: string;
   affectedTasks: FailoverDrillTask[];
@@ -94,6 +94,18 @@ function phaseText(phase: string) {
   return runtimePhaseText[phase] || phase || "-";
 }
 
+function reportTitle(kind: HandoffReport["kind"]) {
+  if (kind === "drill") return "最近故障演练";
+  if (kind === "drain") return "最近维护排空";
+  return "最近重新均衡";
+}
+
+function reportTrackTitle(kind: HandoffReport["kind"]) {
+  if (kind === "drill") return "演练轨迹";
+  if (kind === "drain") return "排空轨迹";
+  return "均衡轨迹";
+}
+
 function fromDrainReport(report: NodeDrainReport): HandoffReport {
   return {
     id: report.id,
@@ -103,6 +115,19 @@ function fromDrainReport(report: NodeDrainReport): HandoffReport {
     success: report.success,
     message: report.message,
     affectedTasks: report.affectedTasks,
+    before: report.before,
+    after: report.after
+  };
+}
+
+function fromRebalanceReport(report: ClusterRebalanceReport): HandoffReport {
+  return {
+    id: report.id,
+    kind: "rebalance",
+    happenedAt: report.rebalancedAt,
+    success: report.success,
+    message: report.message,
+    affectedTasks: report.movedTasks,
     before: report.before,
     after: report.after
   };
@@ -137,6 +162,11 @@ export function ClusterView({
     const node = nodeById.get(id) || handoffReport?.after.nodes.find((item) => item.id === id) || handoffReport?.before.nodes.find((item) => item.id === id);
     return node ? `${node.name} / ${id}` : id;
   };
+  const uniqueHandoffNodes = (side: "previous" | "next") => {
+    if (!handoffReport || handoffReport.affectedTasks.length === 0) return "无任务迁移";
+    const ids = handoffReport.affectedTasks.map((task) => side === "previous" ? task.previousNodeId : task.newNodeId);
+    return Array.from(new Set(ids)).map((id) => nodeName(id)).join(", ");
+  };
 
   const runNodeAction = async (node: ClusterNode, action: "online" | "offline" | "heartbeat") => {
     if (!canManage) {
@@ -165,7 +195,8 @@ export function ClusterView({
     setError(null);
     setMessage(null);
     try {
-      await api.rebalanceCluster();
+      const report = await api.rebalanceCluster();
+      setHandoffReport(fromRebalanceReport(report));
       await onChanged();
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "重新均衡失败");
@@ -441,7 +472,7 @@ export function ClusterView({
                     {handoffReport.success ? <ShieldCheck size={18} /> : <WarningCircle size={18} />}
                   </span>
                   <div>
-                    <h2 className="font-semibold tracking-tight text-coal">{handoffReport.kind === "drill" ? "最近故障演练" : "最近维护排空"}</h2>
+                    <h2 className="font-semibold tracking-tight text-coal">{reportTitle(handoffReport.kind)}</h2>
                     <p className="mt-1 text-sm text-zinc-600">{handoffReport.message}</p>
                   </div>
                 </div>
@@ -452,7 +483,12 @@ export function ClusterView({
             </div>
 
             <div className="mt-4 grid gap-2 sm:grid-cols-3">
-              <ClusterStat label={handoffReport.kind === "drill" ? "演练节点" : "排空节点"} value={handoffReport.node.name} detail={`${handoffReport.node.zone} / ${handoffReport.node.id}`} tone={handoffReport.success ? "ok" : "warn"} />
+              <ClusterStat
+                label={handoffReport.kind === "drill" ? "演练节点" : handoffReport.kind === "drain" ? "排空节点" : "操作类型"}
+                value={handoffReport.node?.name || "重新均衡"}
+                detail={handoffReport.node ? `${handoffReport.node.zone} / ${handoffReport.node.id}` : "在线 node 负载重分布"}
+                tone={handoffReport.success ? "ok" : "warn"}
+              />
               <ClusterStat label="影响任务" value={handoffReport.affectedTasks.length} detail="自动接管链路" />
               <ClusterStat label="接管累计" value={handoffReport.after.failovers} detail={`操作前 ${handoffReport.before.failovers}`} />
             </div>
@@ -460,20 +496,18 @@ export function ClusterView({
             <div className="mt-4 rounded-xl border border-line bg-[#fcfcf8] p-3">
               <div className="flex items-center gap-2 text-sm font-medium text-coal">
                 <MapPinLine size={16} />
-                {handoffReport.kind === "drill" ? "演练轨迹" : "排空轨迹"}
+                {reportTrackTitle(handoffReport.kind)}
               </div>
               <div className="mt-3 grid gap-2 text-xs text-zinc-600 sm:grid-cols-[1fr_auto_1fr] sm:items-center">
                 <div className="rounded-lg border border-line bg-white p-3">
-                  <div className="text-muted">{handoffReport.kind === "drill" ? "故障节点" : "排空节点"}</div>
-                  <div className="mt-1 truncate font-mono text-coal">{nodeName(handoffReport.node.id)}</div>
+                  <div className="text-muted">{handoffReport.kind === "drill" ? "故障节点" : handoffReport.kind === "drain" ? "排空节点" : "原承载节点"}</div>
+                  <div className="mt-1 truncate font-mono text-coal">{handoffReport.node ? nodeName(handoffReport.node.id) : uniqueHandoffNodes("previous")}</div>
                 </div>
                 <ArrowRight className="hidden text-zinc-400 sm:block" size={18} />
                 <div className="rounded-lg border border-line bg-white p-3">
                   <div className="text-muted">接管目标</div>
                   <div className="mt-1 truncate font-mono text-coal">
-                    {handoffReport.affectedTasks.length > 0
-                      ? Array.from(new Set(handoffReport.affectedTasks.map((task) => nodeName(task.newNodeId)))).join(", ")
-                      : "无任务迁移"}
+                    {uniqueHandoffNodes("next")}
                   </div>
                 </div>
               </div>
@@ -482,7 +516,7 @@ export function ClusterView({
             <div className="mt-4 space-y-3">
               {handoffReport.affectedTasks.length === 0 ? (
                 <div className="rounded-lg border border-dashed border-line bg-[#fcfcf8] p-4 text-center text-sm text-muted">
-                  {handoffReport.kind === "drill" ? "该节点没有承载任务，演练只验证节点离线流程。" : "该节点没有承载任务，排空只更新维护状态。"}
+                  {handoffReport.kind === "drill" ? "该节点没有承载任务，演练只验证节点离线流程。" : handoffReport.kind === "drain" ? "该节点没有承载任务，排空只更新维护状态。" : "当前集群已经均衡，没有任务需要迁移。"}
                 </div>
               ) : handoffReport.affectedTasks.map((task) => (
                 <div key={task.taskId} className="rounded-xl border border-line bg-[#fcfcf8] p-4 text-sm">
