@@ -6,6 +6,7 @@ import (
 	"math/rand"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 )
@@ -770,6 +771,124 @@ func (s *Store) AlertRules() []AlertRule {
 	return cloneJSON(s.data.AlertRules)
 }
 
+func (s *Store) CreateAlertRule(input AlertRuleInput) (AlertRule, error) {
+	if err := validateAlertRuleInput(input); err != nil {
+		return AlertRule{}, err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	timestamp := now()
+	enabled := true
+	if input.Enabled != nil {
+		enabled = *input.Enabled
+	}
+	rule := AlertRule{
+		ID:                    newID(),
+		Name:                  input.Name,
+		Enabled:               enabled,
+		TaskID:                input.TaskID,
+		DelayThresholdSeconds: input.DelayThresholdSeconds,
+		ErrorThreshold:        input.ErrorThreshold,
+		WebhookURL:            input.WebhookURL,
+		CreatedAt:             timestamp,
+		UpdatedAt:             timestamp,
+	}
+	s.data.AlertRules = append([]AlertRule{rule}, s.data.AlertRules...)
+	s.logLocked("admin", "create", "alert_rule", rule.ID, "创建告警规则 "+rule.Name)
+	return cloneJSON(rule), s.saveLocked()
+}
+
+func (s *Store) UpdateAlertRule(id string, input AlertRuleInput) (AlertRule, bool, error) {
+	if err := validateAlertRuleInput(input); err != nil {
+		return AlertRule{}, false, err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for index := range s.data.AlertRules {
+		if s.data.AlertRules[index].ID != id {
+			continue
+		}
+		rule := &s.data.AlertRules[index]
+		rule.Name = input.Name
+		if input.Enabled != nil {
+			rule.Enabled = *input.Enabled
+		}
+		rule.TaskID = input.TaskID
+		rule.DelayThresholdSeconds = input.DelayThresholdSeconds
+		rule.ErrorThreshold = input.ErrorThreshold
+		rule.WebhookURL = input.WebhookURL
+		rule.UpdatedAt = now()
+		s.logLocked("admin", "update", "alert_rule", id, "更新告警规则 "+rule.Name)
+		return cloneJSON(*rule), true, s.saveLocked()
+	}
+	return AlertRule{}, false, nil
+}
+
+func (s *Store) DeleteAlertRule(id string) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for index, rule := range s.data.AlertRules {
+		if rule.ID != id {
+			continue
+		}
+		s.data.AlertRules = append(s.data.AlertRules[:index], s.data.AlertRules[index+1:]...)
+		s.logLocked("admin", "delete", "alert_rule", id, "删除告警规则 "+rule.Name)
+		return true, s.saveLocked()
+	}
+	return false, nil
+}
+
+func (s *Store) AlertRuleEvaluations() []AlertRuleEvaluation {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.reconcileClusterLocked()
+	s.refreshRuntimeStatesLocked()
+	runtimeByTask := map[string]TaskRuntimeState{}
+	for _, runtime := range s.data.RuntimeStates {
+		runtimeByTask[runtime.TaskID] = runtime
+	}
+	pendingErrorsByTask := map[string]int{}
+	for _, event := range s.data.ErrorEvents {
+		if event.Status == ErrorPending {
+			pendingErrorsByTask[event.TaskID]++
+		}
+	}
+	evaluations := make([]AlertRuleEvaluation, 0, len(s.data.AlertRules))
+	for _, rule := range s.data.AlertRules {
+		evaluation := AlertRuleEvaluation{
+			RuleID:    rule.ID,
+			RuleName:  rule.Name,
+			UpdatedAt: now(),
+			Reasons:   []string{},
+		}
+		if !rule.Enabled {
+			evaluations = append(evaluations, evaluation)
+			continue
+		}
+		for _, task := range s.data.SyncTasks {
+			if rule.TaskID != "" && rule.TaskID != task.ID {
+				continue
+			}
+			evaluation.MatchedTasks++
+			runtime := runtimeByTask[task.ID]
+			if runtime.DelaySeconds > evaluation.MaxDelaySeconds {
+				evaluation.MaxDelaySeconds = runtime.DelaySeconds
+			}
+			evaluation.PendingErrors += pendingErrorsByTask[task.ID]
+		}
+		if rule.DelayThresholdSeconds > 0 && evaluation.MaxDelaySeconds >= rule.DelayThresholdSeconds {
+			evaluation.Triggered = true
+			evaluation.Reasons = append(evaluation.Reasons, "延迟超过阈值 "+intToString(evaluation.MaxDelaySeconds)+"s")
+		}
+		if rule.ErrorThreshold > 0 && evaluation.PendingErrors >= rule.ErrorThreshold {
+			evaluation.Triggered = true
+			evaluation.Reasons = append(evaluation.Reasons, "待处理错误达到 "+intToString(evaluation.PendingErrors)+" 条")
+		}
+		evaluations = append(evaluations, evaluation)
+	}
+	return cloneJSON(evaluations)
+}
+
 func (s *Store) CapabilityJobs(jobType CapabilityJobType) []CapabilityJob {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -1131,6 +1250,19 @@ func (s *Store) clusterSnapshotLocked() ClusterSnapshot {
 
 func leaseRequired(status TaskStatus) bool {
 	return status == TaskPending || status == TaskFullSyncing || status == TaskIncrementalRunning || status == TaskFailed
+}
+
+func validateAlertRuleInput(input AlertRuleInput) error {
+	if strings.TrimSpace(input.Name) == "" {
+		return errors.New("告警规则名称必填")
+	}
+	if input.DelayThresholdSeconds <= 0 {
+		return errors.New("延迟阈值必须大于 0")
+	}
+	if input.ErrorThreshold < 0 {
+		return errors.New("错误阈值不能小于 0")
+	}
+	return nil
 }
 
 func (s *Store) refreshRuntimeStatesLocked() {

@@ -584,3 +584,92 @@ func TestDeleteTaskRequiresDraftOrStoppedTask(t *testing.T) {
 		}
 	}
 }
+
+func TestAlertRuleCrudAndEvaluation(t *testing.T) {
+	store := newTestStore(t)
+	snapshot := store.Snapshot()
+	if len(snapshot.SyncTasks) == 0 {
+		t.Fatal("expected seed task")
+	}
+	task := snapshot.SyncTasks[0]
+	enabled := true
+
+	rule, err := store.CreateAlertRule(AlertRuleInput{
+		Name:                  "高延迟验证",
+		Enabled:               &enabled,
+		TaskID:                task.ID,
+		DelayThresholdSeconds: 5,
+		ErrorThreshold:        1,
+		WebhookURL:            "https://example.com/webhook",
+	})
+	if err != nil {
+		t.Fatalf("CreateAlertRule() error = %v", err)
+	}
+	if rule.ID == "" || !rule.Enabled || rule.TaskID != task.ID {
+		t.Fatalf("unexpected created rule: %#v", rule)
+	}
+
+	updatedEnabled := false
+	updated, ok, err := store.UpdateAlertRule(rule.ID, AlertRuleInput{
+		Name:                  "高延迟验证已关闭",
+		Enabled:               &updatedEnabled,
+		TaskID:                task.ID,
+		DelayThresholdSeconds: 10,
+		ErrorThreshold:        0,
+	})
+	if err != nil || !ok {
+		t.Fatalf("UpdateAlertRule() ok %v err %v", ok, err)
+	}
+	if updated.Enabled || updated.Name != "高延迟验证已关闭" {
+		t.Fatalf("unexpected updated rule: %#v", updated)
+	}
+
+	if deleted, err := store.DeleteAlertRule(rule.ID); err != nil || !deleted {
+		t.Fatalf("DeleteAlertRule() deleted %v err %v", deleted, err)
+	}
+
+	triggeredRule, err := store.CreateAlertRule(AlertRuleInput{
+		Name:                  "全局错误验证",
+		Enabled:               &enabled,
+		DelayThresholdSeconds: 9999,
+		ErrorThreshold:        1,
+	})
+	if err != nil {
+		t.Fatalf("CreateAlertRule(triggered) error = %v", err)
+	}
+	evaluations := store.AlertRuleEvaluations()
+	var found AlertRuleEvaluation
+	for _, evaluation := range evaluations {
+		if evaluation.RuleID == triggeredRule.ID {
+			found = evaluation
+			break
+		}
+	}
+	if found.RuleID == "" {
+		t.Fatalf("expected evaluation for rule %s", triggeredRule.ID)
+	}
+	if !found.Triggered || found.PendingErrors == 0 || len(found.Reasons) == 0 {
+		t.Fatalf("expected global error rule to trigger, got %#v", found)
+	}
+}
+
+func TestCreateAlertRuleValidatesThresholds(t *testing.T) {
+	store := newTestStore(t)
+	enabled := true
+	if _, err := store.CreateAlertRule(AlertRuleInput{
+		Name:                  "",
+		Enabled:               &enabled,
+		DelayThresholdSeconds: 30,
+		ErrorThreshold:        0,
+	}); err == nil {
+		t.Fatal("expected missing rule name to be rejected")
+	}
+	if _, err := store.CreateAlertRule(AlertRuleInput{
+		Name:                  "bad delay",
+		Enabled:               &enabled,
+		DelayThresholdSeconds: 0,
+		ErrorThreshold:        0,
+	}); err == nil {
+		t.Fatal("expected non-positive delay threshold to be rejected")
+	}
+}

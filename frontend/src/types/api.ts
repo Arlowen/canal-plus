@@ -165,10 +165,42 @@ export interface OperationLog {
   id: string;
   actor: string;
   action: string;
-  targetType: "datasource" | "sync_task" | "error_event" | "auth" | "cluster_node" | "capability_job";
+  targetType: "datasource" | "sync_task" | "error_event" | "auth" | "cluster_node" | "capability_job" | "alert_rule";
   targetId?: string;
   detail: string;
   createdAt: string;
+}
+
+export interface AlertRule {
+  id: string;
+  name: string;
+  enabled: boolean;
+  taskId?: string;
+  delayThresholdSeconds: number;
+  errorThreshold: number;
+  webhookUrl?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AlertRuleInput {
+  name: string;
+  enabled?: boolean;
+  taskId?: string;
+  delayThresholdSeconds: number;
+  errorThreshold: number;
+  webhookUrl?: string;
+}
+
+export interface AlertRuleEvaluation {
+  ruleId: string;
+  ruleName: string;
+  triggered: boolean;
+  matchedTasks: number;
+  maxDelaySeconds: number;
+  pendingErrors: number;
+  reasons: string[];
+  updatedAt: string;
 }
 
 export type CapabilityJobType = "structure" | "quality" | "subscription";

@@ -1,4 +1,7 @@
 import type {
+  AlertRule,
+  AlertRuleEvaluation,
+  AlertRuleInput,
   CapabilityJob,
   CapabilityJobType,
   DashboardSummary,
@@ -147,6 +150,27 @@ export const api = {
   },
   logs() {
     return request<OperationLog[]>("/operation-logs");
+  },
+  alertRules() {
+    return request<AlertRule[]>("/alert-rules");
+  },
+  alertEvaluations() {
+    return request<AlertRuleEvaluation[]>("/alert-rules/evaluations");
+  },
+  createAlertRule(input: AlertRuleInput) {
+    return request<AlertRule>("/alert-rules", {
+      method: "POST",
+      body: JSON.stringify(input)
+    });
+  },
+  updateAlertRule(id: string, input: AlertRuleInput) {
+    return request<AlertRule>(`/alert-rules/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(input)
+    });
+  },
+  deleteAlertRule(id: string) {
+    return request<void>(`/alert-rules/${id}`, { method: "DELETE" });
   },
   capabilityJobs(type?: CapabilityJobType) {
     const query = type ? `?type=${type}` : "";

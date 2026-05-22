@@ -260,6 +260,26 @@ type AlertRule struct {
 	UpdatedAt             string `json:"updatedAt"`
 }
 
+type AlertRuleInput struct {
+	Name                  string `json:"name"`
+	Enabled               *bool  `json:"enabled,omitempty"`
+	TaskID                string `json:"taskId,omitempty"`
+	DelayThresholdSeconds int    `json:"delayThresholdSeconds"`
+	ErrorThreshold        int    `json:"errorThreshold"`
+	WebhookURL            string `json:"webhookUrl,omitempty"`
+}
+
+type AlertRuleEvaluation struct {
+	RuleID          string   `json:"ruleId"`
+	RuleName        string   `json:"ruleName"`
+	Triggered       bool     `json:"triggered"`
+	MatchedTasks    int      `json:"matchedTasks"`
+	MaxDelaySeconds int      `json:"maxDelaySeconds"`
+	PendingErrors   int      `json:"pendingErrors"`
+	Reasons         []string `json:"reasons"`
+	UpdatedAt       string   `json:"updatedAt"`
+}
+
 type CapabilityJobType string
 
 const (

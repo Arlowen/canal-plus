@@ -19,6 +19,7 @@ canal-plus/
 - 任务功能列表：支持修改运行参数、停止后重置 binlog 位点、导出任务配置包。
 - 任务运行剖面：在任务详情内聚合链路拓扑、node lease、接管次数、待处理错误和最近操作。
 - 运行监控：任务数量、异常数量、延迟、吞吐、binlog 位点、全量进度。
+- 告警规则：支持配置延迟阈值、错误阈值、任务范围、Webhook，并实时评估触发状态。
 - 分布式部署：内置 node 节点、任务 lease、后台 supervisor、心跳超时下线、任务自动接管和重新均衡 API。
 - 产品模块：任务中心、结构迁移、数据校验订正、订阅变更、节点集群、错误中心、操作审计。
 - 能力任务：结构迁移计划、二次差异校验与订正、运行中订阅变更具备 API 状态、阶段进度和操作日志。
@@ -92,6 +93,14 @@ cp backend/.env.example backend/.env
 - `POST /api/sync-tasks/{id}/rerun`: 停止或异常任务按原配置重跑，并重新分配 node lease。
 - `GET /api/sync-tasks/{id}/export`: 导出任务配置、运行位点和 checksum。
 - `DELETE /api/sync-tasks/{id}`: 删除草稿或已停止任务，并清理运行态与 lease。
+
+## 告警规则 API
+
+- `GET /api/alert-rules`: 查看告警规则。
+- `POST /api/alert-rules`: 创建告警规则，请求体包含 `name`、`enabled`、`taskId`、`delayThresholdSeconds`、`errorThreshold`、`webhookUrl`。
+- `PUT /api/alert-rules/{id}`: 更新告警规则。
+- `DELETE /api/alert-rules/{id}`: 删除告警规则。
+- `GET /api/alert-rules/evaluations`: 查看每条规则当前是否触发。
 
 ## 下一步建议
 

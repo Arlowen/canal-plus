@@ -7,7 +7,6 @@ import {
   Cloud,
   ClipboardText,
   Database,
-  FileText,
   FlowArrow,
   Gauge,
   GearSix,
@@ -26,8 +25,11 @@ import { api, clearToken, getToken, setToken } from "./lib/api";
 import { cx, formatDate, formatNumber } from "./lib/format";
 import { CapabilityView } from "./views/CapabilityView";
 import { ClusterView } from "./views/ClusterView";
+import { SettingsView } from "./views/SettingsView";
 import { TaskView } from "./views/TaskView";
 import type {
+  AlertRule,
+  AlertRuleEvaluation,
   CapabilityJob,
   DashboardSummary,
   ClusterSnapshot,
@@ -83,6 +85,8 @@ function App() {
   const [logs, setLogs] = useState<OperationLog[]>([]);
   const [cluster, setCluster] = useState<ClusterSnapshot | null>(null);
   const [capabilityJobs, setCapabilityJobs] = useState<CapabilityJob[]>([]);
+  const [alertRules, setAlertRules] = useState<AlertRule[]>([]);
+  const [alertEvaluations, setAlertEvaluations] = useState<AlertRuleEvaluation[]>([]);
   const [loading, setLoading] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -92,14 +96,16 @@ function App() {
     if (!quiet) setLoading(true);
     setError(null);
     try {
-      const [nextSummary, nextDatasources, nextTasks, nextErrors, nextLogs, nextCluster, nextCapabilityJobs] = await Promise.all([
+      const [nextSummary, nextDatasources, nextTasks, nextErrors, nextLogs, nextCluster, nextCapabilityJobs, nextAlertRules, nextAlertEvaluations] = await Promise.all([
         api.summary(),
         api.datasources(),
         api.tasks(),
         api.errors(),
         api.logs(),
         api.cluster(),
-        api.capabilityJobs()
+        api.capabilityJobs(),
+        api.alertRules(),
+        api.alertEvaluations()
       ]);
       setSummary(nextSummary);
       setDatasources(nextDatasources);
@@ -108,6 +114,8 @@ function App() {
       setLogs(nextLogs);
       setCluster(nextCluster);
       setCapabilityJobs(nextCapabilityJobs);
+      setAlertRules(nextAlertRules);
+      setAlertEvaluations(nextAlertEvaluations);
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "加载失败");
     } finally {
@@ -270,7 +278,7 @@ function App() {
                 <OperationLogs logs={logs} />
               )}
               {view === "settings" && (
-                <SettingsView />
+                <SettingsView alertRules={alertRules} evaluations={alertEvaluations} tasks={tasks} onChanged={() => refresh(true)} />
               )}
             </>
           )}
@@ -1094,41 +1102,6 @@ function OperationLogs({ logs }: { logs: OperationLog[] }) {
         ))}
       </div>
     </section>
-  );
-}
-
-function SettingsView() {
-  return (
-    <div className="grid gap-5 lg:grid-cols-[1fr_1fr]">
-      <section className="rounded-xl border border-line bg-white p-5 shadow-panel">
-        <div className="flex items-center gap-2 text-coal">
-          <BellRinging size={20} />
-          <h2 className="font-semibold tracking-tight">告警</h2>
-        </div>
-        <div className="mt-4 grid gap-4">
-          <Field label="默认延迟阈值秒">
-            <input className="control" defaultValue={300} type="number" />
-          </Field>
-          <Field label="错误次数阈值">
-            <input className="control" defaultValue={1} type="number" />
-          </Field>
-          <Field label="Webhook">
-            <input className="control" placeholder="https://example.com/webhook" />
-          </Field>
-        </div>
-      </section>
-      <section className="rounded-xl border border-line bg-white p-5 shadow-panel">
-        <div className="flex items-center gap-2 text-coal">
-          <FileText size={20} />
-          <h2 className="font-semibold tracking-tight">版本边界</h2>
-        </div>
-        <div className="mt-4 space-y-3 text-sm text-zinc-600">
-          <div className="border-l border-line pl-3">当前实现为控制台和 API MVP。</div>
-          <div className="border-l border-line pl-3">binlog worker 已在任务运行态中预留状态模型。</div>
-          <div className="border-l border-line pl-3">下一步可以接入真实 Canal 或 Debezium Embedded。</div>
-        </div>
-      </section>
-    </div>
   );
 }
 

@@ -127,8 +127,8 @@ func (s *Server) ServeHTTP(response http.ResponseWriter, request *http.Request) 
 		s.handleCapabilityJobs(response, request, parts)
 	case len(parts) == 1 && parts[0] == "operation-logs" && request.Method == http.MethodGet:
 		writeJSON(response, http.StatusOK, firstN(s.store.Logs(), 200))
-	case len(parts) == 1 && parts[0] == "alert-rules" && request.Method == http.MethodGet:
-		writeJSON(response, http.StatusOK, s.store.AlertRules())
+	case len(parts) >= 1 && parts[0] == "alert-rules":
+		s.handleAlertRules(response, request, parts)
 	case len(parts) == 2 && parts[0] == "sync-strategy" && parts[1] == "default" && request.Method == http.MethodGet:
 		writeJSON(response, http.StatusOK, defaultStrategy())
 	default:
@@ -704,6 +704,56 @@ func (s *Server) handleErrorEvents(response http.ResponseWriter, request *http.R
 			return
 		}
 		writeJSON(response, http.StatusOK, event)
+	default:
+		writeError(response, http.StatusNotFound, "not found")
+	}
+}
+
+func (s *Server) handleAlertRules(response http.ResponseWriter, request *http.Request, parts []string) {
+	switch {
+	case len(parts) == 1 && request.Method == http.MethodGet:
+		writeJSON(response, http.StatusOK, s.store.AlertRules())
+	case len(parts) == 1 && request.Method == http.MethodPost:
+		var input AlertRuleInput
+		if err := decodeJSON(request, &input); err != nil {
+			writeError(response, http.StatusBadRequest, "请求体格式错误")
+			return
+		}
+		rule, err := s.store.CreateAlertRule(input)
+		if err != nil {
+			writeError(response, http.StatusBadRequest, err.Error())
+			return
+		}
+		writeJSON(response, http.StatusCreated, rule)
+	case len(parts) == 2 && parts[1] == "evaluations" && request.Method == http.MethodGet:
+		writeJSON(response, http.StatusOK, s.store.AlertRuleEvaluations())
+	case len(parts) == 2 && request.Method == http.MethodPut:
+		var input AlertRuleInput
+		if err := decodeJSON(request, &input); err != nil {
+			writeError(response, http.StatusBadRequest, "请求体格式错误")
+			return
+		}
+		rule, ok, err := s.store.UpdateAlertRule(parts[1], input)
+		if err != nil {
+			writeError(response, http.StatusBadRequest, err.Error())
+			return
+		}
+		if !ok {
+			writeError(response, http.StatusNotFound, "告警规则不存在")
+			return
+		}
+		writeJSON(response, http.StatusOK, rule)
+	case len(parts) == 2 && request.Method == http.MethodDelete:
+		deleted, err := s.store.DeleteAlertRule(parts[1])
+		if err != nil {
+			writeError(response, http.StatusInternalServerError, err.Error())
+			return
+		}
+		if !deleted {
+			writeError(response, http.StatusNotFound, "告警规则不存在")
+			return
+		}
+		response.WriteHeader(http.StatusNoContent)
 	default:
 		writeError(response, http.StatusNotFound, "not found")
 	}
