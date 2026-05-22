@@ -1,15 +1,6 @@
 import { cx } from "../lib/format";
+import { taskStatusText } from "../lib/taskStatus";
 import type { TaskStatus } from "../types/api";
-
-const statusText: Record<TaskStatus, string> = {
-  draft: "草稿",
-  pending: "待启动",
-  full_syncing: "全量同步中",
-  incremental_running: "增量同步中",
-  paused: "已暂停",
-  failed: "异常",
-  stopped: "已停止"
-};
 
 const statusClass: Record<TaskStatus, string> = {
   draft: "border-zinc-300 bg-zinc-100 text-zinc-700",
@@ -24,7 +15,7 @@ const statusClass: Record<TaskStatus, string> = {
 export function StatusBadge({ status }: { status: TaskStatus }) {
   return (
     <span className={cx("rounded-full border px-2 py-0.5 text-xs", statusClass[status])}>
-      {statusText[status]}
+      {taskStatusText[status]}
     </span>
   );
 }

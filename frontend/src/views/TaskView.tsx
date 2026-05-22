@@ -1,13 +1,16 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ArrowRight,
   ArrowsClockwise,
   ClipboardText,
   Copy,
   FileText,
+  FunnelSimple,
   GearSix,
+  MagnifyingGlass,
   Pause,
   Play,
+  SortAscending,
   Stop,
   Trash,
   WarningCircle
@@ -15,15 +18,74 @@ import {
 import { StatusBadge } from "../components/StatusBadge";
 import { api } from "../lib/api";
 import { cx } from "../lib/format";
-import type { ClusterSnapshot, ErrorEvent, OperationLog, SyncStrategy, SyncTask, TaskExport } from "../types/api";
+import { taskStatusText } from "../lib/taskStatus";
+import type { ClusterSnapshot, ErrorEvent, OperationLog, SyncStrategy, SyncTask, TaskExport, TaskStatus } from "../types/api";
 import { TaskInsightPanel } from "./TaskInsightPanel";
 
 type TaskAction = "start" | "pause" | "resume" | "stop" | "copy";
+type StatusFilter = "all" | TaskStatus;
+type SortMode = "delay_desc" | "updated_desc" | "throughput_desc" | "name_asc";
+
+const taskStatusOrder: TaskStatus[] = ["incremental_running", "full_syncing", "failed", "paused", "pending", "stopped", "draft"];
+
+const sortLabels: Record<SortMode, string> = {
+  delay_desc: "延迟最高",
+  updated_desc: "最近更新",
+  throughput_desc: "吞吐最高",
+  name_asc: "名称 A-Z"
+};
 
 function progressOf(task: SyncTask) {
   const runtime = task.runtime;
   if (!runtime || runtime.fullTotalRows === 0) return 0;
   return Math.min(100, Math.round((runtime.fullSyncedRows / runtime.fullTotalRows) * 100));
+}
+
+function taskSearchText(task: SyncTask) {
+  return [
+    task.name,
+    task.description,
+    task.owner,
+    task.sourceDatasource?.name,
+    task.targetDatasource?.name,
+    task.runtime?.nodeId,
+    taskStatusText[task.status],
+    ...task.tableMappings.flatMap((mapping) => [
+      mapping.sourceSchema,
+      mapping.sourceTable,
+      mapping.targetSchema,
+      mapping.targetTable
+    ])
+  ].filter(Boolean).join(" ").toLowerCase();
+}
+
+function sortTasks(tasks: SyncTask[], sortMode: SortMode) {
+  const nextTasks = [...tasks];
+  nextTasks.sort((left, right) => {
+    if (sortMode === "name_asc") return left.name.localeCompare(right.name, "zh-Hans-CN");
+    if (sortMode === "updated_desc") return new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime();
+    if (sortMode === "throughput_desc") {
+      return (right.runtime?.eventsPerSecond ?? 0) - (left.runtime?.eventsPerSecond ?? 0) || left.name.localeCompare(right.name, "zh-Hans-CN");
+    }
+    return (right.runtime?.delaySeconds ?? 0) - (left.runtime?.delaySeconds ?? 0) || left.name.localeCompare(right.name, "zh-Hans-CN");
+  });
+  return nextTasks;
+}
+
+function buildStatusCounts(tasks: SyncTask[]) {
+  const counts: Record<TaskStatus, number> = {
+    draft: 0,
+    pending: 0,
+    full_syncing: 0,
+    incremental_running: 0,
+    paused: 0,
+    failed: 0,
+    stopped: 0
+  };
+  tasks.forEach((task) => {
+    counts[task.status] += 1;
+  });
+  return counts;
 }
 
 function Info({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
@@ -43,6 +105,25 @@ function EmptyTaskState() {
       </div>
       <div className="mt-3 font-medium text-coal">暂无同步任务</div>
       <div className="mt-1 text-sm text-muted">使用新建任务向导创建第一条链路</div>
+    </div>
+  );
+}
+
+function EmptyFilteredTaskState({ onReset }: { onReset: () => void }) {
+  return (
+    <div className="m-5 rounded-lg border border-dashed border-line bg-[#fcfcf8] p-8 text-center">
+      <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-lg border border-line bg-white text-zinc-500">
+        <FunnelSimple size={18} />
+      </div>
+      <div className="mt-3 font-medium text-coal">没有匹配的任务</div>
+      <div className="mt-1 text-sm text-muted">调整关键词、负责人或状态筛选后再查看链路</div>
+      <button
+        onClick={onReset}
+        className="mt-4 inline-flex items-center justify-center gap-2 rounded-lg border border-line bg-white px-3 py-2 text-sm text-zinc-700 transition hover:bg-zinc-50 active:scale-[0.98]"
+      >
+        <FunnelSimple size={16} />
+        清空筛选
+      </button>
     </div>
   );
 }
@@ -344,16 +425,46 @@ export function TaskView({
   onChanged: () => Promise<void> | void;
 }) {
   const [selectedId, setSelectedId] = useState<string | null>(tasks[0]?.id ?? null);
-  const selected = tasks.find((task) => task.id === selectedId) ?? tasks[0];
+  const [keyword, setKeyword] = useState("");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [ownerFilter, setOwnerFilter] = useState("all");
+  const [sortMode, setSortMode] = useState<SortMode>("delay_desc");
+  const statusCounts = useMemo(() => buildStatusCounts(tasks), [tasks]);
+  const ownerOptions = useMemo(() => Array.from(new Set(tasks.map((task) => task.owner).filter(Boolean))).sort((left, right) => left.localeCompare(right, "zh-Hans-CN")), [tasks]);
+  const visibleTasks = useMemo(() => {
+    const normalizedKeyword = keyword.trim().toLowerCase();
+    const filteredTasks = tasks.filter((task) => {
+      const matchesKeyword = !normalizedKeyword || taskSearchText(task).includes(normalizedKeyword);
+      const matchesStatus = statusFilter === "all" || task.status === statusFilter;
+      const matchesOwner = ownerFilter === "all" || task.owner === ownerFilter;
+      return matchesKeyword && matchesStatus && matchesOwner;
+    });
+    return sortTasks(filteredTasks, sortMode);
+  }, [keyword, ownerFilter, sortMode, statusFilter, tasks]);
+  const selected = visibleTasks.find((task) => task.id === selectedId) ?? visibleTasks[0];
   const selectedErrors = selected ? errors.filter((event) => event.taskId === selected.id) : [];
   const selectedLogs = selected ? logs.filter((log) => log.targetId === selected.id || log.detail.includes(selected.name)) : [];
   const selectedLease = selected ? cluster?.leases.find((lease) => lease.taskId === selected.id) : undefined;
   const selectedNode = cluster?.nodes.find((node) => node.id === (selectedLease?.nodeId || selected?.runtime?.nodeId));
+  const maxDelaySeconds = tasks.reduce((maxDelay, task) => Math.max(maxDelay, task.runtime?.delaySeconds ?? 0), 0);
+  const runningTasks = statusCounts.incremental_running + statusCounts.full_syncing;
+  const filterActive = Boolean(keyword.trim()) || statusFilter !== "all" || ownerFilter !== "all" || sortMode !== "delay_desc";
 
   useEffect(() => {
-    if (!selectedId && tasks[0]) setSelectedId(tasks[0].id);
-    if (selectedId && !tasks.some((task) => task.id === selectedId)) setSelectedId(tasks[0]?.id ?? null);
-  }, [selectedId, tasks]);
+    if (tasks.length === 0) {
+      if (selectedId) setSelectedId(null);
+      return;
+    }
+    if (visibleTasks.length === 0) return;
+    if (!selectedId || !visibleTasks.some((task) => task.id === selectedId)) setSelectedId(visibleTasks[0].id);
+  }, [selectedId, tasks.length, visibleTasks]);
+
+  const resetFilters = () => {
+    setKeyword("");
+    setStatusFilter("all");
+    setOwnerFilter("all");
+    setSortMode("delay_desc");
+  };
 
   if (tasks.length === 0) {
     return <EmptyTaskState />;
@@ -361,34 +472,144 @@ export function TaskView({
 
   return (
     <div className="grid gap-5 xl:grid-cols-[1fr_460px]">
-      <section className="rounded-xl border border-line bg-white shadow-panel">
+      <section className="min-w-0 rounded-xl border border-line bg-white shadow-panel">
         <div className="border-b border-line p-5">
-          <h2 className="text-lg font-semibold tracking-tight text-coal">任务列表</h2>
-          <div className="mt-1 text-sm text-muted">生命周期、吞吐、延迟和操作入口</div>
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div>
+              <h2 className="text-lg font-semibold tracking-tight text-coal">任务列表</h2>
+              <div className="mt-1 text-sm text-muted">生命周期、吞吐、延迟和操作入口</div>
+            </div>
+            <div className="grid grid-cols-3 gap-2 text-sm lg:min-w-[320px]">
+              <div className="rounded-lg border border-line bg-[#fcfcf8] px-3 py-2">
+                <div className="text-xs text-muted">运行</div>
+                <div className="mt-1 font-mono font-semibold text-coal">{runningTasks}</div>
+              </div>
+              <div className="rounded-lg border border-line bg-[#fcfcf8] px-3 py-2">
+                <div className="text-xs text-muted">异常</div>
+                <div className="mt-1 font-mono font-semibold text-red-700">{statusCounts.failed}</div>
+              </div>
+              <div className="rounded-lg border border-line bg-[#fcfcf8] px-3 py-2">
+                <div className="text-xs text-muted">最高延迟</div>
+                <div className="mt-1 font-mono font-semibold text-coal">{maxDelaySeconds}s</div>
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-3 md:grid-cols-[minmax(0,1fr)_160px_170px]">
+            <label className="block min-w-0">
+              <span className="mb-2 block text-xs font-medium text-zinc-700">搜索任务</span>
+              <span className="relative block">
+                <MagnifyingGlass className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={17} />
+                <input
+                  className="control pl-9"
+                  value={keyword}
+                  onChange={(event) => setKeyword(event.target.value)}
+                  placeholder="名称、表、数据源、节点"
+                />
+              </span>
+            </label>
+            <label className="block">
+              <span className="mb-2 block text-xs font-medium text-zinc-700">负责人</span>
+              <select className="control" value={ownerFilter} onChange={(event) => setOwnerFilter(event.target.value)}>
+                <option value="all">全部负责人</option>
+                {ownerOptions.map((owner) => (
+                  <option key={owner} value={owner}>{owner}</option>
+                ))}
+              </select>
+            </label>
+            <label className="block">
+              <span className="mb-2 flex items-center gap-1 text-xs font-medium text-zinc-700">
+                <SortAscending size={14} />
+                排序
+              </span>
+              <select className="control" value={sortMode} onChange={(event) => setSortMode(event.target.value as SortMode)}>
+                {Object.entries(sortLabels).map(([value, label]) => (
+                  <option key={value} value={value}>{label}</option>
+                ))}
+              </select>
+            </label>
+          </div>
+
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            <button
+              onClick={() => setStatusFilter("all")}
+              className={cx(
+                "inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs transition active:scale-[0.98]",
+                statusFilter === "all" ? "border-coal bg-coal text-white" : "border-line bg-white text-zinc-600 hover:bg-zinc-50"
+              )}
+            >
+              全部
+              <span className={cx("font-mono", statusFilter === "all" ? "text-zinc-200" : "text-muted")}>{tasks.length}</span>
+            </button>
+            {taskStatusOrder.map((status) => (
+              <button
+                key={status}
+                onClick={() => setStatusFilter(status)}
+                className={cx(
+                  "inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs transition active:scale-[0.98]",
+                  statusFilter === status ? "border-coal bg-coal text-white" : "border-line bg-white text-zinc-600 hover:bg-zinc-50"
+                )}
+              >
+                {taskStatusText[status]}
+                <span className={cx("font-mono", statusFilter === status ? "text-zinc-200" : "text-muted")}>{statusCounts[status]}</span>
+              </button>
+            ))}
+            {filterActive && (
+              <button
+                onClick={resetFilters}
+                className="inline-flex items-center gap-2 rounded-full border border-line bg-[#fcfcf8] px-3 py-1.5 text-xs text-zinc-600 transition hover:bg-zinc-50 active:scale-[0.98]"
+              >
+                <FunnelSimple size={14} />
+                清空筛选
+              </button>
+            )}
+          </div>
+
+          <div className="mt-4 text-xs text-muted">
+            当前显示 <span className="font-mono text-coal">{visibleTasks.length}</span> / <span className="font-mono text-coal">{tasks.length}</span> 条任务
+          </div>
         </div>
         <div className="divide-y divide-line">
-          {tasks.map((task) => (
+          {visibleTasks.length === 0 && <EmptyFilteredTaskState onReset={resetFilters} />}
+          {visibleTasks.map((task) => (
             <button
               key={task.id}
               onClick={() => setSelectedId(task.id)}
               className={cx(
-                "grid w-full gap-3 p-5 text-left transition hover:bg-zinc-50 md:grid-cols-[1.2fr_0.8fr_0.7fr] md:items-center",
+                "grid w-full min-w-0 gap-4 p-5 text-left transition hover:bg-zinc-50 md:grid-cols-[minmax(0,1.2fr)_minmax(190px,0.8fr)_minmax(150px,0.7fr)] md:items-center",
                 selected?.id === task.id && "bg-[#f7faf6]"
               )}
             >
-              <div>
+              <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="font-medium text-coal">{task.name}</span>
+                  <span className="truncate font-medium text-coal">{task.name}</span>
                   <StatusBadge status={task.status} />
                 </div>
-                <div className="mt-1 text-sm text-muted">{task.description}</div>
+                <div className="mt-1 line-clamp-2 text-sm text-muted">{task.description}</div>
+                <div className="mt-3 flex flex-wrap gap-2 text-xs text-zinc-500">
+                  <span className="rounded-full border border-line bg-white px-2 py-1">负责人 {task.owner}</span>
+                  <span className="rounded-full border border-line bg-white px-2 py-1">v{task.configVersion}</span>
+                </div>
               </div>
-              <div className="font-mono text-sm text-zinc-700">
-                {task.runtime?.binlogFile}:{task.runtime?.binlogPosition}
+              <div className="min-w-0 text-sm text-zinc-700">
+                <div className="flex min-w-0 items-center gap-2">
+                  <span className="truncate">{task.sourceDatasource?.name || task.sourceDatasourceId}</span>
+                  <ArrowRight size={15} className="shrink-0 text-zinc-400" />
+                  <span className="truncate">{task.targetDatasource?.name || task.targetDatasourceId}</span>
+                </div>
+                <div className="mt-2 truncate font-mono text-xs text-zinc-500">
+                  {task.runtime?.binlogFile ?? "-"}:{task.runtime?.binlogPosition ?? "-"}
+                </div>
               </div>
               <div className="grid grid-cols-2 gap-2 text-sm text-zinc-600">
-                <span>{task.runtime?.delaySeconds ?? 0}s</span>
-                <span>{task.runtime?.eventsPerSecond ?? 0}/s</span>
+                <span className="rounded-lg border border-line bg-[#fcfcf8] px-2 py-2">
+                  <span className="block text-xs text-muted">延迟</span>
+                  <span className="font-mono text-coal">{task.runtime?.delaySeconds ?? 0}s</span>
+                </span>
+                <span className="rounded-lg border border-line bg-[#fcfcf8] px-2 py-2">
+                  <span className="block text-xs text-muted">吞吐</span>
+                  <span className="font-mono text-coal">{task.runtime?.eventsPerSecond ?? 0}/s</span>
+                </span>
               </div>
             </button>
           ))}
