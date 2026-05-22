@@ -18,11 +18,14 @@ import type {
   TaskExport,
   TaskOperationResult,
   TaskParameterPatch,
+  TaskPreflightReport,
   User
 } from "../types/api";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:4100/api";
 const TOKEN_KEY = "canal-plus-token";
+
+type SyncTaskInput = Omit<SyncTask, "id" | "status" | "configVersion" | "createdAt" | "updatedAt" | "runtime" | "sourceDatasource" | "targetDatasource">;
 
 export function getToken() {
   return window.localStorage.getItem(TOKEN_KEY);
@@ -120,8 +123,14 @@ export const api = {
   tasks() {
     return request<SyncTask[]>("/sync-tasks");
   },
-  createTask(input: Omit<SyncTask, "id" | "status" | "configVersion" | "createdAt" | "updatedAt" | "runtime" | "sourceDatasource" | "targetDatasource">) {
+  createTask(input: SyncTaskInput) {
     return request<SyncTask>("/sync-tasks", {
+      method: "POST",
+      body: JSON.stringify(input)
+    });
+  },
+  preflightTask(input: SyncTaskInput) {
+    return request<TaskPreflightReport>("/sync-tasks/preflight", {
       method: "POST",
       body: JSON.stringify(input)
     });

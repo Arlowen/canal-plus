@@ -42,6 +42,8 @@ import type {
   ErrorEvent,
   FieldMapping,
   OperationLog,
+  TaskPreflightCheck,
+  TaskPreflightReport,
   SyncStrategy,
   SyncTask,
   TableColumn,
@@ -608,12 +610,18 @@ function TaskWizard({ datasources, onCreated }: { datasources: Datasource[]; onC
   const [tables, setTables] = useState<TableInfo[]>([]);
   const [columns, setColumns] = useState<TableColumn[]>([]);
   const [fieldMappings, setFieldMappings] = useState<FieldMapping[]>([]);
+  const [preflight, setPreflight] = useState<TaskPreflightReport | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [checking, setChecking] = useState(false);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     api.defaultStrategy().then(setStrategy).catch(() => undefined);
   }, []);
+
+  useEffect(() => {
+    setPreflight(null);
+  }, [draft, fieldMappings, strategy]);
 
   useEffect(() => {
     if (!draft.sourceDatasourceId) return;
@@ -667,27 +675,55 @@ function TaskWizard({ datasources, onCreated }: { datasources: Datasource[]; onC
       .catch((requestError) => setError(requestError instanceof Error ? requestError.message : "读取字段失败"));
   }, [draft.sourceDatasourceId, draft.sourceSchema, draft.sourceTable]);
 
+  const buildTaskInput = () => ({
+    name: draft.name,
+    description: draft.description,
+    owner: draft.owner,
+    sourceDatasourceId: draft.sourceDatasourceId,
+    targetDatasourceId: draft.targetDatasourceId,
+    tableMappings: [
+      {
+        sourceSchema: draft.sourceSchema,
+        sourceTable: draft.sourceTable,
+        targetSchema: draft.targetSchema,
+        targetTable: draft.targetTable,
+        fields: fieldMappings
+      }
+    ],
+    strategy
+  });
+
+  const runPreflight = async () => {
+    setChecking(true);
+    setError(null);
+    try {
+      const report = await api.preflightTask(buildTaskInput());
+      setPreflight(report);
+      setStep(5);
+      if (!report.ok) {
+        setError("预检未通过，请处理失败项后再发布。");
+      }
+      return report;
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "预检失败");
+      return null;
+    } finally {
+      setChecking(false);
+    }
+  };
+
   const submit = async () => {
     setLoading(true);
     setError(null);
     try {
-      await api.createTask({
-        name: draft.name,
-        description: draft.description,
-        owner: draft.owner,
-        sourceDatasourceId: draft.sourceDatasourceId,
-        targetDatasourceId: draft.targetDatasourceId,
-        tableMappings: [
-          {
-            sourceSchema: draft.sourceSchema,
-            sourceTable: draft.sourceTable,
-            targetSchema: draft.targetSchema,
-            targetTable: draft.targetTable,
-            fields: fieldMappings
-          }
-        ],
-        strategy
-      });
+      const report = preflight ?? await api.preflightTask(buildTaskInput());
+      setPreflight(report);
+      if (!report.ok) {
+        setStep(5);
+        setError("预检未通过，请处理失败项后再发布。");
+        return;
+      }
+      await api.createTask(buildTaskInput());
       onCreated();
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "创建任务失败");
@@ -696,7 +732,7 @@ function TaskWizard({ datasources, onCreated }: { datasources: Datasource[]; onC
     }
   };
 
-  const stepTitles = ["任务", "源端", "目标端", "映射", "策略", "预览"];
+  const stepTitles = ["任务", "源端", "目标端", "映射", "策略", "预检"];
 
   return (
     <div className="grid gap-5 xl:grid-cols-[260px_1fr]">
@@ -885,19 +921,8 @@ function TaskWizard({ datasources, onCreated }: { datasources: Datasource[]; onC
 
         {step === 5 && (
           <div className="space-y-4">
-            <SectionTitle title="配置预览" subtitle="发布后生成待启动任务" />
-            <div className="rounded-lg border border-line bg-[#fcfcf8] p-4 text-sm">
-              <pre className="max-h-[420px] overflow-auto whitespace-pre-wrap font-mono text-xs text-zinc-700">
-{JSON.stringify({
-  name: draft.name,
-  owner: draft.owner,
-  source: `${draft.sourceSchema}.${draft.sourceTable}`,
-  target: `${draft.targetSchema}.${draft.targetTable}`,
-  fields: fieldMappings.filter((field) => !field.ignored).map((field) => `${field.sourceField} -> ${field.targetField}`),
-  strategy
-}, null, 2)}
-              </pre>
-            </div>
+            <SectionTitle title="发布前预检" subtitle="连接性、表结构、策略、重复订阅和 node 承载能力" />
+            <PreflightPanel report={preflight} checking={checking} onRun={runPreflight} />
           </div>
         )}
 
@@ -920,11 +945,11 @@ function TaskWizard({ datasources, onCreated }: { datasources: Datasource[]; onC
           ) : (
             <button
               onClick={submit}
-              disabled={loading}
+              disabled={loading || checking}
               className="inline-flex items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm text-white transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
             >
               <CheckCircle size={16} />
-              {loading ? "发布中" : "发布任务"}
+              {loading ? "发布中" : preflight?.ok ? "发布任务" : "预检并发布"}
             </button>
           )}
         </div>
@@ -947,6 +972,133 @@ function SectionTitle({ title, subtitle }: { title: string; subtitle: string }) 
     <div>
       <h2 className="text-lg font-semibold tracking-tight text-coal">{title}</h2>
       <div className="mt-1 text-sm text-muted">{subtitle}</div>
+    </div>
+  );
+}
+
+const preflightStatusText: Record<TaskPreflightCheck["status"], string> = {
+  passed: "通过",
+  warning: "注意",
+  failed: "失败"
+};
+
+function preflightStatusClass(status: TaskPreflightCheck["status"]) {
+  if (status === "failed") return "border-red-200 bg-red-50 text-red-700";
+  if (status === "warning") return "border-amber-200 bg-amber-50 text-amber-700";
+  return "border-emerald-200 bg-emerald-50 text-emerald-700";
+}
+
+function PreflightStatusIcon({ status }: { status: TaskPreflightCheck["status"] }) {
+  if (status === "failed") return <XCircle size={17} />;
+  if (status === "warning") return <WarningCircle size={17} />;
+  return <CheckCircle size={17} />;
+}
+
+function PreflightPanel({
+  report,
+  checking,
+  onRun
+}: {
+  report: TaskPreflightReport | null;
+  checking: boolean;
+  onRun: () => Promise<TaskPreflightReport | null>;
+}) {
+  if (!report) {
+    return (
+      <div className="rounded-xl border border-line bg-[#fcfcf8] p-5">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div className="max-w-2xl">
+            <div className="flex items-center gap-2 text-coal">
+              <ShieldCheck size={20} />
+              <h3 className="font-semibold tracking-tight">等待预检</h3>
+            </div>
+            <p className="mt-2 text-sm leading-relaxed text-muted">
+              发布前会检查源端连接、目标结构、字段兼容性、重复订阅、策略参数和 node 容量。预检通过后才会创建同步任务。
+            </p>
+          </div>
+          <button
+            onClick={() => void onRun()}
+            disabled={checking}
+            className="inline-flex items-center justify-center gap-2 rounded-lg bg-coal px-4 py-2 text-sm text-white transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <Pulse size={16} />
+            {checking ? "预检中" : "运行预检"}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className={cx(
+        "rounded-xl border p-5",
+        report.ok ? "border-emerald-200 bg-emerald-50" : "border-red-200 bg-red-50"
+      )}>
+        <div className="grid gap-4 lg:grid-cols-[1fr_auto] lg:items-center">
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className={cx(
+                "inline-flex items-center gap-2 rounded-full border px-3 py-1 text-sm font-medium",
+                report.ok ? "border-emerald-300 bg-white text-emerald-800" : "border-red-300 bg-white text-red-700"
+              )}>
+                {report.ok ? <CheckCircle size={17} /> : <XCircle size={17} />}
+                {report.ok ? "可发布" : "不可发布"}
+              </span>
+              <span className="font-mono text-sm text-zinc-600">score {report.score}</span>
+              <span className="text-sm text-muted">{formatDate(report.generatedAt)}</span>
+            </div>
+            <div className="mt-3 grid gap-2 sm:grid-cols-4">
+              <InfoPill label="通过" value={report.summary.passed} />
+              <InfoPill label="注意" value={report.summary.warnings} />
+              <InfoPill label="失败" value={report.summary.failed} />
+              <InfoPill label="估算行数" value={formatNumber(report.estimatedRows)} />
+            </div>
+          </div>
+          <button
+            onClick={() => void onRun()}
+            disabled={checking}
+            className="inline-flex items-center justify-center gap-2 rounded-lg border border-line bg-white px-4 py-2 text-sm text-zinc-700 transition hover:bg-zinc-50 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <Pulse size={16} />
+            {checking ? "预检中" : "重新预检"}
+          </button>
+        </div>
+      </div>
+
+      <div className="divide-y divide-line rounded-xl border border-line bg-white">
+        {report.checks.map((check) => (
+          <div key={check.id} className="grid gap-3 p-4 lg:grid-cols-[140px_minmax(0,1fr)_auto] lg:items-start">
+            <div className="text-xs uppercase tracking-[0.14em] text-muted">{check.category}</div>
+            <div className="min-w-0">
+              <div className="font-medium text-coal">{check.title}</div>
+              <div className="mt-1 text-sm text-zinc-600">{check.message}</div>
+              {check.detail && check.detail.length > 0 && (
+                <div className="mt-3 grid gap-2">
+                  {check.detail.slice(0, 4).map((item) => (
+                    <div key={item} className="rounded-lg border border-line bg-[#fcfcf8] px-3 py-2 font-mono text-xs text-zinc-600">
+                      {item}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            <span className={cx("inline-flex items-center justify-center gap-1 rounded-full border px-2.5 py-1 text-xs", preflightStatusClass(check.status))}>
+              <PreflightStatusIcon status={check.status} />
+              {preflightStatusText[check.status]}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function InfoPill({ label, value }: { label: string; value: string | number }) {
+  return (
+    <div className="rounded-lg border border-white/70 bg-white px-3 py-2">
+      <div className="text-xs text-muted">{label}</div>
+      <div className="mt-1 font-mono text-sm font-semibold text-coal">{value}</div>
     </div>
   );
 }

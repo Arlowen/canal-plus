@@ -439,6 +439,8 @@ func (s *Server) handleSyncTasks(response http.ResponseWriter, request *http.Req
 		writeJSON(response, http.StatusOK, filtered)
 	case len(parts) == 1 && request.Method == http.MethodPost:
 		s.createTask(response, request)
+	case len(parts) == 2 && parts[1] == "preflight" && request.Method == http.MethodPost:
+		s.preflightTask(response, request)
 	case len(parts) == 2 && request.Method == http.MethodGet:
 		task, ok := s.store.GetTask(parts[1])
 		if !ok {
@@ -511,12 +513,30 @@ func (s *Server) createTask(response http.ResponseWriter, request *http.Request)
 		writeError(response, http.StatusBadRequest, err.Error())
 		return
 	}
+	preflight := s.buildTaskPreflight(input)
+	if !preflight.OK {
+		writeJSON(response, http.StatusUnprocessableEntity, map[string]any{
+			"message":   "任务预检未通过",
+			"preflight": preflight,
+		})
+		return
+	}
 	task, err := s.store.CreateTask(input)
 	if err != nil {
 		writeError(response, http.StatusInternalServerError, err.Error())
 		return
 	}
 	writeJSON(response, http.StatusCreated, s.taskResponse(task))
+}
+
+func (s *Server) preflightTask(response http.ResponseWriter, request *http.Request) {
+	var input SyncTask
+	if err := decodeJSON(request, &input); err != nil {
+		writeError(response, http.StatusBadRequest, "请求体格式错误")
+		return
+	}
+	report := s.buildTaskPreflight(input)
+	writeJSON(response, http.StatusOK, report)
 }
 
 func (s *Server) updateTask(response http.ResponseWriter, request *http.Request, id string) {

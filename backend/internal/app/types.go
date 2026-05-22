@@ -188,6 +188,38 @@ type TaskExport struct {
 	Checksum   string           `json:"checksum"`
 }
 
+type PreflightStatus string
+
+const (
+	PreflightPassed  PreflightStatus = "passed"
+	PreflightWarning PreflightStatus = "warning"
+	PreflightFailed  PreflightStatus = "failed"
+)
+
+type TaskPreflightCheck struct {
+	ID       string          `json:"id"`
+	Category string          `json:"category"`
+	Title    string          `json:"title"`
+	Status   PreflightStatus `json:"status"`
+	Message  string          `json:"message"`
+	Detail   []string        `json:"detail,omitempty"`
+}
+
+type TaskPreflightSummary struct {
+	Passed   int `json:"passed"`
+	Warnings int `json:"warnings"`
+	Failed   int `json:"failed"`
+}
+
+type TaskPreflightReport struct {
+	OK            bool                 `json:"ok"`
+	Score         int                  `json:"score"`
+	GeneratedAt   string               `json:"generatedAt"`
+	EstimatedRows int64                `json:"estimatedRows"`
+	Summary       TaskPreflightSummary `json:"summary"`
+	Checks        []TaskPreflightCheck `json:"checks"`
+}
+
 type WriteModePatch struct {
 	Insert *bool `json:"insert,omitempty"`
 	Update *bool `json:"update,omitempty"`

@@ -80,6 +80,11 @@ func TestOperatorCannotMutateConfigurationOrCluster(t *testing.T) {
 		t.Fatalf("operator create task status = %d body = %s", createTaskResponse.Code, createTaskResponse.Body.String())
 	}
 
+	preflightResponse := serveTestRequest(server, authRequest(http.MethodPost, "/api/sync-tasks/preflight", operatorToken, `{}`))
+	if preflightResponse.Code != http.StatusForbidden {
+		t.Fatalf("operator preflight task status = %d body = %s", preflightResponse.Code, preflightResponse.Body.String())
+	}
+
 	rebalanceResponse := serveTestRequest(server, authRequest(http.MethodPost, "/api/cluster/rebalance", operatorToken, ""))
 	if rebalanceResponse.Code != http.StatusForbidden {
 		t.Fatalf("operator rebalance cluster status = %d body = %s", rebalanceResponse.Code, rebalanceResponse.Body.String())

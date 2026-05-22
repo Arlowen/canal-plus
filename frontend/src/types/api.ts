@@ -108,6 +108,32 @@ export interface TaskExport {
   checksum: string;
 }
 
+export type PreflightStatus = "passed" | "warning" | "failed";
+
+export interface TaskPreflightCheck {
+  id: string;
+  category: string;
+  title: string;
+  status: PreflightStatus;
+  message: string;
+  detail?: string[];
+}
+
+export interface TaskPreflightSummary {
+  passed: number;
+  warnings: number;
+  failed: number;
+}
+
+export interface TaskPreflightReport {
+  ok: boolean;
+  score: number;
+  generatedAt: string;
+  estimatedRows: number;
+  summary: TaskPreflightSummary;
+  checks: TaskPreflightCheck[];
+}
+
 export interface TaskParameterPatch {
   initMode?: SyncStrategy["initMode"];
   writeMode?: Partial<SyncStrategy["writeMode"]>;
