@@ -308,6 +308,26 @@ export interface TaskLease {
   updatedAt: string;
 }
 
+export interface FailoverDrillTask {
+  taskId: string;
+  taskName: string;
+  previousNodeId: string;
+  newNodeId: string;
+  leaseEpoch: number;
+  takeoverCount: number;
+}
+
+export interface FailoverDrillReport {
+  id: string;
+  drilledAt: string;
+  node: ClusterNode;
+  success: boolean;
+  message: string;
+  affectedTasks: FailoverDrillTask[];
+  before: ClusterSnapshot;
+  after: ClusterSnapshot;
+}
+
 export interface ClusterSnapshot {
   nodes: ClusterNode[];
   leases: TaskLease[];

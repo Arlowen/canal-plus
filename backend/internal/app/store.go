@@ -626,6 +626,80 @@ func (s *Store) HeartbeatNode(id string) (ClusterNode, bool, error) {
 	return s.MarkNodeStatus(id, NodeOnline)
 }
 
+func (s *Store) FailoverDrill(nodeID string) (FailoverDrillReport, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.ensureClusterLocked()
+	before := s.clusterSnapshotLocked()
+	node := s.getNodeLocked(nodeID)
+	if node == nil {
+		return FailoverDrillReport{}, false, nil
+	}
+	if node.Status != NodeOnline {
+		return FailoverDrillReport{}, true, errors.New("只有在线节点可以发起故障演练")
+	}
+
+	tasksByID := map[string]SyncTask{}
+	for _, task := range s.data.SyncTasks {
+		tasksByID[task.ID] = task
+	}
+	affectedBefore := map[string]TaskLease{}
+	for _, lease := range before.Leases {
+		if lease.NodeID == nodeID {
+			affectedBefore[lease.TaskID] = lease
+		}
+	}
+
+	timestamp := now()
+	node.Status = NodeOffline
+	node.UpdatedAt = timestamp
+	s.logLocked("admin", "failover_drill", "cluster_node", nodeID, "故障演练触发节点离线："+node.Name)
+	s.reconcileClusterLocked()
+	after := s.clusterSnapshotLocked()
+	afterLeaseByTask := map[string]TaskLease{}
+	for _, lease := range after.Leases {
+		afterLeaseByTask[lease.TaskID] = lease
+	}
+
+	report := FailoverDrillReport{
+		ID:        newID(),
+		DrilledAt: timestamp,
+		Node:      cloneJSON(*node),
+		Success:   true,
+		Before:    before,
+		After:     after,
+	}
+	for taskID, previous := range affectedBefore {
+		next := afterLeaseByTask[taskID]
+		taskName := taskID
+		if task, ok := tasksByID[taskID]; ok {
+			taskName = task.Name
+		}
+		if next.TaskID == "" || next.NodeID == "" || next.NodeID == nodeID {
+			report.Success = false
+		}
+		report.AffectedTasks = append(report.AffectedTasks, FailoverDrillTask{
+			TaskID:         taskID,
+			TaskName:       taskName,
+			PreviousNodeID: previous.NodeID,
+			NewNodeID:      next.NodeID,
+			LeaseEpoch:     next.Epoch,
+			TakeoverCount:  next.TakeoverCount,
+		})
+	}
+	if len(report.AffectedTasks) == 0 {
+		report.Message = "节点已离线，该节点当前没有承载同步任务"
+	} else if report.Success {
+		report.Message = "故障演练完成，受影响任务已自动接管"
+	} else {
+		report.Message = "故障演练完成，但存在未接管任务，请检查在线 node 容量"
+	}
+	if err := s.saveLocked(); err != nil {
+		return FailoverDrillReport{}, true, err
+	}
+	return cloneJSON(report), true, nil
+}
+
 func (s *Store) RefreshOnlineNodeHeartbeats() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()

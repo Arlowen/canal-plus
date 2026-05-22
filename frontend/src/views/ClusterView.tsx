@@ -12,7 +12,7 @@ import {
 import { PermissionNotice } from "../components/PermissionNotice";
 import { api } from "../lib/api";
 import { cx, formatDate, secondsSince } from "../lib/format";
-import type { ClusterNode, ClusterSnapshot, SyncTask } from "../types/api";
+import type { ClusterNode, ClusterSnapshot, FailoverDrillReport, SyncTask } from "../types/api";
 
 function NodeBadge({ status }: { status: ClusterNode["status"] }) {
   const label = status === "online" ? "在线" : status === "draining" ? "排空" : "离线";
@@ -67,6 +67,7 @@ export function ClusterView({
 }) {
   const [busyNode, setBusyNode] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [drillReport, setDrillReport] = useState<FailoverDrillReport | null>(null);
   const nodes = cluster?.nodes ?? [];
   const leases = cluster?.leases ?? [];
   const taskById = new Map(tasks.map((task) => [task.id, task]));
@@ -103,6 +104,24 @@ export function ClusterView({
       await onChanged();
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "重新均衡失败");
+    } finally {
+      setBusyNode(null);
+    }
+  };
+
+  const runFailoverDrill = async (node: ClusterNode) => {
+    if (!canManage) {
+      setError("故障演练需要管理员权限");
+      return;
+    }
+    setBusyNode(`drill:${node.id}`);
+    setError(null);
+    try {
+      const report = await api.failoverDrill(node.id);
+      setDrillReport(report);
+      await onChanged();
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "故障演练失败");
     } finally {
       setBusyNode(null);
     }
@@ -191,10 +210,11 @@ export function ClusterView({
                   </div>
                 </div>
 
-                <div className="mt-4 grid grid-cols-3 gap-2">
+                <div className="mt-4 grid grid-cols-2 gap-2 xl:grid-cols-4">
                   <button onClick={() => runNodeAction(node, "offline")} disabled={!canManage || busyNode === node.id || node.status === "offline"} className="node-action">下线</button>
                   <button onClick={() => runNodeAction(node, "drain")} disabled={!canManage || busyNode === node.id || node.status === "draining"} className="node-action">排空</button>
                   <button onClick={() => runNodeAction(node, "online")} disabled={!canManage || busyNode === node.id || node.status === "online"} className="node-action">恢复</button>
+                  <button onClick={() => runFailoverDrill(node)} disabled={!canManage || busyNode === `drill:${node.id}` || node.status !== "online"} className="node-action">演练</button>
                 </div>
               </div>
             );
@@ -203,6 +223,49 @@ export function ClusterView({
       </section>
 
       <aside className="space-y-5">
+        {drillReport && (
+          <div className={cx(
+            "rounded-xl border p-5 shadow-panel",
+            drillReport.success ? "border-emerald-200 bg-emerald-50 text-emerald-900" : "border-red-200 bg-red-50 text-red-900"
+          )}>
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="flex items-center gap-2">
+                  {drillReport.success ? <ShieldCheck size={20} /> : <WarningCircle size={20} />}
+                  <h2 className="font-semibold tracking-tight">最近故障演练</h2>
+                </div>
+                <p className="mt-2 text-sm leading-relaxed">{drillReport.message}</p>
+              </div>
+              <span className="rounded-full border border-white/70 bg-white px-2 py-1 font-mono text-xs">
+                {formatDate(drillReport.drilledAt)}
+              </span>
+            </div>
+
+            <div className="mt-4 grid gap-2 sm:grid-cols-3">
+              <ClusterStat label="演练节点" value={drillReport.node.name} detail={drillReport.node.id} tone={drillReport.success ? "ok" : "warn"} />
+              <ClusterStat label="影响任务" value={drillReport.affectedTasks.length} detail="自动接管链路" />
+              <ClusterStat label="接管累计" value={drillReport.after.failovers} detail={`演练前 ${drillReport.before.failovers}`} />
+            </div>
+
+            <div className="mt-4 space-y-2">
+              {drillReport.affectedTasks.length === 0 ? (
+                <div className="rounded-lg border border-white/70 bg-white/80 p-3 text-sm">该节点没有承载任务，演练只验证节点离线流程。</div>
+              ) : drillReport.affectedTasks.map((task) => (
+                <div key={task.taskId} className="rounded-lg border border-white/70 bg-white/80 p-3 text-sm">
+                  <div className="font-medium text-coal">{task.taskName}</div>
+                  <div className="mt-2 flex flex-wrap gap-2 font-mono text-xs text-zinc-600">
+                    <span>{task.previousNodeId}</span>
+                    <span>to</span>
+                    <span>{task.newNodeId || "unassigned"}</span>
+                    <span>epoch {task.leaseEpoch}</span>
+                    <span>takeover {task.takeoverCount}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         <div className="rounded-xl border border-line bg-white p-5 shadow-panel">
           <div className="flex items-center gap-2 text-coal">
             <ShieldCheck size={20} />

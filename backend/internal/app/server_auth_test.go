@@ -90,6 +90,11 @@ func TestOperatorCannotMutateConfigurationOrCluster(t *testing.T) {
 		t.Fatalf("operator rebalance cluster status = %d body = %s", rebalanceResponse.Code, rebalanceResponse.Body.String())
 	}
 
+	drillResponse := serveTestRequest(server, authRequest(http.MethodPost, "/api/cluster/nodes/node-a/failover-drill", operatorToken, ""))
+	if drillResponse.Code != http.StatusForbidden {
+		t.Fatalf("operator failover drill status = %d body = %s", drillResponse.Code, drillResponse.Body.String())
+	}
+
 	alertResponse := serveTestRequest(server, authRequest(http.MethodPost, "/api/alert-rules", operatorToken, `{}`))
 	if alertResponse.Code != http.StatusForbidden {
 		t.Fatalf("operator create alert rule status = %d body = %s", alertResponse.Code, alertResponse.Body.String())

@@ -799,6 +799,17 @@ func (s *Server) handleCluster(response http.ResponseWriter, request *http.Reque
 			return
 		}
 		writeJSON(response, http.StatusOK, snapshot)
+	case len(parts) == 4 && parts[1] == "nodes" && parts[3] == "failover-drill" && request.Method == http.MethodPost:
+		report, ok, err := s.store.FailoverDrill(parts[2])
+		if err != nil {
+			writeError(response, http.StatusBadRequest, err.Error())
+			return
+		}
+		if !ok {
+			writeError(response, http.StatusNotFound, "节点不存在")
+			return
+		}
+		writeJSON(response, http.StatusOK, report)
 	case len(parts) == 4 && parts[1] == "nodes" && request.Method == http.MethodPost:
 		var status NodeStatus
 		switch parts[3] {

@@ -398,6 +398,26 @@ type TaskLease struct {
 	UpdatedAt     string `json:"updatedAt"`
 }
 
+type FailoverDrillTask struct {
+	TaskID         string `json:"taskId"`
+	TaskName       string `json:"taskName"`
+	PreviousNodeID string `json:"previousNodeId"`
+	NewNodeID      string `json:"newNodeId"`
+	LeaseEpoch     int    `json:"leaseEpoch"`
+	TakeoverCount  int    `json:"takeoverCount"`
+}
+
+type FailoverDrillReport struct {
+	ID            string              `json:"id"`
+	DrilledAt     string              `json:"drilledAt"`
+	Node          ClusterNode         `json:"node"`
+	Success       bool                `json:"success"`
+	Message       string              `json:"message"`
+	AffectedTasks []FailoverDrillTask `json:"affectedTasks"`
+	Before        ClusterSnapshot     `json:"before"`
+	After         ClusterSnapshot     `json:"after"`
+}
+
 type ClusterSnapshot struct {
 	Nodes                   []ClusterNode `json:"nodes"`
 	Leases                  []TaskLease   `json:"leases"`

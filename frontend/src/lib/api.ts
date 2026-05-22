@@ -8,6 +8,7 @@ import type {
   ClusterSnapshot,
   Datasource,
   ErrorEvent,
+  FailoverDrillReport,
   LoginResponse,
   OperationLog,
   PositionResetInput,
@@ -229,6 +230,9 @@ export const api = {
   },
   nodeAction(id: string, action: "online" | "offline" | "drain" | "heartbeat") {
     return request<ClusterSnapshot | unknown>(`/cluster/nodes/${id}/${action}`, { method: "POST" });
+  },
+  failoverDrill(id: string) {
+    return request<FailoverDrillReport>(`/cluster/nodes/${id}/failover-drill`, { method: "POST" });
   },
   rebalanceCluster() {
     return request<ClusterSnapshot>("/cluster/rebalance", { method: "POST" });

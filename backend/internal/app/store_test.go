@@ -61,6 +61,59 @@ func TestNodeOfflineTriggersLeaseTakeover(t *testing.T) {
 	}
 }
 
+func TestFailoverDrillReturnsTakeoverReport(t *testing.T) {
+	store := newTestStore(t)
+	before := store.ClusterSnapshot()
+
+	var activeNode ClusterNode
+	for _, node := range before.Nodes {
+		if node.Status == NodeOnline && node.RunningTasks > 0 {
+			activeNode = node
+			break
+		}
+	}
+	if activeNode.ID == "" {
+		t.Fatalf("expected active node in snapshot: %#v", before.Nodes)
+	}
+
+	affectedBefore := map[string]TaskLease{}
+	for _, lease := range before.Leases {
+		if lease.NodeID == activeNode.ID {
+			affectedBefore[lease.TaskID] = lease
+		}
+	}
+
+	report, ok, err := store.FailoverDrill(activeNode.ID)
+	if err != nil || !ok {
+		t.Fatalf("FailoverDrill(%q) = ok %v, err %v", activeNode.ID, ok, err)
+	}
+	if !report.Success {
+		t.Fatalf("expected drill to succeed: %#v", report)
+	}
+	if len(report.AffectedTasks) != len(affectedBefore) {
+		t.Fatalf("affected task count mismatch, before %d report %d", len(affectedBefore), len(report.AffectedTasks))
+	}
+	if report.After.Failovers <= report.Before.Failovers {
+		t.Fatalf("expected failover count to increase, before %d after %d", report.Before.Failovers, report.After.Failovers)
+	}
+	for _, transition := range report.AffectedTasks {
+		if transition.PreviousNodeID != activeNode.ID {
+			t.Fatalf("unexpected previous node in transition: %#v", transition)
+		}
+		if transition.NewNodeID == "" || transition.NewNodeID == activeNode.ID {
+			t.Fatalf("task was not moved to another node: %#v", transition)
+		}
+		if transition.TakeoverCount == 0 {
+			t.Fatalf("takeover count not incremented: %#v", transition)
+		}
+	}
+	for _, node := range report.After.Nodes {
+		if node.ID == activeNode.ID && node.Status != NodeOffline {
+			t.Fatalf("drilled node should be offline: %#v", node)
+		}
+	}
+}
+
 func TestRebalanceKeepsLeasesOnOnlineNodes(t *testing.T) {
 	store := newTestStore(t)
 	before := store.ClusterSnapshot()
