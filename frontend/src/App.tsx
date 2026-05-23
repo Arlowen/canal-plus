@@ -1312,6 +1312,7 @@ function TasksPage({
               const task = item.rawTask;
               const job = item.rawJob;
               const primaryAction = task ? taskPrimaryAction(task) : null;
+              const executionNode = task?.runtime?.executionNodeName || task?.runtime?.nodeId;
               return (
                 <div key={item.key} className="grid gap-3 p-4 lg:grid-cols-[1fr_auto] lg:items-center">
                   <button onClick={() => setSelectedKey(item.key)} className="min-w-0 text-left">
@@ -1319,9 +1320,21 @@ function TasksPage({
                       <span className="font-medium text-coal">{item.title}</span>
                       <TypeBadge type={item.type} />
                       {task && <StatusBadge status={task.status} />}
+                      {task && <Badge tone={taskProcessTone(task.runtime?.processStatus)}>{taskProcessStatusText(task.runtime?.processStatus)}</Badge>}
+                      {task && task.runtime?.managedByLocalNode === false && <Badge tone="yellow">远程托管</Badge>}
                       {job && <Badge tone={capabilityJobTone(job.status)}>{capabilityJobStatusText(job.status)}</Badge>}
                     </div>
                     <div className="mt-1 text-sm text-slate-500">{item.detail}</div>
+                    {task && (
+                      <div className="mt-2 flex flex-wrap gap-2 text-xs text-slate-500">
+                        <span className="rounded-full border border-line bg-slate-50 px-2 py-1">
+                          {executionNode ? `节点 ${executionNode}` : "待分配节点"}
+                        </span>
+                        <span className="rounded-full border border-line bg-slate-50 px-2 py-1">
+                          {task.runtime?.localLogAccessible === false ? "切换节点看日志" : "本地可看日志"}
+                        </span>
+                      </div>
+                    )}
                     <div className="mt-2 text-xs text-slate-500">{formatDate(item.updatedAt)}</div>
                   </button>
                   <div className="flex flex-wrap justify-end gap-2">
@@ -2953,6 +2966,8 @@ function SyncTaskDetail({
         <DetailCard label="配置版本" value={`v${task.configVersion}`} mono />
         <DetailCard label="更新时间" value={formatDateTime(task.updatedAt)} />
         <DetailCard label="运行节点" value={runtime?.executionNodeName || runtime?.nodeId || "待分配"} mono />
+        <DetailCard label="托管模式" value={runtime?.managedByLocalNode === false ? "远程节点托管" : "当前节点托管"} />
+        <DetailCard label="日志访问" value={runtime?.localLogAccessible === false ? "需切换节点查看" : "当前节点可查看"} />
       </div>
       <div className="rounded-3xl border border-line bg-slate-50/70 p-4">
         <div className="flex items-center justify-between gap-3">
