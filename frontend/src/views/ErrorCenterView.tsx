@@ -14,7 +14,6 @@ import { cx, formatDate } from "../lib/format";
 import type { ErrorEvent, ErrorStatus, SyncTask } from "../types/api";
 
 type StatusFilter = "all" | ErrorStatus;
-type EventTypeFilter = "all" | ErrorEvent["eventType"];
 type SortMode = "created_desc" | "updated_desc" | "binlog_desc" | "table_asc";
 
 const statusOrder: ErrorStatus[] = ["pending", "retried", "skipped", "resolved"];
@@ -113,7 +112,7 @@ function EmptyErrors() {
         <CheckCircle size={18} />
       </div>
       <div className="mt-3 font-medium text-coal">暂无错误事件</div>
-      <div className="mt-1 text-sm text-muted">运行异常、写入失败和 DDL 冲突会进入这里</div>
+      <div className="mt-1 text-sm text-muted">当前没有待处理错误</div>
     </div>
   );
 }
@@ -125,7 +124,7 @@ function EmptyFilteredErrors({ onReset }: { onReset: () => void }) {
         <FunnelSimple size={18} />
       </div>
       <div className="mt-3 font-medium text-coal">没有匹配的错误事件</div>
-      <div className="mt-1 text-sm text-muted">调整关键词、任务、事件类型或状态后再查看</div>
+      <div className="mt-1 text-sm text-muted">调整关键词或状态后再查看</div>
       <button
         onClick={onReset}
         className="mt-4 inline-flex items-center justify-center gap-2 rounded-lg border border-line bg-white px-3 py-2 text-sm text-zinc-700 transition hover:bg-zinc-50 active:scale-[0.98]"
@@ -149,8 +148,6 @@ export function ErrorCenterView({
   const [selectedId, setSelectedId] = useState<string | null>(errors[0]?.id ?? null);
   const [keyword, setKeyword] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
-  const [taskFilter, setTaskFilter] = useState("all");
-  const [eventTypeFilter, setEventTypeFilter] = useState<EventTypeFilter>("all");
   const [sortMode, setSortMode] = useState<SortMode>("created_desc");
   const [skipReason, setSkipReason] = useState("");
   const [processing, setProcessing] = useState<string | null>(null);
@@ -159,29 +156,20 @@ export function ErrorCenterView({
 
   const taskById = useMemo(() => new Map(tasks.map((task) => [task.id, task])), [tasks]);
   const statusCounts = useMemo(() => buildStatusCounts(errors), [errors]);
-  const taskOptions = useMemo(() => {
-    const ids = Array.from(new Set(errors.map((event) => event.taskId)));
-    return ids.map((id) => ({ id, name: taskById.get(id)?.name || id })).sort((left, right) => left.name.localeCompare(right.name, "zh-Hans-CN"));
-  }, [errors, taskById]);
   const visibleErrors = useMemo(() => {
     const normalizedKeyword = keyword.trim().toLowerCase();
     const filtered = errors.filter((event) => {
       const task = taskById.get(event.taskId);
       const matchesKeyword = !normalizedKeyword || errorSearchText(event, task).includes(normalizedKeyword);
       const matchesStatus = statusFilter === "all" || event.status === statusFilter;
-      const matchesTask = taskFilter === "all" || event.taskId === taskFilter;
-      const matchesEventType = eventTypeFilter === "all" || event.eventType === eventTypeFilter;
-      return matchesKeyword && matchesStatus && matchesTask && matchesEventType;
+      return matchesKeyword && matchesStatus;
     });
     return sortErrors(filtered, sortMode);
-  }, [errors, eventTypeFilter, keyword, sortMode, statusFilter, taskById, taskFilter]);
+  }, [errors, keyword, sortMode, statusFilter, taskById]);
   const selected = visibleErrors.find((event) => event.id === selectedId) ?? visibleErrors[0];
   const selectedTask = selected ? taskById.get(selected.taskId) : undefined;
   const visiblePendingIds = visibleErrors.filter((event) => event.status === "pending").map((event) => event.id);
-  const affectedTaskCount = new Set(errors.map((event) => event.taskId)).size;
-  const handledCount = statusCounts.retried + statusCounts.skipped + statusCounts.resolved;
-  const latestError = sortErrors(errors, "created_desc")[0];
-  const filterActive = Boolean(keyword.trim()) || statusFilter !== "all" || taskFilter !== "all" || eventTypeFilter !== "all" || sortMode !== "created_desc";
+  const filterActive = Boolean(keyword.trim()) || statusFilter !== "all" || sortMode !== "created_desc";
 
   useEffect(() => {
     if (errors.length === 0) {
@@ -199,8 +187,6 @@ export function ErrorCenterView({
   const resetFilters = () => {
     setKeyword("");
     setStatusFilter("all");
-    setTaskFilter("all");
-    setEventTypeFilter("all");
     setSortMode("created_desc");
   };
 
@@ -249,25 +235,13 @@ export function ErrorCenterView({
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div>
               <h2 className="text-lg font-semibold tracking-tight text-coal">错误事件</h2>
-              <div className="mt-1 text-sm text-muted">失败事件、binlog 位点和处理动作</div>
             </div>
-            <div className="grid grid-cols-3 gap-2 text-sm lg:min-w-[330px]">
-              <div className="rounded-lg border border-line bg-[#fcfcf8] px-3 py-2">
-                <div className="text-xs text-muted">待处理</div>
-                <div className="mt-1 font-mono font-semibold text-amber-700">{statusCounts.pending}</div>
-              </div>
-              <div className="rounded-lg border border-line bg-[#fcfcf8] px-3 py-2">
-                <div className="text-xs text-muted">已处理</div>
-                <div className="mt-1 font-mono font-semibold text-coal">{handledCount}</div>
-              </div>
-              <div className="rounded-lg border border-line bg-[#fcfcf8] px-3 py-2">
-                <div className="text-xs text-muted">影响任务</div>
-                <div className="mt-1 font-mono font-semibold text-coal">{affectedTaskCount}</div>
-              </div>
+            <div className="rounded-lg border border-line bg-[#fcfcf8] px-3 py-2 text-sm text-zinc-700">
+              待处理 {statusCounts.pending}
             </div>
           </div>
 
-          <div className="mt-5 grid gap-3 lg:grid-cols-[minmax(0,1fr)_170px_160px_160px]">
+          <div className="mt-5 grid gap-3 lg:grid-cols-[minmax(0,1fr)_160px]">
             <label className="block min-w-0">
               <span className="mb-2 block text-xs font-medium text-zinc-700">搜索错误</span>
               <span className="relative block">
@@ -279,24 +253,6 @@ export function ErrorCenterView({
                   placeholder="原因、SQL、表、主键、位点"
                 />
               </span>
-            </label>
-            <label className="block">
-              <span className="mb-2 block text-xs font-medium text-zinc-700">任务</span>
-              <select className="control" value={taskFilter} onChange={(event) => setTaskFilter(event.target.value)}>
-                <option value="all">全部任务</option>
-                {taskOptions.map((task) => (
-                  <option key={task.id} value={task.id}>{task.name}</option>
-                ))}
-              </select>
-            </label>
-            <label className="block">
-              <span className="mb-2 block text-xs font-medium text-zinc-700">事件类型</span>
-              <select className="control" value={eventTypeFilter} onChange={(event) => setEventTypeFilter(event.target.value as EventTypeFilter)}>
-                <option value="all">全部类型</option>
-                {Object.entries(eventTypeText).map(([value, label]) => (
-                  <option key={value} value={value}>{label}</option>
-                ))}
-              </select>
             </label>
             <label className="block">
               <span className="mb-2 block text-xs font-medium text-zinc-700">排序</span>
@@ -349,11 +305,6 @@ export function ErrorCenterView({
               <ArrowsClockwise size={14} />
               批量重试 {visiblePendingIds.length}
             </button>
-          </div>
-
-          <div className="mt-4 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted">
-            <span>当前显示 <span className="font-mono text-coal">{visibleErrors.length}</span> / <span className="font-mono text-coal">{errors.length}</span> 条</span>
-            <span>最近发生 {formatDate(latestError?.createdAt)}</span>
           </div>
         </div>
 
@@ -431,8 +382,7 @@ export function ErrorCenterView({
               <DetailItem label="主键" value={selected.primaryKeyValue} mono />
               <DetailItem label="Binlog 文件" value={selected.binlogFile} mono />
               <DetailItem label="Position" value={`${selected.binlogPosition}`} mono />
-              <DetailItem label="发生时间" value={formatDate(selected.createdAt)} />
-              <DetailItem label="更新时间" value={formatDate(selected.updatedAt)} />
+              <DetailItem label="时间" value={formatDate(selected.createdAt)} />
             </div>
 
             <div className="mt-5 rounded-lg border border-line bg-[#fcfcf8] p-4">
@@ -494,7 +444,7 @@ export function ErrorCenterView({
               <ClipboardText size={18} />
             </div>
             <div className="mt-3 font-medium text-coal">选择错误事件</div>
-            <div className="mt-1 text-sm text-muted">左侧筛选后选择一条记录查看原始事件和处理入口</div>
+            <div className="mt-1 text-sm text-muted">从左侧选择一条记录</div>
           </div>
         )}
       </aside>

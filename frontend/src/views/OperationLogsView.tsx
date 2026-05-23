@@ -12,8 +12,6 @@ import { cx, formatDate, formatDateTime } from "../lib/format";
 import type { OperationLog } from "../types/api";
 
 type TargetTypeFilter = "all" | OperationLog["targetType"];
-type ActorFilter = "all" | string;
-type TimeWindowFilter = "all" | "1h" | "24h" | "7d";
 type SortMode = "created_desc" | "created_asc" | "actor_asc" | "action_asc";
 
 const targetTypeOrder: OperationLog["targetType"][] = [
@@ -53,13 +51,6 @@ const sortLabels: Record<SortMode, string> = {
   action_asc: "动作 A-Z"
 };
 
-const timeWindowLabels: Record<TimeWindowFilter, string> = {
-  all: "全部时间",
-  "1h": "近 1 小时",
-  "24h": "近 24 小时",
-  "7d": "近 7 天"
-};
-
 function targetTypeBadge(type: OperationLog["targetType"]) {
   return (
     <span className={cx("rounded-full border px-2 py-0.5 text-xs", targetTypeClass[type])}>
@@ -77,14 +68,6 @@ function logSearchText(log: OperationLog) {
     log.targetType,
     targetTypeText[log.targetType]
   ].filter(Boolean).join(" ").toLowerCase();
-}
-
-function inTimeWindow(log: OperationLog, windowFilter: TimeWindowFilter) {
-  if (windowFilter === "all") return true;
-  const createdAt = new Date(log.createdAt).getTime();
-  if (Number.isNaN(createdAt)) return false;
-  const hours = windowFilter === "1h" ? 1 : windowFilter === "24h" ? 24 : 24 * 7;
-  return Date.now() - createdAt <= hours * 60 * 60 * 1000;
 }
 
 function sortLogs(logs: OperationLog[], sortMode: SortMode) {
@@ -142,7 +125,7 @@ function EmptyLogs() {
         <ClockCounterClockwise size={18} />
       </div>
       <div className="mt-3 font-medium text-coal">暂无操作日志</div>
-      <div className="mt-1 text-sm text-muted">系统操作、节点接管和任务变更会记录在这里</div>
+      <div className="mt-1 text-sm text-muted">当前没有日志</div>
     </div>
   );
 }
@@ -154,7 +137,7 @@ function EmptyFilteredLogs({ onReset }: { onReset: () => void }) {
         <FunnelSimple size={18} />
       </div>
       <div className="mt-3 font-medium text-coal">没有匹配的审计记录</div>
-      <div className="mt-1 text-sm text-muted">调整关键词、操作者、对象或时间范围后再查看</div>
+      <div className="mt-1 text-sm text-muted">调整关键词或对象后再查看</div>
       <button
         onClick={onReset}
         className="mt-4 inline-flex items-center justify-center gap-2 rounded-lg border border-line bg-white px-3 py-2 text-sm text-zinc-700 transition hover:bg-zinc-50 active:scale-[0.98]"
@@ -169,27 +152,20 @@ function EmptyFilteredLogs({ onReset }: { onReset: () => void }) {
 export function OperationLogsView({ logs }: { logs: OperationLog[] }) {
   const [selectedId, setSelectedId] = useState<string | null>(logs[0]?.id ?? null);
   const [keyword, setKeyword] = useState("");
-  const [actorFilter, setActorFilter] = useState<ActorFilter>("all");
   const [targetTypeFilter, setTargetTypeFilter] = useState<TargetTypeFilter>("all");
-  const [timeWindowFilter, setTimeWindowFilter] = useState<TimeWindowFilter>("all");
   const [sortMode, setSortMode] = useState<SortMode>("created_desc");
   const targetCounts = useMemo(() => buildTargetCounts(logs), [logs]);
-  const actorOptions = useMemo(() => Array.from(new Set(logs.map((log) => log.actor).filter(Boolean))).sort((left, right) => left.localeCompare(right, "zh-Hans-CN")), [logs]);
   const visibleLogs = useMemo(() => {
     const normalizedKeyword = keyword.trim().toLowerCase();
     const filteredLogs = logs.filter((log) => {
       const matchesKeyword = !normalizedKeyword || logSearchText(log).includes(normalizedKeyword);
-      const matchesActor = actorFilter === "all" || log.actor === actorFilter;
       const matchesTargetType = targetTypeFilter === "all" || log.targetType === targetTypeFilter;
-      return matchesKeyword && matchesActor && matchesTargetType && inTimeWindow(log, timeWindowFilter);
+      return matchesKeyword && matchesTargetType;
     });
     return sortLogs(filteredLogs, sortMode);
-  }, [actorFilter, keyword, logs, sortMode, targetTypeFilter, timeWindowFilter]);
+  }, [keyword, logs, sortMode, targetTypeFilter]);
   const selected = visibleLogs.find((log) => log.id === selectedId) ?? visibleLogs[0];
-  const filterActive = Boolean(keyword.trim()) || actorFilter !== "all" || targetTypeFilter !== "all" || timeWindowFilter !== "all" || sortMode !== "created_desc";
-  const systemLogs = logs.filter((log) => log.actor === "system").length;
-  const adminLogs = logs.filter((log) => log.actor === "admin").length;
-  const latestLog = sortLogs(logs, "created_desc")[0];
+  const filterActive = Boolean(keyword.trim()) || targetTypeFilter !== "all" || sortMode !== "created_desc";
 
   useEffect(() => {
     if (logs.length === 0) {
@@ -202,9 +178,7 @@ export function OperationLogsView({ logs }: { logs: OperationLog[] }) {
 
   const resetFilters = () => {
     setKeyword("");
-    setActorFilter("all");
     setTargetTypeFilter("all");
-    setTimeWindowFilter("all");
     setSortMode("created_desc");
   };
 
@@ -219,25 +193,13 @@ export function OperationLogsView({ logs }: { logs: OperationLog[] }) {
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div>
               <h2 className="text-lg font-semibold tracking-tight text-coal">操作日志</h2>
-              <div className="mt-1 text-sm text-muted">关键操作审计、节点接管和配置变更追踪</div>
             </div>
-            <div className="grid grid-cols-3 gap-2 text-sm lg:min-w-[330px]">
-              <div className="rounded-lg border border-line bg-[#fcfcf8] px-3 py-2">
-                <div className="text-xs text-muted">总记录</div>
-                <div className="mt-1 font-mono font-semibold text-coal">{logs.length}</div>
-              </div>
-              <div className="rounded-lg border border-line bg-[#fcfcf8] px-3 py-2">
-                <div className="text-xs text-muted">系统</div>
-                <div className="mt-1 font-mono font-semibold text-coal">{systemLogs}</div>
-              </div>
-              <div className="rounded-lg border border-line bg-[#fcfcf8] px-3 py-2">
-                <div className="text-xs text-muted">管理员</div>
-                <div className="mt-1 font-mono font-semibold text-coal">{adminLogs}</div>
-              </div>
+            <div className="rounded-lg border border-line bg-[#fcfcf8] px-3 py-2 text-sm text-zinc-700">
+              总记录 {logs.length}
             </div>
           </div>
 
-          <div className="mt-5 grid gap-3 xl:grid-cols-[minmax(0,1fr)_150px_160px_150px_150px]">
+          <div className="mt-5 grid gap-3 xl:grid-cols-[minmax(0,1fr)_160px_150px]">
             <label className="block min-w-0">
               <span className="mb-2 block text-xs font-medium text-zinc-700">搜索审计</span>
               <span className="relative block">
@@ -251,31 +213,11 @@ export function OperationLogsView({ logs }: { logs: OperationLog[] }) {
               </span>
             </label>
             <label className="block">
-              <span className="mb-2 flex items-center gap-1 text-xs font-medium text-zinc-700">
-                <UserCircle size={14} />
-                操作者
-              </span>
-              <select className="control" value={actorFilter} onChange={(event) => setActorFilter(event.target.value)}>
-                <option value="all">全部操作者</option>
-                {actorOptions.map((actor) => (
-                  <option key={actor} value={actor}>{actor}</option>
-                ))}
-              </select>
-            </label>
-            <label className="block">
               <span className="mb-2 block text-xs font-medium text-zinc-700">对象类型</span>
               <select className="control" value={targetTypeFilter} onChange={(event) => setTargetTypeFilter(event.target.value as TargetTypeFilter)}>
                 <option value="all">全部对象</option>
                 {targetTypeOrder.map((type) => (
                   <option key={type} value={type}>{targetTypeText[type]}</option>
-                ))}
-              </select>
-            </label>
-            <label className="block">
-              <span className="mb-2 block text-xs font-medium text-zinc-700">时间范围</span>
-              <select className="control" value={timeWindowFilter} onChange={(event) => setTimeWindowFilter(event.target.value as TimeWindowFilter)}>
-                {Object.entries(timeWindowLabels).map(([value, label]) => (
-                  <option key={value} value={value}>{label}</option>
                 ))}
               </select>
             </label>
@@ -334,11 +276,6 @@ export function OperationLogsView({ logs }: { logs: OperationLog[] }) {
               导出 JSON
             </button>
           </div>
-
-          <div className="mt-4 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted">
-            <span>当前显示 <span className="font-mono text-coal">{visibleLogs.length}</span> / <span className="font-mono text-coal">{logs.length}</span> 条</span>
-            <span>最近记录 {formatDate(latestLog?.createdAt)}</span>
-          </div>
         </div>
 
         <div className="divide-y divide-line">
@@ -392,9 +329,7 @@ export function OperationLogsView({ logs }: { logs: OperationLog[] }) {
               <DetailItem label="操作者" value={selected.actor} mono />
               <DetailItem label="动作" value={selected.action} mono />
               <DetailItem label="对象类型" value={targetTypeText[selected.targetType]} />
-              <DetailItem label="对象 ID" value={selected.targetId || "-"} mono />
-              <DetailItem label="日志 ID" value={selected.id} mono />
-              <DetailItem label="记录时间" value={formatDateTime(selected.createdAt)} />
+              <DetailItem label="时间" value={formatDateTime(selected.createdAt)} />
             </div>
 
             <div className="mt-5 rounded-lg border border-line bg-[#fcfcf8] p-4">
@@ -421,7 +356,7 @@ export function OperationLogsView({ logs }: { logs: OperationLog[] }) {
               <ClockCounterClockwise size={18} />
             </div>
             <div className="mt-3 font-medium text-coal">选择审计记录</div>
-            <div className="mt-1 text-sm text-muted">左侧筛选后选择一条记录查看详情</div>
+            <div className="mt-1 text-sm text-muted">从左侧选择一条记录</div>
           </div>
         )}
       </aside>
