@@ -1219,8 +1219,8 @@ function TasksPage({
   const runTaskAction = async (task: SyncTask, action: "start" | "pause" | "resume" | "stop") => {
     setBusyKey(`${task.id}:${action}`);
     try {
-      await api.taskAction(task.id, action);
-      pushNotice({ tone: "success", message: `任务已${actionText(action)}` });
+      const updated = await api.taskAction(task.id, action);
+      pushNotice({ tone: "success", message: taskActionNotice(updated, action) });
       await onChanged();
     } catch (requestError) {
       pushNotice({ tone: "error", message: requestError instanceof Error ? requestError.message : "任务操作失败" });
@@ -1232,8 +1232,11 @@ function TasksPage({
   const rerunTask = async (task: SyncTask) => {
     setBusyKey(`${task.id}:rerun`);
     try {
-      await api.rerunTask(task.id);
-      pushNotice({ tone: "success", message: "任务已重跑" });
+      const result = await api.rerunTask(task.id);
+      const message = result.task?.runtime?.processStatus === "awaiting_takeover" || taskAwaitingNode(result.task)
+        ? "任务已重跑，等待节点接管"
+        : "任务已重跑";
+      pushNotice({ tone: "success", message });
       await onChanged();
     } catch (requestError) {
       pushNotice({ tone: "error", message: requestError instanceof Error ? requestError.message : "重跑失败" });
@@ -3805,6 +3808,16 @@ function taskProcessTone(status?: TaskRuntimeState["processStatus"]) {
   return "neutral";
 }
 
+function taskActionNotice(task: SyncTask, action: "start" | "pause" | "resume" | "stop") {
+  if ((action === "start" || action === "resume") && (task.runtime?.processStatus === "awaiting_takeover" || taskAwaitingNode(task))) {
+    return "任务等待节点接管";
+  }
+  if (action === "pause") return "任务已暂停";
+  if (action === "resume") return "任务已恢复";
+  if (action === "stop") return "任务已停止";
+  return "任务已启动";
+}
+
 function taskRuntimePhaseText(phase?: string) {
   if (phase === "full") return "全量";
   if (phase === "incremental") return "增量";
@@ -3859,13 +3872,6 @@ function taskActionLabel(action: "start" | "pause" | "resume" | "stop" | null) {
   if (action === "pause") return "暂停";
   if (action === "stop") return "停止";
   return "";
-}
-
-function actionText(action: "start" | "pause" | "resume" | "stop") {
-  if (action === "start") return "启动";
-  if (action === "pause") return "暂停";
-  if (action === "resume") return "恢复";
-  return "停止";
 }
 
 function nodeActionTitle(action: NodeOperationResult["action"]) {
