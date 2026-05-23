@@ -527,14 +527,21 @@ function DashboardPage({
 }) {
   const visibleCapabilityJobs = capabilityJobs.filter((job) => job.type !== "subscription");
   const recentWorkloads = buildWorkloads(tasks, visibleCapabilityJobs).slice(0, 6);
+  const runtimeTasks = tasks.filter((task) => task.runtime);
   const runningGovernance = visibleCapabilityJobs.filter((job) => job.status === "running").length;
   const failedTasks = tasks.filter((task) => task.status === "failed").length;
   const awaitingTasks = tasks.filter(taskAwaitingNode).length;
+  const localHostedTasks = runtimeTasks.filter((task) => task.runtime?.managedByLocalNode !== false && Boolean(task.runtime?.nodeId)).length;
+  const remoteHostedTasks = runtimeTasks.filter((task) => task.runtime?.managedByLocalNode === false).length;
   const pendingErrors = errors.filter((item) => item.status === "pending").length;
   const onlineNodes = cluster?.onlineNodes ?? summary?.onlineNodes ?? 0;
   const totalNodes = cluster?.totalNodes ?? summary?.totalNodes ?? 0;
   const hasCreatedTasks = tasks.length > 0;
   const localNodeLabel = cluster?.localNodeName || cluster?.localNodeId || "当前节点";
+  const recentRuntimeTasks = [...tasks]
+    .filter((task) => task.runtime?.lastLogAt || task.runtime?.updatedAt)
+    .sort((left, right) => new Date(taskActivityAt(right)).getTime() - new Date(taskActivityAt(left)).getTime())
+    .slice(0, 5);
 
   return (
     <div className="space-y-5">
@@ -709,6 +716,36 @@ function DashboardPage({
 
           <div className="space-y-5">
             <section className="surface p-6">
+              <SectionHeader title="运行模型" description="先看任务当前由谁托管，再决定下一步操作。" />
+              <div className="mt-5 grid gap-3 sm:grid-cols-3">
+                <MetricMini label="当前节点托管" value={`${localHostedTasks}`} />
+                <MetricMini label="远程托管" value={`${remoteHostedTasks}`} />
+                <MetricMini label="待接管" value={`${awaitingTasks}`} />
+              </div>
+              <div className="mt-4 rounded-2xl border border-line bg-slate-50/70 px-4 py-3 text-sm text-slate-500">
+                当前控制节点：<span className="font-medium text-coal">{localNodeLabel}</span>
+              </div>
+              <div className="mt-4 grid gap-3">
+                {recentRuntimeTasks.length === 0 ? (
+                  <div className="rounded-2xl border border-dashed border-line bg-white px-4 py-6 text-sm text-slate-500">
+                    当前没有可展示的运行态事件。
+                  </div>
+                ) : recentRuntimeTasks.map((task) => (
+                  <button key={task.id} onClick={onOpenTasks} className="rounded-2xl border border-line bg-white px-4 py-4 text-left">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <div className="font-medium text-coal">{task.name}</div>
+                      <StatusBadge status={task.status} />
+                      <Badge tone={taskProcessTone(task.runtime?.processStatus)}>{taskProcessStatusText(task.runtime?.processStatus)}</Badge>
+                    </div>
+                    <div className="mt-2 text-sm text-slate-500">
+                      {task.runtime?.executionNodeName || task.runtime?.nodeId || "待分配"} · {task.runtime?.lastLogMessage || "暂无运行日志摘要"}
+                    </div>
+                    <div className="mt-2 text-xs text-slate-500">{formatDateTime(task.runtime?.lastLogAt || task.runtime?.updatedAt)}</div>
+                  </button>
+                ))}
+              </div>
+            </section>
+            <section className="surface p-6">
               <SectionHeader title="下一步" description="把高频操作留在主路径。" />
               <div className="mt-5 grid gap-3">
                 {datasources.length < 2 && (
@@ -760,9 +797,6 @@ function DashboardPage({
                 <MetricMini label="在线节点" value={`${onlineNodes}/${totalNodes}`} />
                 <MetricMini label="运行任务" value={`${summary?.runningTasks ?? 0}`} />
                 <MetricMini label="24h 异常" value={`${summary?.failuresLast24Hours ?? 0}`} />
-              </div>
-              <div className="mt-4 rounded-2xl border border-line bg-slate-50/70 px-4 py-3 text-sm text-slate-500">
-                当前控制节点：<span className="font-medium text-coal">{localNodeLabel}</span>
               </div>
               <button onClick={onOpenNodes} className="btn-secondary mt-4 w-full">
                 查看节点
