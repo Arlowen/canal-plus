@@ -374,15 +374,6 @@ export function ClusterView({
             <h2 className="font-semibold tracking-tight">接入节点</h2>
           </div>
           <form className="mt-4 grid gap-3" onSubmit={registerNode}>
-            <label className="grid gap-1 text-sm">
-              <span className="text-xs font-medium text-muted">节点 ID</span>
-              <input
-                value={nodeForm.id ?? ""}
-                onChange={(event) => setNodeForm((current) => ({ ...current, id: event.target.value }))}
-                className="rounded-lg border border-line bg-[#fcfcf8] px-3 py-2 text-sm outline-none transition focus:border-coal"
-                placeholder="可选，默认自动生成"
-              />
-            </label>
             <div className="grid gap-3 sm:grid-cols-2">
               <label className="grid gap-1 text-sm">
                 <span className="text-xs font-medium text-muted">名称</span>
@@ -415,24 +406,38 @@ export function ClusterView({
                 placeholder="10.8.0.14:4101"
               />
             </label>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <label className="grid gap-1 text-sm">
-                <span className="text-xs font-medium text-muted">可用区</span>
-                <input
-                  value={nodeForm.zone ?? ""}
-                  onChange={(event) => setNodeForm((current) => ({ ...current, zone: event.target.value }))}
-                  className="rounded-lg border border-line bg-[#fcfcf8] px-3 py-2 text-sm outline-none transition focus:border-coal"
-                />
-              </label>
-              <label className="grid gap-1 text-sm">
-                <span className="text-xs font-medium text-muted">角色</span>
-                <input
-                  value={nodeForm.role ?? ""}
-                  onChange={(event) => setNodeForm((current) => ({ ...current, role: event.target.value }))}
-                  className="rounded-lg border border-line bg-[#fcfcf8] px-3 py-2 text-sm outline-none transition focus:border-coal"
-                />
-              </label>
-            </div>
+            <details className="rounded-lg border border-line bg-[#fcfcf8] p-3">
+              <summary className="cursor-pointer text-sm font-medium text-coal">高级项</summary>
+              <div className="mt-3 grid gap-3">
+                <label className="grid gap-1 text-sm">
+                  <span className="text-xs font-medium text-muted">节点 ID</span>
+                  <input
+                    value={nodeForm.id ?? ""}
+                    onChange={(event) => setNodeForm((current) => ({ ...current, id: event.target.value }))}
+                    className="rounded-lg border border-line bg-white px-3 py-2 text-sm outline-none transition focus:border-coal"
+                    placeholder="可选，默认自动生成"
+                  />
+                </label>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <label className="grid gap-1 text-sm">
+                    <span className="text-xs font-medium text-muted">可用区</span>
+                    <input
+                      value={nodeForm.zone ?? ""}
+                      onChange={(event) => setNodeForm((current) => ({ ...current, zone: event.target.value }))}
+                      className="rounded-lg border border-line bg-white px-3 py-2 text-sm outline-none transition focus:border-coal"
+                    />
+                  </label>
+                  <label className="grid gap-1 text-sm">
+                    <span className="text-xs font-medium text-muted">角色</span>
+                    <input
+                      value={nodeForm.role ?? ""}
+                      onChange={(event) => setNodeForm((current) => ({ ...current, role: event.target.value }))}
+                      className="rounded-lg border border-line bg-white px-3 py-2 text-sm outline-none transition focus:border-coal"
+                    />
+                  </label>
+                </div>
+              </div>
+            </details>
             <button
               disabled={!canManage || busyNode === "register"}
               className="inline-flex items-center justify-center gap-2 rounded-lg bg-coal px-3 py-2.5 text-sm text-white transition hover:bg-zinc-800 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"

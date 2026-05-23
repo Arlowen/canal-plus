@@ -681,7 +681,6 @@ function TaskWizard({ datasources, onCreated }: { datasources: Datasource[]; onC
 
         <div className="space-y-4">
           <h3 className="text-sm font-semibold text-coal">字段映射</h3>
-          <ColumnPreview columns={columns} />
           <div className="overflow-x-auto rounded-lg border border-line">
             <table className="w-full min-w-[720px] text-left text-sm">
               <thead className="bg-zinc-50 text-xs uppercase tracking-[0.12em] text-muted">
@@ -891,30 +890,33 @@ function PreflightPanel({
         </div>
       </div>
 
-      <div className="divide-y divide-line rounded-xl border border-line bg-white">
-        {report.checks.map((check) => (
-          <div key={check.id} className="grid gap-3 p-4 lg:grid-cols-[140px_minmax(0,1fr)_auto] lg:items-start">
-            <div className="text-xs uppercase tracking-[0.14em] text-muted">{check.category}</div>
-            <div className="min-w-0">
-              <div className="font-medium text-coal">{check.title}</div>
-              <div className="mt-1 text-sm text-zinc-600">{check.message}</div>
-              {check.detail && check.detail.length > 0 && (
-                <div className="mt-3 grid gap-2">
-                  {check.detail.slice(0, 4).map((item) => (
-                    <div key={item} className="rounded-lg border border-line bg-[#fcfcf8] px-3 py-2 font-mono text-xs text-zinc-600">
-                      {item}
-                    </div>
-                  ))}
-                </div>
-              )}
+      <details className="rounded-xl border border-line bg-white">
+        <summary className="cursor-pointer px-4 py-3 text-sm font-medium text-coal">查看预检明细</summary>
+        <div className="divide-y divide-line">
+          {report.checks.map((check) => (
+            <div key={check.id} className="grid gap-3 p-4 lg:grid-cols-[140px_minmax(0,1fr)_auto] lg:items-start">
+              <div className="text-xs uppercase tracking-[0.14em] text-muted">{check.category}</div>
+              <div className="min-w-0">
+                <div className="font-medium text-coal">{check.title}</div>
+                <div className="mt-1 text-sm text-zinc-600">{check.message}</div>
+                {check.detail && check.detail.length > 0 && (
+                  <div className="mt-3 grid gap-2">
+                    {check.detail.slice(0, 4).map((item) => (
+                      <div key={item} className="rounded-lg border border-line bg-[#fcfcf8] px-3 py-2 font-mono text-xs text-zinc-600">
+                        {item}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <span className={cx("inline-flex items-center justify-center gap-1 rounded-full border px-2.5 py-1 text-xs", preflightStatusClass(check.status))}>
+                <PreflightStatusIcon status={check.status} />
+                {preflightStatusText[check.status]}
+              </span>
             </div>
-            <span className={cx("inline-flex items-center justify-center gap-1 rounded-full border px-2.5 py-1 text-xs", preflightStatusClass(check.status))}>
-              <PreflightStatusIcon status={check.status} />
-              {preflightStatusText[check.status]}
-            </span>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      </details>
     </div>
   );
 }
@@ -924,28 +926,6 @@ function InfoPill({ label, value }: { label: string; value: string | number }) {
     <div className="rounded-lg border border-white/70 bg-white px-3 py-2">
       <div className="text-xs text-muted">{label}</div>
       <div className="mt-1 font-mono text-sm font-semibold text-coal">{value}</div>
-    </div>
-  );
-}
-
-function ColumnPreview({ columns }: { columns: TableColumn[] }) {
-  if (columns.length === 0) {
-    return <EmptyState title="未读取到字段" description="选择可访问的源表" />;
-  }
-  return (
-    <div className="rounded-lg border border-line">
-      <div className="grid grid-cols-[1fr_0.8fr_80px] border-b border-line bg-zinc-50 px-3 py-2 text-xs uppercase tracking-[0.12em] text-muted">
-        <span>字段</span>
-        <span>类型</span>
-        <span>主键</span>
-      </div>
-      {columns.map((column) => (
-        <div key={column.name} className="grid grid-cols-[1fr_0.8fr_80px] border-b border-line px-3 py-2 text-sm last:border-b-0">
-          <span className="font-mono text-zinc-700">{column.name}</span>
-          <span className="text-zinc-600">{column.type}</span>
-          <span>{column.primaryKey ? "是" : "否"}</span>
-        </div>
-      ))}
     </div>
   );
 }

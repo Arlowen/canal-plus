@@ -863,7 +863,12 @@ export function TaskView({
             </div>
           )}
 
-          <TaskInsightPanel task={selected} lease={selectedLease} node={selectedNode} errors={selectedErrors} logs={selectedLogs} />
+          <details className="mt-5 rounded-xl border border-line bg-white">
+            <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-coal">运行详情</summary>
+            <div className="p-4 pt-0">
+              <TaskInsightPanel task={selected} lease={selectedLease} node={selectedNode} errors={selectedErrors} logs={selectedLogs} />
+            </div>
+          </details>
 
           <TaskFunctionPanel key={selected.id} task={selected} canManage={canManage} onChanged={onChanged} />
         </aside>
