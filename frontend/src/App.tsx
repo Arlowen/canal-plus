@@ -210,6 +210,7 @@ function App() {
   const [taskCreateToken, setTaskCreateToken] = useState(0);
   const [nodeCreateToken, setNodeCreateToken] = useState(0);
   const [focusedNodeId, setFocusedNodeId] = useState<string | null>(null);
+  const [focusedTaskId, setFocusedTaskId] = useState<string | null>(null);
   const canManage = canManageConfig(user);
 
   const pushNotice = useCallback((next: Notice) => {
@@ -310,6 +311,11 @@ function App() {
   const openTaskCreator = () => {
     setPage("tasks");
     setTaskCreateToken((value) => value + 1);
+  };
+
+  const openTaskDetail = (taskID: string) => {
+    setFocusedTaskId(taskID);
+    setPage("tasks");
   };
 
   const openNodeCreator = () => {
@@ -460,6 +466,7 @@ function App() {
                 openCreateToken={taskCreateToken}
                 onCreateDatasource={openDatasourceCreator}
                 onOpenNode={openNodeDetail}
+                focusedTaskId={focusedTaskId}
               />
             ) : page === "nodes" ? (
               <NodesPage
@@ -470,6 +477,7 @@ function App() {
                 pushNotice={pushNotice}
                 openCreateToken={nodeCreateToken}
                 focusedNodeId={focusedNodeId}
+                onOpenTask={openTaskDetail}
               />
             ) : (
               <SettingsPage
@@ -1097,7 +1105,8 @@ function TasksPage({
   pushNotice,
   openCreateToken,
   onCreateDatasource,
-  onOpenNode
+  onOpenNode,
+  focusedTaskId
 }: {
   datasources: Datasource[];
   tasks: SyncTask[];
@@ -1110,6 +1119,7 @@ function TasksPage({
   openCreateToken: number;
   onCreateDatasource: () => void;
   onOpenNode: (nodeID: string) => void;
+  focusedTaskId: string | null;
 }) {
   const visibleCapabilityJobs = capabilityJobs.filter((job) => job.type !== "subscription");
   const [keyword, setKeyword] = useState("");
@@ -1138,6 +1148,11 @@ function TasksPage({
     return matchesKeyword && matchesType && matchesHosting;
   });
   const selected = filtered.find((item) => item.key === selectedKey) ?? filtered[0];
+
+  useEffect(() => {
+    if (!focusedTaskId) return;
+    setSelectedKey(`sync:${focusedTaskId}`);
+  }, [focusedTaskId]);
 
   useEffect(() => {
     if (filtered.length === 0) {
@@ -1512,7 +1527,8 @@ function NodesPage({
   onChanged,
   pushNotice,
   openCreateToken,
-  focusedNodeId
+  focusedNodeId,
+  onOpenTask
 }: {
   cluster: ClusterSnapshot | null;
   tasks: SyncTask[];
@@ -1521,6 +1537,7 @@ function NodesPage({
   pushNotice: (notice: Notice) => void;
   openCreateToken: number;
   focusedNodeId: string | null;
+  onOpenTask: (taskID: string) => void;
 }) {
   const nodes = cluster?.nodes ?? emptyNodes;
   const [selectedId, setSelectedId] = useState<string | null>(nodes[0]?.id ?? null);
@@ -1764,10 +1781,27 @@ function NodesPage({
                     <div key={task.id} className="rounded-2xl border border-line bg-white px-3 py-3">
                       <div className="flex items-center justify-between gap-3">
                         <div className="font-medium text-coal">{task.name}</div>
-                        <StatusBadge status={task.status} />
+                        <div className="flex flex-wrap items-center gap-2">
+                          <StatusBadge status={task.status} />
+                          <Badge tone={taskProcessTone(task.runtime?.processStatus)}>{taskProcessStatusText(task.runtime?.processStatus)}</Badge>
+                        </div>
                       </div>
                       <div className="mt-1 text-sm text-slate-500">
                         {(task.sourceDatasource?.name || task.sourceDatasourceId)} to {(task.targetDatasource?.name || task.targetDatasourceId)}
+                      </div>
+                      <div className="mt-2 flex flex-wrap gap-2 text-xs text-slate-500">
+                        <span className="rounded-full border border-line bg-slate-50 px-2 py-1">
+                          {task.runtime?.managedByLocalNode === false ? "远程托管" : "当前节点托管"}
+                        </span>
+                        <span className="rounded-full border border-line bg-slate-50 px-2 py-1">
+                          {task.runtime?.processId ? `PID ${task.runtime.processId}` : "无本地 PID"}
+                        </span>
+                      </div>
+                      <div className="mt-3 flex justify-end">
+                        <button type="button" onClick={() => onOpenTask(task.id)} className="btn-secondary px-3 py-2 text-xs">
+                          <FlowArrow size={14} />
+                          查看任务
+                        </button>
                       </div>
                     </div>
                   ))}
