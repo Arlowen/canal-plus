@@ -95,7 +95,7 @@ export interface TaskRuntimeState {
   startedAt?: string;
   updatedAt: string;
   lastErrorId?: string;
-  processStatus?: "idle" | "starting" | "running" | "stopping" | "stopped" | "failed" | "remote";
+  processStatus?: "idle" | "starting" | "running" | "stopping" | "stopped" | "failed" | "remote" | "awaiting_takeover";
   processId?: number;
   processStartedAt?: string;
   processStoppedAt?: string;

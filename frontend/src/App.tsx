@@ -3792,12 +3792,14 @@ function taskProcessStatusText(status?: TaskRuntimeState["processStatus"]) {
   if (status === "stopped") return "已停止";
   if (status === "failed") return "异常退出";
   if (status === "remote") return "远程节点";
+  if (status === "awaiting_takeover") return "待接管";
   return "未启动";
 }
 
 function taskProcessTone(status?: TaskRuntimeState["processStatus"]) {
   if (status === "running") return "blue";
   if (status === "remote") return "yellow";
+  if (status === "awaiting_takeover") return "yellow";
   if (status === "starting" || status === "stopping") return "yellow";
   if (status === "failed") return "red";
   return "neutral";

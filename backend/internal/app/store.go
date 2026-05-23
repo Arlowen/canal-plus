@@ -305,6 +305,10 @@ func (s *Store) CreateTask(input SyncTask) (SyncTask, error) {
 	}
 	s.data.RuntimeStates = append([]TaskRuntimeState{runtime}, s.data.RuntimeStates...)
 	s.recordTaskCheckpointLocked(runtime, "create", "")
+	if input.Status == TaskPending && runtime.NodeID == "" {
+		runtime.ProcessStatus = "awaiting_takeover"
+		runtime.LastLogMessage = "任务已创建，等待节点接管"
+	}
 	s.appendTaskLogLocked(input.ID, runtime.NodeID, 0, "info", runtime.Phase, "任务已创建，等待启动")
 	s.logLocked("admin", "create", "sync_task", input.ID, "创建同步任务 "+input.Name)
 	if err := s.saveLocked(); err != nil {
@@ -529,6 +533,7 @@ func (s *Store) RerunTask(id string) (SyncTask, bool, error) {
 		} else {
 			task.Status = TaskPending
 			runtime.Phase = "idle"
+			runtime.ProcessStatus = "awaiting_takeover"
 		}
 		task.UpdatedAt = timestamp
 		s.recordTaskCheckpointLocked(*runtime, "rerun", "")
@@ -590,6 +595,7 @@ func (s *Store) TransitionTask(id string, action string) (SyncTask, bool, error)
 			task.Status = TaskPending
 			runtime.Phase = "idle"
 			runtime.EventsPerSecond = 0
+			runtime.ProcessStatus = "awaiting_takeover"
 		}
 		runtime.UpdatedAt = timestamp
 		task.UpdatedAt = timestamp
@@ -1365,6 +1371,8 @@ func (s *Store) rebalanceAssignmentsLocked(reason string, preferredNodeID string
 		if targetNode == nil {
 			runtime.NodeID = ""
 			runtime.LeaseExpiresAt = ""
+			runtime.ProcessStatus = "awaiting_takeover"
+			runtime.LastLogMessage = "当前没有可用在线节点，任务等待接管"
 			runtime.UpdatedAt = now()
 			s.removeLeaseLocked(runtime.TaskID)
 			s.recordTaskCheckpointLocked(*runtime, "lease_unassigned", "")
@@ -2032,6 +2040,8 @@ func (s *Store) reconcileClusterLocked() {
 			}
 			runtime.NodeID = ""
 			runtime.LeaseExpiresAt = ""
+			runtime.ProcessStatus = "awaiting_takeover"
+			runtime.LastLogMessage = "当前没有可用在线节点，任务等待接管"
 			runtime.UpdatedAt = now()
 			s.removeLeaseLocked(task.ID)
 			s.recordTaskCheckpointLocked(*runtime, "lease_unassigned", "")
@@ -2061,6 +2071,9 @@ func (s *Store) assignTaskToNodeLocked(runtime *TaskRuntimeState, nodeID string,
 	previousNodeID := runtime.NodeID
 	runtime.NodeID = nodeID
 	runtime.LeaseExpiresAt = leaseExpiry()
+	if runtime.ProcessStatus == "awaiting_takeover" {
+		runtime.ProcessStatus = "idle"
+	}
 	if takeover {
 		runtime.FailoverCount++
 		runtime.LastTakeoverAt = now()
