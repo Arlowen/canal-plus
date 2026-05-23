@@ -2574,8 +2574,8 @@ function SyncTaskDetail({
   const taskErrors = errors.filter((item) => item.taskId === task.id).slice(0, 4);
   const localNodeId = cluster?.localNodeId;
   const runtimeNode = runtime?.nodeId;
-  const remoteManaged = Boolean(localNodeId && runtimeNode && runtimeNode !== localNodeId);
-  const runtimeNodeLabel = cluster?.nodes.find((node) => node.id === runtimeNode)?.name || runtimeNode;
+  const runtimeNodeLabel = runtime?.executionNodeName || cluster?.nodes.find((node) => node.id === runtimeNode)?.name || runtimeNode;
+  const remoteManaged = runtime?.managedByLocalNode === false || Boolean(localNodeId && runtimeNode && runtimeNode !== localNodeId);
 
   useEffect(() => {
     setRuntime(task.runtime);
@@ -2584,7 +2584,7 @@ function SyncTaskDetail({
   useEffect(() => {
     if (remoteManaged) {
       setTaskLogs([]);
-      setLogNotice(`当前任务由节点 ${runtimeNodeLabel} 托管，请切换到该节点查看实时日志。`);
+      setLogNotice(runtime?.logAccessMessage || `当前任务由节点 ${runtimeNodeLabel} 托管，请切换到该节点查看实时日志。`);
       setLogConnected(false);
       return;
     }
@@ -2630,7 +2630,7 @@ function SyncTaskDetail({
       setLogConnected(false);
       stream.close();
     };
-  }, [remoteManaged, runtimeNodeLabel, task.id]);
+  }, [remoteManaged, runtime?.logAccessMessage, runtimeNodeLabel, task.id]);
 
   useEffect(() => {
     const active = task.status === "full_syncing" || task.status === "incremental_running" || runtime?.processStatus === "starting" || runtime?.processStatus === "running";
@@ -3233,11 +3233,13 @@ function taskProcessStatusText(status?: TaskRuntimeState["processStatus"]) {
   if (status === "stopping") return "停止中";
   if (status === "stopped") return "已停止";
   if (status === "failed") return "异常退出";
+  if (status === "remote") return "远程节点";
   return "未启动";
 }
 
 function taskProcessTone(status?: TaskRuntimeState["processStatus"]) {
   if (status === "running") return "blue";
+  if (status === "remote") return "yellow";
   if (status === "starting" || status === "stopping") return "yellow";
   if (status === "failed") return "red";
   return "neutral";

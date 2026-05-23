@@ -1908,6 +1908,9 @@ func (s *Store) assignTaskToNodeLocked(runtime *TaskRuntimeState, nodeID string,
 		s.recordTaskCheckpointLocked(*runtime, "lease_assign", previousNodeID)
 	}
 	detail := reason + "：" + runtime.TaskID + " 从 " + valueOr(previousNodeID, "unassigned") + " 切换到 " + nodeID
+	runtime.LastLogAt = now()
+	runtime.LastLogMessage = detail
+	s.appendTaskLogLocked(runtime.TaskID, runtime.NodeID, 0, "info", runtime.Phase, detail)
 	if takeover && lease.TakeoverCount > 0 {
 		s.logLocked("system", "failover", "sync_task", runtime.TaskID, detail)
 	}

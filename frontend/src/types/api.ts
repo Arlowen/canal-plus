@@ -95,7 +95,7 @@ export interface TaskRuntimeState {
   startedAt?: string;
   updatedAt: string;
   lastErrorId?: string;
-  processStatus?: "idle" | "starting" | "running" | "stopping" | "stopped" | "failed";
+  processStatus?: "idle" | "starting" | "running" | "stopping" | "stopped" | "failed" | "remote";
   processId?: number;
   processStartedAt?: string;
   processStoppedAt?: string;
@@ -103,6 +103,10 @@ export interface TaskRuntimeState {
   lastLogAt?: string;
   lastLogMessage?: string;
   exitCode?: number;
+  managedByLocalNode?: boolean;
+  localLogAccessible?: boolean;
+  executionNodeName?: string;
+  logAccessMessage?: string;
 }
 
 export interface TaskLogEntry {

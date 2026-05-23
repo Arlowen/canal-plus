@@ -516,7 +516,7 @@ func (s *Server) handleSyncTasks(response http.ResponseWriter, request *http.Req
 			writeError(response, http.StatusNotFound, "同步任务不存在")
 			return
 		}
-		writeJSON(response, http.StatusOK, runtime)
+		writeJSON(response, http.StatusOK, s.decorateRuntime(runtime))
 	case len(parts) == 3 && parts[2] == "logs" && request.Method == http.MethodGet:
 		if ok, message := s.canAccessTaskLogs(parts[1]); !ok {
 			writeError(response, http.StatusConflict, message)
@@ -1190,7 +1190,7 @@ func (s *Server) taskResponse(task SyncTask) TaskResponse {
 	runtime, _ := s.store.Runtime(task.ID)
 	response := TaskResponse{
 		SyncTask: task,
-		Runtime:  runtime,
+		Runtime:  s.decorateRuntime(runtime),
 	}
 	if datasource, ok := s.store.GetDatasource(task.SourceDatasourceID); ok {
 		public := toPublicDatasource(datasource)
@@ -1218,6 +1218,39 @@ func (s *Server) clusterResponse() ClusterSnapshot {
 	return snapshot
 }
 
+func (s *Server) decorateRuntime(runtime TaskRuntimeState) TaskRuntimeState {
+	decorated := runtime
+	if s.processes == nil {
+		decorated.ManagedByLocalNode = true
+		decorated.LocalLogAccessible = true
+		return decorated
+	}
+	localNodeID := s.processes.LocalNodeID()
+	if decorated.NodeID == "" {
+		decorated.ManagedByLocalNode = true
+		decorated.LocalLogAccessible = true
+		return decorated
+	}
+	cluster := s.store.ClusterSnapshot()
+	nodeLabel := decorated.NodeID
+	for _, node := range cluster.Nodes {
+		if node.ID == decorated.NodeID {
+			nodeLabel = valueOr(node.Name, node.ID)
+			break
+		}
+	}
+	decorated.ExecutionNodeName = nodeLabel
+	decorated.ManagedByLocalNode = decorated.NodeID == localNodeID
+	decorated.LocalLogAccessible = decorated.ManagedByLocalNode
+	if !decorated.ManagedByLocalNode {
+		decorated.LogAccessMessage = fmt.Sprintf("当前任务由节点 %s 托管，请切换到该节点查看实时日志", nodeLabel)
+		if decorated.ProcessStatus == "" {
+			decorated.ProcessStatus = "remote"
+		}
+	}
+	return decorated
+}
+
 func (s *Server) isLocalControlNode(nodeID string) bool {
 	if s.processes == nil {
 		return false
@@ -1236,15 +1269,8 @@ func (s *Server) canAccessTaskLogs(taskID string) (bool, string) {
 	if runtime.NodeID == "" || runtime.NodeID == s.processes.LocalNodeID() {
 		return true, ""
 	}
-	label := runtime.NodeID
-	snapshot := s.store.ClusterSnapshot()
-	for _, node := range snapshot.Nodes {
-		if node.ID == runtime.NodeID {
-			label = valueOr(node.Name, node.ID)
-			break
-		}
-	}
-	return false, fmt.Sprintf("任务当前由节点 %s 托管，请切换到该节点查看实时日志", label)
+	decorated := s.decorateRuntime(runtime)
+	return false, decorated.LogAccessMessage
 }
 
 func clusterOnline(nodes []ClusterNode) int {
