@@ -20,6 +20,8 @@ import (
 const (
 	taskProcessSpecEnv  = "CANAL_PLUS_TASK_PROCESS_SPEC"
 	taskLogLimitPerTask = 300
+	stopReasonMigrated  = "任务已从当前节点迁移"
+	stopReasonStopped   = "任务已停止，进程已回收"
 )
 
 type TaskLogService struct {
@@ -176,6 +178,21 @@ func (s *TaskStatusService) ApplyProcessEvent(taskID string, pid int, event task
 
 func (s *TaskStatusService) MarkProcessStopped(taskID string, message string) (TaskLogEntry, error) {
 	return s.markProcessEnded(taskID, "stopped", nil, message, false)
+}
+
+func (s *TaskStatusService) MarkProcessDetached(taskID string, message string) (TaskLogEntry, error) {
+	s.store.mu.Lock()
+	defer s.store.mu.Unlock()
+	runtime := s.store.ensureRuntimeLocked(taskID)
+	timestamp := now()
+	runtime.ProcessID = 0
+	runtime.ProcessStoppedAt = timestamp
+	runtime.LastHeartbeatAt = timestamp
+	runtime.LastLogAt = timestamp
+	runtime.LastLogMessage = message
+	runtime.UpdatedAt = timestamp
+	entry := s.store.appendTaskLogLocked(taskID, runtime.NodeID, 0, "info", runtime.Phase, message)
+	return entry, s.store.saveLocked()
 }
 
 func (s *TaskStatusService) MarkProcessCompleted(taskID string, message string) (TaskLogEntry, error) {
@@ -352,9 +369,9 @@ func (m *TaskProcessManager) Reconcile() {
 		if _, ok := desired[taskID]; ok {
 			continue
 		}
-		reason := "任务已从当前节点迁移"
+		reason := stopReasonMigrated
 		if task, exists := taskByID[taskID]; exists && !leaseRequired(task.Status) {
-			reason = "任务已停止，进程已回收"
+			reason = stopReasonStopped
 		}
 		_ = m.StopTask(process.taskID, reason)
 	}
@@ -583,7 +600,15 @@ func (m *TaskProcessManager) waitProcess(process *managedTaskProcess) {
 	m.mu.Unlock()
 
 	if stopRequested {
-		entry, statusErr := m.status.MarkProcessStopped(process.taskID, valueOr(stopMessage, "任务进程已停止"))
+		var (
+			entry     TaskLogEntry
+			statusErr error
+		)
+		if stopMessage == stopReasonMigrated {
+			entry, statusErr = m.status.MarkProcessDetached(process.taskID, stopMessage)
+		} else {
+			entry, statusErr = m.status.MarkProcessStopped(process.taskID, valueOr(stopMessage, "任务进程已停止"))
+		}
 		if statusErr == nil {
 			m.logs.Broadcast(entry)
 		}
