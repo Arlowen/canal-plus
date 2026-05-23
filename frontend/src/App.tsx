@@ -1810,7 +1810,15 @@ function NodesPage({
                         <span className="rounded-full border border-line bg-slate-50 px-2 py-1">
                           {task.runtime?.processId ? `PID ${task.runtime.processId}` : "无本地 PID"}
                         </span>
+                        <span className="rounded-full border border-line bg-slate-50 px-2 py-1">
+                          {task.runtime?.binlogFile ? `${task.runtime.binlogFile}:${task.runtime.binlogPosition}` : "无位点"}
+                        </span>
                       </div>
+                      {task.runtime?.lastLogMessage && (
+                        <div className="mt-2 rounded-2xl border border-line bg-slate-50/70 px-3 py-3 text-xs text-slate-600">
+                          {task.runtime.lastLogMessage}
+                        </div>
+                      )}
                       <div className="mt-3 flex justify-end">
                         <button type="button" onClick={() => onOpenTask(task.id)} className="btn-secondary px-3 py-2 text-xs">
                           <FlowArrow size={14} />
