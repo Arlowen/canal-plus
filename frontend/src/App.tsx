@@ -4,7 +4,6 @@ import {
   ArrowsClockwise,
   CheckCircle,
   Cloud,
-  ClipboardText,
   Database,
   FlowArrow,
   Pulse,
@@ -24,8 +23,8 @@ import { ClusterView } from "./views/ClusterView";
 import { DatasourceView } from "./views/DatasourceView";
 import { ErrorCenterView } from "./views/ErrorCenterView";
 import { OperationLogsView } from "./views/OperationLogsView";
-import { SettingsView } from "./views/SettingsView";
 import { TaskView } from "./views/TaskView";
+import { SettingsView } from "./views/SettingsView";
 import type {
   AlertRule,
   AlertEvent,
@@ -46,7 +45,7 @@ import type {
   User
 } from "./types/api";
 
-type View = "datasources" | "tasks" | "wizard" | "capabilities" | "cluster" | "errors" | "logs";
+type View = "datasources" | "tasks" | "wizard" | "capabilities" | "cluster" | "errors";
 type NavView = Exclude<View, "wizard">;
 
 const defaultStrategy: SyncStrategy = {
@@ -68,8 +67,7 @@ const navItems: Array<{ id: NavView; label: string; icon: typeof Stack }> = [
   { id: "tasks", label: "任务", icon: FlowArrow },
   { id: "capabilities", label: "能力", icon: Stack },
   { id: "cluster", label: "节点", icon: Cloud },
-  { id: "errors", label: "问题", icon: WarningCircle },
-  { id: "logs", label: "日志", icon: ClipboardText }
+  { id: "errors", label: "问题", icon: WarningCircle }
 ];
 
 const viewTitles: Record<View, string> = {
@@ -78,8 +76,7 @@ const viewTitles: Record<View, string> = {
   wizard: "新建任务",
   capabilities: "能力",
   cluster: "节点",
-  errors: "问题",
-  logs: "日志"
+  errors: "问题"
 };
 
 function App() {
@@ -93,7 +90,7 @@ function App() {
   const [cluster, setCluster] = useState<ClusterSnapshot | null>(null);
   const [capabilityJobs, setCapabilityJobs] = useState<CapabilityJob[]>([]);
   const [capabilityMode, setCapabilityMode] = useState<CapabilityJobType>("structure");
-  const [issueMode, setIssueMode] = useState<"errors" | "alerts">("errors");
+  const [issueMode, setIssueMode] = useState<"errors" | "alerts" | "logs">("errors");
   const [alertRules, setAlertRules] = useState<AlertRule[]>([]);
   const [alertEvents, setAlertEvents] = useState<AlertEvent[]>([]);
   const [alertEvaluations, setAlertEvaluations] = useState<AlertRuleEvaluation[]>([]);
@@ -293,15 +290,13 @@ function App() {
                   onModeChange={setIssueMode}
                   errors={errors}
                   tasks={tasks}
+                  logs={logs}
                   alertRules={alertRules}
                   alertEvents={alertEvents}
                   alertEvaluations={alertEvaluations}
                   canManage={canManage}
                   onChanged={() => refresh(true)}
                 />
-              )}
-              {view === "logs" && (
-                <OperationLogsView logs={logs} />
               )}
             </>
           )}
@@ -316,16 +311,18 @@ function IssueCenter({
   onModeChange,
   errors,
   tasks,
+  logs,
   alertRules,
   alertEvents,
   alertEvaluations,
   canManage,
   onChanged
 }: {
-  mode: "errors" | "alerts";
-  onModeChange: (mode: "errors" | "alerts") => void;
+  mode: "errors" | "alerts" | "logs";
+  onModeChange: (mode: "errors" | "alerts" | "logs") => void;
   errors: ErrorEvent[];
   tasks: SyncTask[];
+  logs: OperationLog[];
   alertRules: AlertRule[];
   alertEvents: AlertEvent[];
   alertEvaluations: AlertRuleEvaluation[];
@@ -353,11 +350,20 @@ function IssueCenter({
         >
           告警
         </button>
+        <button
+          onClick={() => onModeChange("logs")}
+          className={cx(
+            "inline-flex items-center justify-center rounded-full border px-3 py-1.5 text-sm transition active:scale-[0.98]",
+            mode === "logs" ? "border-coal bg-coal text-white" : "border-line bg-white text-zinc-600 hover:bg-zinc-50"
+          )}
+        >
+          日志
+        </button>
       </div>
 
       {mode === "errors" ? (
         <ErrorCenterView errors={errors} tasks={tasks} onChanged={onChanged} />
-      ) : (
+      ) : mode === "alerts" ? (
         <SettingsView
           alertRules={alertRules}
           alertEvents={alertEvents}
@@ -366,6 +372,8 @@ function IssueCenter({
           canManage={canManage}
           onChanged={onChanged}
         />
+      ) : (
+        <OperationLogsView logs={logs} />
       )}
     </div>
   );
@@ -838,24 +846,9 @@ function PreflightPanel({
   if (!report) {
     return (
       <div className="rounded-xl border border-line bg-[#fcfcf8] p-5">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-          <div className="max-w-2xl">
-            <div className="flex items-center gap-2 text-coal">
-              <ShieldCheck size={20} />
-              <h3 className="font-semibold tracking-tight">等待预检</h3>
-            </div>
-            <p className="mt-2 text-sm leading-relaxed text-muted">
-              发布前会检查源端连接、目标结构、字段兼容性、重复订阅、策略参数和 node 容量。预检通过后才会创建同步任务。
-            </p>
-          </div>
-          <button
-            onClick={() => void onRun()}
-            disabled={checking}
-            className="inline-flex items-center justify-center gap-2 rounded-lg bg-coal px-4 py-2 text-sm text-white transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            <Pulse size={16} />
-            {checking ? "预检中" : "运行预检"}
-          </button>
+        <div className="flex items-center gap-2 text-coal">
+          <ShieldCheck size={20} />
+          <h3 className="font-semibold tracking-tight">等待预检</h3>
         </div>
       </div>
     );
