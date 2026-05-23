@@ -3190,6 +3190,19 @@ function SyncTaskDetail({
   const [logConnected, setLogConnected] = useState(false);
   const [logNotice, setLogNotice] = useState<string | null>(null);
   const [rollingBackVersion, setRollingBackVersion] = useState<number | null>(null);
+  const [savingParams, setSavingParams] = useState(false);
+  const [resettingPosition, setResettingPosition] = useState(false);
+  const [paramsDraft, setParamsDraft] = useState({
+    batchSize: task.strategy.batchSize,
+    retryTimes: task.strategy.retryTimes,
+    retryIntervalSeconds: task.strategy.retryIntervalSeconds,
+    conflictStrategy: task.strategy.conflictStrategy,
+    deleteStrategy: task.strategy.deleteStrategy
+  });
+  const [positionDraft, setPositionDraft] = useState({
+    binlogFile: task.runtime?.binlogFile || "mysql-bin.000001",
+    binlogPosition: task.runtime?.binlogPosition || 4
+  });
   const progress = runtime && runtime.fullTotalRows > 0 ? Math.min(100, Math.round((runtime.fullSyncedRows / runtime.fullTotalRows) * 100)) : 0;
   const taskErrors = errors.filter((item) => item.taskId === task.id).slice(0, 4);
   const localNodeId = cluster?.localNodeId;
@@ -3200,7 +3213,26 @@ function SyncTaskDetail({
 
   useEffect(() => {
     setRuntime(task.runtime);
-  }, [task.id, task.runtime]);
+    setParamsDraft({
+      batchSize: task.strategy.batchSize,
+      retryTimes: task.strategy.retryTimes,
+      retryIntervalSeconds: task.strategy.retryIntervalSeconds,
+      conflictStrategy: task.strategy.conflictStrategy,
+      deleteStrategy: task.strategy.deleteStrategy
+    });
+    setPositionDraft({
+      binlogFile: task.runtime?.binlogFile || "mysql-bin.000001",
+      binlogPosition: task.runtime?.binlogPosition || 4
+    });
+  }, [
+    task.id,
+    task.runtime,
+    task.strategy.batchSize,
+    task.strategy.retryTimes,
+    task.strategy.retryIntervalSeconds,
+    task.strategy.conflictStrategy,
+    task.strategy.deleteStrategy
+  ]);
 
   useEffect(() => {
     let cancelled = false;
@@ -3252,6 +3284,49 @@ function SyncTaskDetail({
       pushNotice({ tone: "error", message: requestError instanceof Error ? requestError.message : "回滚失败" });
     } finally {
       setRollingBackVersion(null);
+    }
+  };
+
+  const saveRuntimeParams = async () => {
+    if (!canManage) {
+      pushNotice({ tone: "warning", message: "修改运行参数需要管理员权限" });
+      return;
+    }
+    setSavingParams(true);
+    try {
+      await api.updateTaskParams(task.id, {
+        batchSize: Number(paramsDraft.batchSize),
+        retryTimes: Number(paramsDraft.retryTimes),
+        retryIntervalSeconds: Number(paramsDraft.retryIntervalSeconds),
+        conflictStrategy: paramsDraft.conflictStrategy,
+        deleteStrategy: paramsDraft.deleteStrategy
+      });
+      pushNotice({ tone: "success", message: "运行参数已保存" });
+      await onChanged();
+    } catch (requestError) {
+      pushNotice({ tone: "error", message: requestError instanceof Error ? requestError.message : "保存参数失败" });
+    } finally {
+      setSavingParams(false);
+    }
+  };
+
+  const resetPosition = async () => {
+    if (!canManage) {
+      pushNotice({ tone: "warning", message: "重置位点需要管理员权限" });
+      return;
+    }
+    setResettingPosition(true);
+    try {
+      await api.resetTaskPosition(task.id, {
+        binlogFile: positionDraft.binlogFile,
+        binlogPosition: Number(positionDraft.binlogPosition)
+      });
+      pushNotice({ tone: "success", message: "位点已重置" });
+      await onChanged();
+    } catch (requestError) {
+      pushNotice({ tone: "error", message: requestError instanceof Error ? requestError.message : "重置位点失败" });
+    } finally {
+      setResettingPosition(false);
     }
   };
 
@@ -3398,6 +3473,67 @@ function SyncTaskDetail({
           ))}
         </div>
       </div>
+      {canManage && (
+        <div className="rounded-3xl border border-line bg-slate-50/70 p-4">
+          <div className="font-medium text-coal">运行参数</div>
+          <div className="mt-4 grid gap-4 sm:grid-cols-2">
+            <Field label="批量写入">
+              <input className="input" type="number" value={paramsDraft.batchSize} onChange={(event) => setParamsDraft({ ...paramsDraft, batchSize: Number(event.target.value) })} />
+            </Field>
+            <Field label="重试次数">
+              <input className="input" type="number" value={paramsDraft.retryTimes} onChange={(event) => setParamsDraft({ ...paramsDraft, retryTimes: Number(event.target.value) })} />
+            </Field>
+            <Field label="重试间隔秒">
+              <input className="input" type="number" value={paramsDraft.retryIntervalSeconds} onChange={(event) => setParamsDraft({ ...paramsDraft, retryIntervalSeconds: Number(event.target.value) })} />
+            </Field>
+            <Field label="冲突策略">
+              <select className="select" value={paramsDraft.conflictStrategy} onChange={(event) => setParamsDraft({ ...paramsDraft, conflictStrategy: event.target.value as SyncStrategy["conflictStrategy"] })}>
+                <option value="overwrite">覆盖</option>
+                <option value="ignore">忽略</option>
+                <option value="fail">失败停止</option>
+              </select>
+            </Field>
+            <Field label="删除策略">
+              <select className="select" value={paramsDraft.deleteStrategy} onChange={(event) => setParamsDraft({ ...paramsDraft, deleteStrategy: event.target.value as SyncStrategy["deleteStrategy"] })}>
+                <option value="physical">物理删除</option>
+                <option value="soft_delete">软删除字段更新</option>
+                <option value="ignore">忽略删除</option>
+              </select>
+            </Field>
+          </div>
+          <div className="mt-4 flex justify-end">
+            <button type="button" onClick={() => void saveRuntimeParams()} disabled={savingParams} className="btn-secondary">
+              {savingParams ? <ArrowsClockwise size={16} /> : <CheckCircle size={16} />}
+              {savingParams ? "保存中" : "保存参数"}
+            </button>
+          </div>
+        </div>
+      )}
+      {canManage && (
+        <div className="rounded-3xl border border-line bg-slate-50/70 p-4">
+          <div className="font-medium text-coal">位点控制</div>
+          <div className="mt-2 text-sm text-slate-500">仅已停止任务允许重置位点。</div>
+          <div className="mt-4 grid gap-4 sm:grid-cols-2">
+            <Field label="Binlog 文件">
+              <input className="input mono" value={positionDraft.binlogFile} onChange={(event) => setPositionDraft({ ...positionDraft, binlogFile: event.target.value })} />
+            </Field>
+            <Field label="Binlog Position">
+              <input className="input mono" type="number" value={positionDraft.binlogPosition} onChange={(event) => setPositionDraft({ ...positionDraft, binlogPosition: Number(event.target.value) })} />
+            </Field>
+          </div>
+          <div className="mt-4 flex justify-end">
+            <button
+              type="button"
+              onClick={() => void resetPosition()}
+              disabled={resettingPosition || task.status !== "stopped"}
+              className="btn-secondary"
+            >
+              {resettingPosition ? <ArrowsClockwise size={16} /> : <ArrowRight size={16} />}
+              {resettingPosition ? "重置中" : "重置位点"}
+            </button>
+          </div>
+        </div>
+      )}
       <div className="rounded-3xl border border-line bg-slate-50/70 p-4">
         <div className="font-medium text-coal">配置版本</div>
         <div className="mt-3 grid gap-3">
