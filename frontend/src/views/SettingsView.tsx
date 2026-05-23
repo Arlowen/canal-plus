@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
-import { BellRinging, CheckCircle, FileText, Plus, Trash, WarningCircle } from "@phosphor-icons/react";
+import { BellRinging, CheckCircle, Plus, Trash, WarningCircle } from "@phosphor-icons/react";
 import { PermissionNotice } from "../components/PermissionNotice";
 import { api } from "../lib/api";
 import { cx, formatDate } from "../lib/format";
@@ -169,7 +169,6 @@ export function SettingsView({
             <BellRinging size={20} />
             <div>
               <h2 className="font-semibold tracking-tight">告警规则</h2>
-              <div className="mt-1 text-sm text-muted">延迟、错误阈值和通知出口</div>
             </div>
           </div>
           <button
@@ -268,33 +267,11 @@ export function SettingsView({
           </div>
         </form>
 
-        <section className="rounded-xl border border-line bg-[#fcfcf8] p-5 shadow-panel">
-          <div className="flex items-center gap-2 text-coal">
-            <FileText size={20} />
-            <h2 className="font-semibold tracking-tight">评估结果</h2>
-          </div>
-          <div className="mt-4 space-y-3 text-sm text-zinc-600">
-            {evaluations.slice(0, 4).map((evaluation) => (
-              <div key={evaluation.ruleId} className="border-l border-line pl-3">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="font-medium text-coal">{evaluation.ruleName}</span>
-                  <EvaluationBadge evaluation={evaluation} />
-                </div>
-                <div className="mt-1 font-mono text-xs">
-                  tasks {evaluation.matchedTasks} / delay {evaluation.maxDelaySeconds}s / errors {evaluation.pendingErrors}
-                </div>
-                {evaluation.reasons.length > 0 && <div className="mt-1 text-xs text-red-700">{evaluation.reasons.join("，")}</div>}
-              </div>
-            ))}
-          </div>
-        </section>
-
         <section className="rounded-xl border border-line bg-white p-5 shadow-panel">
           <div className="flex items-center gap-2 text-coal">
             <BellRinging size={20} />
             <h2 className="font-semibold tracking-tight">告警事件</h2>
           </div>
-          <div className="mt-1 text-sm text-muted">触发、恢复和通知记录</div>
           <div className="mt-4 space-y-3">
             {visibleAlertEvents.length === 0 ? (
               <div className="rounded-lg border border-dashed border-line bg-[#fcfcf8] p-4 text-center text-sm text-muted">暂无告警事件</div>

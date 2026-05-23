@@ -159,7 +159,6 @@ export function CapabilityView({
   onChanged: () => Promise<void> | void;
 }) {
   const config = capabilityConfig[mode];
-  const Icon = config.icon;
   const availableTasks = tasks.filter((task) => task.status !== "draft" && task.status !== "stopped");
   const [selectedTaskId, setSelectedTaskId] = useState(availableTasks[0]?.id || "");
   const [selectedMode, setSelectedMode] = useState(config.modes[0]?.value || "");
@@ -356,15 +355,7 @@ export function CapabilityView({
   return (
     <div className="grid gap-5 xl:grid-cols-[0.95fr_1.05fr]">
       <section className="rounded-xl border border-line bg-white p-5 shadow-panel">
-        <div className="flex items-center gap-3">
-          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-coal text-white">
-            <Icon size={22} />
-          </div>
-          <div>
-            <h2 className="text-xl font-semibold tracking-tight text-coal">{config.title}</h2>
-            <div className="mt-1 text-sm text-muted">{config.accent}</div>
-          </div>
-        </div>
+        <h2 className="text-xl font-semibold tracking-tight text-coal">{config.title}</h2>
 
         {error && (
           <div className="mt-5 flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
@@ -401,27 +392,19 @@ export function CapabilityView({
             </select>
           </label>
 
-          <div className="grid gap-3">
-            {config.modes.map((item) => (
-              <button
-                key={item.value}
-                onClick={() => {
-                  if (canManage) setSelectedMode(item.value);
-                }}
-                disabled={!canManage}
-                className={cx(
-                  "rounded-lg border p-3 text-left transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50",
-                  selectedMode === item.value ? "border-coal bg-[#f4f6f2]" : "border-line bg-[#fcfcf8] hover:bg-zinc-50"
-                )}
-              >
-                <div className="flex items-center justify-between gap-3">
-                  <span className="text-sm font-medium text-coal">{item.label}</span>
-                  {selectedMode === item.value && <CheckCircle size={18} className="text-accent" />}
-                </div>
-                <div className="mt-1 text-xs text-muted">{item.description}</div>
-              </button>
-            ))}
-          </div>
+          <label className="block">
+            <span className="mb-2 block text-sm font-medium text-zinc-700">模式</span>
+            <select
+              className="control"
+              value={selectedMode}
+              disabled={!canManage}
+              onChange={(event) => setSelectedMode(event.target.value)}
+            >
+              {config.modes.map((item) => (
+                <option key={item.value} value={item.value}>{item.label}</option>
+              ))}
+            </select>
+          </label>
 
           {selectedMode === "periodic_verify" && (
             <label className="block">
@@ -443,18 +426,8 @@ export function CapabilityView({
 
       <section className="rounded-xl border border-line bg-white p-5 shadow-panel">
         <div className="flex items-center justify-between gap-3">
-          <div>
-            <h2 className="font-semibold tracking-tight text-coal">执行面板</h2>
-            <div className="mt-1 text-sm text-muted">创建、运行、查看结构/校验/订阅任务状态</div>
-          </div>
+          <h2 className="font-semibold tracking-tight text-coal">最近任务</h2>
           <MagnifyingGlass size={20} className="text-muted" />
-        </div>
-
-        <div className="mt-5 grid gap-3 md:grid-cols-2">
-          <Info label="数据源" value={`${datasources.length} 个`} mono />
-          <Info label="任务" value={`${tasks.length} 条`} mono />
-          <Info label="运行中能力任务" value={`${relevantJobs.filter((job) => job.status === "running").length} 条`} mono />
-          <Info label="最近风险" value={riskLabel(latestJob?.summary.riskLevel || "low")} />
         </div>
 
         {latestJob && (
@@ -477,10 +450,9 @@ export function CapabilityView({
             </div>
             <div className="mt-4 grid gap-2">
               {latestJob.steps.map((step, index) => (
-                <div key={`${latestJob.id}-${step.name}`} className="grid gap-2 rounded-lg border border-line bg-white p-3 text-sm sm:grid-cols-[28px_140px_1fr_auto] sm:items-center">
+                <div key={`${latestJob.id}-${step.name}`} className="grid gap-2 rounded-lg border border-line bg-white p-3 text-sm sm:grid-cols-[28px_1fr_auto] sm:items-center">
                   <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[#fcfcf8] font-mono text-xs text-accent">{index + 1}</span>
                   <span className="font-medium text-coal">{step.name}</span>
-                  <span className="text-xs text-muted">{step.detail}</span>
                   <span className="text-xs text-zinc-500">{step.status}</span>
                 </div>
               ))}
@@ -491,10 +463,7 @@ export function CapabilityView({
         {mode === "structure" && latestJob && (
           <div className="mt-5 rounded-xl border border-line bg-[#fcfcf8] p-4">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-              <div>
-                <h3 className="font-semibold tracking-tight text-coal">DDL 执行计划</h3>
-                <div className="mt-1 text-sm text-muted">预览目标端结构变更，确认后按计划执行。</div>
-              </div>
+              <h3 className="font-semibold tracking-tight text-coal">DDL 计划</h3>
               <button
                 onClick={() => applyStructureDDLs()}
                 disabled={!canManage || loadingDDLs || pendingDDLs.length === 0 || applyingDDL === "all" || latestJob.status !== "completed"}
@@ -503,12 +472,6 @@ export function CapabilityView({
                 {applyingDDL === "all" ? <ArrowsClockwise size={16} /> : <Stack size={16} />}
                 {applyingDDL === "all" ? "执行中" : `执行待处理 ${pendingDDLs.length}`}
               </button>
-            </div>
-
-            <div className="mt-4 grid gap-3 sm:grid-cols-3">
-              <Info label="DDL 语句" value={loadingDDLs ? "加载中" : `${structureDDLs.length} 条`} mono />
-              <Info label="待执行" value={`${pendingDDLs.length} 条`} mono />
-              <Info label="已执行" value={`${structureDDLs.length - pendingDDLs.length} 条`} mono />
             </div>
 
             <div className="mt-4 divide-y divide-line overflow-hidden rounded-lg border border-line bg-white">
@@ -549,19 +512,13 @@ export function CapabilityView({
               ))}
             </div>
 
-            {structureDDLs.length > 8 && (
-              <div className="mt-3 text-xs text-muted">已展示前 8 条 DDL，其余语句可通过批量执行处理。</div>
-            )}
           </div>
         )}
 
         {mode === "quality" && latestJob && (
           <div className="mt-5 rounded-xl border border-line bg-[#fcfcf8] p-4">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-              <div>
-                <h3 className="font-semibold tracking-tight text-coal">字段级差异</h3>
-                <div className="mt-1 text-sm text-muted">逐字段对比源端与目标端，确认后可按源端值订正。</div>
-              </div>
+              <h3 className="font-semibold tracking-tight text-coal">字段差异</h3>
               <button
                 onClick={() => correctDiffs()}
                 disabled={!canManage || loadingDiffs || pendingDiffs.length === 0 || correctingDiff === "all" || latestJob.status !== "completed"}
@@ -570,12 +527,6 @@ export function CapabilityView({
                 {correctingDiff === "all" ? <ArrowsClockwise size={16} /> : <ShieldCheck size={16} />}
                 {correctingDiff === "all" ? "订正中" : `订正待处理 ${pendingDiffs.length}`}
               </button>
-            </div>
-
-            <div className="mt-4 grid gap-3 sm:grid-cols-3">
-              <Info label="差异明细" value={loadingDiffs ? "加载中" : `${qualityDiffs.length} 条`} mono />
-              <Info label="待订正" value={`${pendingDiffs.length} 条`} mono />
-              <Info label="已订正" value={`${qualityDiffs.length - pendingDiffs.length} 条`} mono />
             </div>
 
             <div className="mt-4 divide-y divide-line overflow-hidden rounded-lg border border-line bg-white">
@@ -626,28 +577,16 @@ export function CapabilityView({
               ))}
             </div>
 
-            {qualityDiffs.length > 8 && (
-              <div className="mt-3 text-xs text-muted">已展示前 8 条高优先级差异，其余差异可通过批量订正处理。</div>
-            )}
           </div>
         )}
 
         {mode === "subscription" && latestJob && (
           <div className="mt-5 rounded-xl border border-line bg-[#fcfcf8] p-4">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-              <div>
-                <h3 className="font-semibold tracking-tight text-coal">订阅变更计划</h3>
-                <div className="mt-1 text-sm text-muted">预览运行中链路的加表、action 过滤和条件过滤发布状态。</div>
-              </div>
+              <h3 className="font-semibold tracking-tight text-coal">订阅变更</h3>
               <span className={cx("rounded-full border px-2 py-1 text-xs", latestJob.status === "completed" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-amber-200 bg-amber-50 text-amber-700")}>
                 {latestJob.status === "completed" ? "已发布" : "发布中"}
               </span>
-            </div>
-
-            <div className="mt-4 grid gap-3 sm:grid-cols-3">
-              <Info label="变更项" value={loadingSubscriptionChanges ? "加载中" : `${subscriptionChanges.length} 项`} mono />
-              <Info label="待发布" value={`${pendingSubscriptionChanges.length} 项`} mono />
-              <Info label="已发布" value={`${subscriptionChanges.length - pendingSubscriptionChanges.length} 项`} mono />
             </div>
 
             <div className="mt-4 divide-y divide-line overflow-hidden rounded-lg border border-line bg-white">
@@ -693,9 +632,6 @@ export function CapabilityView({
               ))}
             </div>
 
-            {subscriptionChanges.length > 8 && (
-              <div className="mt-3 text-xs text-muted">已展示前 8 项订阅变更，其余变更会随任务完成自动发布。</div>
-            )}
           </div>
         )}
 

@@ -8,7 +8,6 @@ import {
   PencilSimple,
   Plus,
   Pulse,
-  ShieldCheck,
   Trash,
   WarningCircle,
   XCircle
@@ -18,7 +17,6 @@ import { api } from "../lib/api";
 import { cx, formatDateTime } from "../lib/format";
 import type { Datasource, DatasourcePurpose, DatasourceStatus, SyncTask } from "../types/api";
 
-type PurposeFilter = "all" | DatasourcePurpose;
 type StatusFilter = "all" | DatasourceStatus;
 type FormMode = "create" | "edit";
 
@@ -102,7 +100,7 @@ function EmptyDatasourceState({ onCreate, canManage }: { onCreate: () => void; c
         <Database size={18} />
       </div>
       <div className="mt-3 font-medium text-coal">暂无数据源</div>
-      <div className="mt-1 text-sm text-muted">创建源端和目标端连接后即可配置同步任务</div>
+      <div className="mt-1 text-sm text-muted">先创建连接</div>
       <button
         onClick={onCreate}
         disabled={!canManage}
@@ -127,7 +125,7 @@ function EmptyFilteredDatasource({ onReset }: { onReset: () => void }) {
         <FunnelSimple size={18} />
       </div>
       <div className="mt-3 font-medium text-coal">没有匹配的数据源</div>
-      <div className="mt-1 text-sm text-muted">调整关键词、用途或连接状态后再查看</div>
+      <div className="mt-1 text-sm text-muted">调整关键词或状态后再查看</div>
       <button
         onClick={onReset}
         className="mt-4 inline-flex items-center justify-center gap-2 rounded-lg border border-line bg-white px-3 py-2 text-sm text-zinc-700 transition hover:bg-zinc-50 active:scale-[0.98]"
@@ -231,7 +229,6 @@ export function DatasourceView({
 }) {
   const [selectedId, setSelectedId] = useState<string | null>(datasources[0]?.id ?? null);
   const [keyword, setKeyword] = useState("");
-  const [purposeFilter, setPurposeFilter] = useState<PurposeFilter>("all");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [formMode, setFormMode] = useState<FormMode | null>(null);
   const [form, setForm] = useState({ ...emptyForm });
@@ -245,20 +242,17 @@ export function DatasourceView({
     return datasources
       .filter((datasource) => {
         const matchesKeyword = !normalizedKeyword || datasourceSearchText(datasource).includes(normalizedKeyword);
-        const matchesPurpose = purposeFilter === "all" || datasource.purpose === purposeFilter;
         const matchesStatus = statusFilter === "all" || datasource.connectionStatus === statusFilter;
-        return matchesKeyword && matchesPurpose && matchesStatus;
+        return matchesKeyword && matchesStatus;
       })
       .sort((left, right) => {
         const statusRank: Record<DatasourceStatus, number> = { offline: 0, untested: 1, online: 2 };
         return statusRank[left.connectionStatus] - statusRank[right.connectionStatus] || left.name.localeCompare(right.name, "zh-Hans-CN");
       });
-  }, [datasources, keyword, purposeFilter, statusFilter]);
+  }, [datasources, keyword, statusFilter]);
   const selected = visibleDatasources.find((datasource) => datasource.id === selectedId) ?? visibleDatasources[0];
   const selectedUsage = selected ? usageCount(selected, tasks) : 0;
-  const filterActive = Boolean(keyword.trim()) || purposeFilter !== "all" || statusFilter !== "all";
-  const sourceCount = datasources.filter((datasource) => datasource.purpose === "source" || datasource.purpose === "both").length;
-  const targetCount = datasources.filter((datasource) => datasource.purpose === "target" || datasource.purpose === "both").length;
+  const filterActive = Boolean(keyword.trim()) || statusFilter !== "all";
 
   useEffect(() => {
     if (datasources.length === 0) {
@@ -275,7 +269,6 @@ export function DatasourceView({
 
   const resetFilters = () => {
     setKeyword("");
-    setPurposeFilter("all");
     setStatusFilter("all");
   };
 
@@ -408,25 +401,13 @@ export function DatasourceView({
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div>
               <h2 className="text-lg font-semibold tracking-tight text-coal">数据源</h2>
-              <div className="mt-1 text-sm text-muted">源端与目标端连接资产</div>
             </div>
-            <div className="grid grid-cols-3 gap-2 text-sm lg:min-w-[330px]">
-              <div className="rounded-lg border border-line bg-[#fcfcf8] px-3 py-2">
-                <div className="text-xs text-muted">在线</div>
-                <div className="mt-1 font-mono font-semibold text-emerald-700">{statusCounts.online}</div>
-              </div>
-              <div className="rounded-lg border border-line bg-[#fcfcf8] px-3 py-2">
-                <div className="text-xs text-muted">源端</div>
-                <div className="mt-1 font-mono font-semibold text-coal">{sourceCount}</div>
-              </div>
-              <div className="rounded-lg border border-line bg-[#fcfcf8] px-3 py-2">
-                <div className="text-xs text-muted">目标端</div>
-                <div className="mt-1 font-mono font-semibold text-coal">{targetCount}</div>
-              </div>
+            <div className="rounded-lg border border-line bg-[#fcfcf8] px-3 py-2 text-sm text-zinc-700">
+              在线 {statusCounts.online} / {datasources.length}
             </div>
           </div>
 
-          <div className="mt-5 grid gap-3 lg:grid-cols-[minmax(0,1fr)_160px_160px_auto]">
+          <div className="mt-5 grid gap-3 lg:grid-cols-[minmax(0,1fr)_160px_auto]">
             <label className="block min-w-0">
               <span className="mb-2 block text-xs font-medium text-zinc-700">搜索数据源</span>
               <span className="relative block">
@@ -438,15 +419,6 @@ export function DatasourceView({
                   placeholder="名称、Host、账号、默认库"
                 />
               </span>
-            </label>
-            <label className="block">
-              <span className="mb-2 block text-xs font-medium text-zinc-700">用途</span>
-              <select className="control" value={purposeFilter} onChange={(event) => setPurposeFilter(event.target.value as PurposeFilter)}>
-                <option value="all">全部用途</option>
-                <option value="source">源端</option>
-                <option value="target">目标端</option>
-                <option value="both">源端和目标端</option>
-              </select>
             </label>
             <label className="block">
               <span className="mb-2 block text-xs font-medium text-zinc-700">状态</span>
@@ -502,10 +474,6 @@ export function DatasourceView({
                 清空筛选
               </button>
             )}
-          </div>
-
-          <div className="mt-4 text-xs text-muted">
-            当前显示 <span className="font-mono text-coal">{visibleDatasources.length}</span> / <span className="font-mono text-coal">{datasources.length}</span> 个数据源
           </div>
         </div>
 
@@ -584,32 +552,9 @@ export function DatasourceView({
               <Info label="用途" value={purposeText[selected.purpose]} />
               <Info label="默认库" value={selected.defaultSchema || "-"} />
               <Info label="账号" value={selected.username} mono />
-              <Info label="密码" value={selected.hasPassword ? "已加密保存" : "未保存"} />
               <Info label="最后测试" value={formatDateTime(selected.lastTestedAt)} />
               <Info label="引用任务" value={`${selectedUsage}`} mono />
             </div>
-
-            <div className="mt-5 rounded-lg border border-line bg-[#fcfcf8] p-4">
-              <div className="flex items-center gap-2 text-sm font-medium text-coal">
-                <ShieldCheck size={16} />
-                连接规则
-              </div>
-              <div className="mt-3 space-y-2 text-sm text-zinc-600">
-                <div>密码只在后端加密保存，前端不读取明文。</div>
-                <div>真实 MySQL 可读取 schema、table 和 column 元数据。</div>
-                <div>被任务引用的数据源由后端阻止删除。</div>
-              </div>
-            </div>
-
-            {selected.lastTestMessage && (
-              <div className={cx(
-                "mt-5 flex items-start gap-2 rounded-lg border p-3 text-sm",
-                selected.connectionStatus === "online" ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-red-200 bg-red-50 text-red-700"
-              )}>
-                {selected.connectionStatus === "online" ? <CheckCircle size={16} /> : <WarningCircle size={16} />}
-                <span>{selected.lastTestMessage}</span>
-              </div>
-            )}
 
             <div className="mt-5 grid grid-cols-2 gap-2">
               <button
@@ -636,7 +581,7 @@ export function DatasourceView({
                 删除数据源
               </div>
               <div className="mt-2 text-sm text-red-700">
-                {selectedUsage > 0 ? "该数据源已被同步任务引用，不能删除。" : "输入数据源名称后才能删除。"}
+                {selectedUsage > 0 ? "已被任务引用，不能删除。" : "输入名称后删除。"}
               </div>
               <input
                 className="control mt-3 border-red-200"
@@ -656,13 +601,8 @@ export function DatasourceView({
             </div>
           </div>
         ) : (
-          <div className="rounded-xl border border-line bg-[#fcfcf8] p-5 shadow-panel">
-            <h2 className="font-semibold tracking-tight text-coal">连接规则</h2>
-            <div className="mt-4 space-y-3 text-sm text-zinc-600">
-              <div className="border-l border-line pl-3">密码只在后端加密保存，前端不读取明文。</div>
-              <div className="border-l border-line pl-3">真实 MySQL 可读取 schema、table 和 column 元数据。</div>
-              <div className="border-l border-line pl-3">被任务引用的数据源由后端阻止删除。</div>
-            </div>
+          <div className="rounded-xl border border-dashed border-line bg-[#fcfcf8] p-5 text-sm text-muted shadow-panel">
+            选择一个数据源
           </div>
         )}
       </aside>
