@@ -16,7 +16,7 @@ import {
 } from "@phosphor-icons/react";
 import { StatusBadge } from "../components/StatusBadge";
 import { api } from "../lib/api";
-import { cx, formatDate, formatNumber } from "../lib/format";
+import { cx } from "../lib/format";
 import { taskStatusText } from "../lib/taskStatus";
 import type { ClusterSnapshot, ErrorEvent, OperationLog, SyncStrategy, SyncTask, TaskStatus } from "../types/api";
 import { TaskInsightPanel } from "./TaskInsightPanel";

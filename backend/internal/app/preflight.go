@@ -237,7 +237,7 @@ func checkStrategy(builder *preflightBuilder, strategy SyncStrategy) {
 	if !strategy.WriteMode.Insert && !strategy.WriteMode.Update && !strategy.WriteMode.Delete {
 		details = append(details, "至少需要订阅一种写入事件")
 	}
-	if strategy.InitMode != "full_then_incremental" && strategy.InitMode != "incremental_only" {
+	if strategy.InitMode != "full_then_incremental" && strategy.InitMode != "incremental_only" && strategy.InitMode != "full_only" {
 		details = append(details, "初始化策略不支持："+strategy.InitMode)
 	}
 	if strategy.ConflictStrategy != "overwrite" && strategy.ConflictStrategy != "ignore" && strategy.ConflictStrategy != "fail" {

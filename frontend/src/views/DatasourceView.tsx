@@ -9,7 +9,6 @@ import {
   Plus,
   Pulse,
   Trash,
-  WarningCircle,
   XCircle
 } from "@phosphor-icons/react";
 import { PermissionNotice } from "../components/PermissionNotice";

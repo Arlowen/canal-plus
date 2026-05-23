@@ -838,6 +838,25 @@ func (s *Server) handleCluster(response http.ResponseWriter, request *http.Reque
 		writeJSON(response, http.StatusOK, s.store.ClusterSnapshot())
 	case len(parts) == 2 && parts[1] == "nodes" && request.Method == http.MethodGet:
 		writeJSON(response, http.StatusOK, s.store.ClusterSnapshot().Nodes)
+	case len(parts) == 3 && parts[1] == "nodes" && parts[2] == "test-connection" && request.Method == http.MethodPost:
+		var input ClusterNodeInput
+		if err := decodeJSON(request, &input); err != nil {
+			writeError(response, http.StatusBadRequest, "请求体格式错误")
+			return
+		}
+		writeJSON(response, http.StatusOK, s.store.TestNodeConnection(input))
+	case len(parts) == 3 && parts[1] == "nodes" && parts[2] == "deploy" && request.Method == http.MethodPost:
+		var input ClusterNodeInput
+		if err := decodeJSON(request, &input); err != nil {
+			writeError(response, http.StatusBadRequest, "请求体格式错误")
+			return
+		}
+		result, err := s.store.DeployNode(input)
+		if err != nil {
+			writeError(response, http.StatusBadRequest, err.Error())
+			return
+		}
+		writeJSON(response, http.StatusOK, result)
 	case len(parts) == 2 && parts[1] == "nodes" && request.Method == http.MethodPost:
 		var input ClusterNodeInput
 		if err := decodeJSON(request, &input); err != nil {
@@ -885,6 +904,28 @@ func (s *Server) handleCluster(response http.ResponseWriter, request *http.Reque
 			return
 		}
 		writeJSON(response, http.StatusOK, report)
+	case len(parts) == 4 && parts[1] == "nodes" && parts[3] == "upgrade" && request.Method == http.MethodPost:
+		result, ok, err := s.store.UpgradeNode(parts[2])
+		if err != nil {
+			writeError(response, http.StatusBadRequest, err.Error())
+			return
+		}
+		if !ok {
+			writeError(response, http.StatusNotFound, "节点不存在")
+			return
+		}
+		writeJSON(response, http.StatusOK, result)
+	case len(parts) == 4 && parts[1] == "nodes" && parts[3] == "uninstall" && request.Method == http.MethodPost:
+		result, ok, err := s.store.UninstallNode(parts[2])
+		if err != nil {
+			writeError(response, http.StatusBadRequest, err.Error())
+			return
+		}
+		if !ok {
+			writeError(response, http.StatusNotFound, "节点不存在")
+			return
+		}
+		writeJSON(response, http.StatusOK, result)
 	case len(parts) == 4 && parts[1] == "nodes" && request.Method == http.MethodPost:
 		var status NodeStatus
 		switch parts[3] {

@@ -66,7 +66,7 @@ export interface TableMapping {
 }
 
 export interface SyncStrategy {
-  initMode: "full_then_incremental" | "incremental_only";
+  initMode: "full_then_incremental" | "incremental_only" | "full_only";
   writeMode: {
     insert: boolean;
     update: boolean;
@@ -404,11 +404,17 @@ export interface DashboardSummary {
 }
 
 export type NodeStatus = "online" | "offline" | "draining";
+export type NodeAuthMode = "password" | "private_key";
 
 export interface ClusterNode {
   id: string;
   name: string;
   endpoint: string;
+  sshPort: number;
+  sshUser: string;
+  authMode: NodeAuthMode;
+  installDir: string;
+  version: string;
   zone: string;
   status: NodeStatus;
   role: string;
@@ -425,11 +431,42 @@ export interface ClusterNodeInput {
   id?: string;
   name: string;
   endpoint: string;
+  sshPort?: number;
+  sshUser?: string;
+  authMode?: NodeAuthMode;
+  password?: string;
+  privateKey?: string;
+  installDir?: string;
+  version?: string;
   zone?: string;
   role?: string;
   capacity?: number;
   cpuPercent?: number;
   memoryPercent?: number;
+}
+
+export interface NodeConnectionTestResult {
+  success: boolean;
+  message: string;
+  checkedAt: string;
+  latencyMs: number;
+}
+
+export interface NodeOperationStep {
+  key: string;
+  label: string;
+  status: "done" | "failed";
+  detail: string;
+}
+
+export interface NodeOperationResult {
+  action: "deploy" | "upgrade" | "uninstall";
+  success: boolean;
+  message: string;
+  finishedAt: string;
+  node?: ClusterNode;
+  removedNodeId?: string;
+  steps: NodeOperationStep[];
 }
 
 export interface TaskLease {

@@ -351,7 +351,7 @@ const (
 type AlertNotificationStatus string
 
 const (
-	AlertNotificationSkipped AlertNotificationStatus = "skipped"
+	AlertNotificationSkipped  AlertNotificationStatus = "skipped"
 	AlertNotificationRecorded AlertNotificationStatus = "recorded"
 )
 
@@ -521,31 +521,74 @@ const (
 	NodeDraining NodeStatus = "draining"
 )
 
+type NodeAuthMode string
+
+const (
+	NodeAuthPassword   NodeAuthMode = "password"
+	NodeAuthPrivateKey NodeAuthMode = "private_key"
+)
+
 type ClusterNode struct {
-	ID              string     `json:"id"`
-	Name            string     `json:"name"`
-	Endpoint        string     `json:"endpoint"`
-	Zone            string     `json:"zone"`
-	Status          NodeStatus `json:"status"`
-	Role            string     `json:"role"`
-	CPUPercent      int        `json:"cpuPercent"`
-	MemoryPercent   int        `json:"memoryPercent"`
-	RunningTasks    int        `json:"runningTasks"`
-	Capacity        int        `json:"capacity"`
-	LastHeartbeatAt string     `json:"lastHeartbeatAt"`
-	StartedAt       string     `json:"startedAt"`
-	UpdatedAt       string     `json:"updatedAt"`
+	ID              string       `json:"id"`
+	Name            string       `json:"name"`
+	Endpoint        string       `json:"endpoint"`
+	SSHPort         int          `json:"sshPort"`
+	SSHUser         string       `json:"sshUser"`
+	AuthMode        NodeAuthMode `json:"authMode"`
+	InstallDir      string       `json:"installDir"`
+	Version         string       `json:"version"`
+	Zone            string       `json:"zone"`
+	Status          NodeStatus   `json:"status"`
+	Role            string       `json:"role"`
+	CPUPercent      int          `json:"cpuPercent"`
+	MemoryPercent   int          `json:"memoryPercent"`
+	RunningTasks    int          `json:"runningTasks"`
+	Capacity        int          `json:"capacity"`
+	LastHeartbeatAt string       `json:"lastHeartbeatAt"`
+	StartedAt       string       `json:"startedAt"`
+	UpdatedAt       string       `json:"updatedAt"`
 }
 
 type ClusterNodeInput struct {
 	ID            string `json:"id,omitempty"`
 	Name          string `json:"name"`
 	Endpoint      string `json:"endpoint"`
+	SSHPort       int    `json:"sshPort,omitempty"`
+	SSHUser       string `json:"sshUser,omitempty"`
+	AuthMode      string `json:"authMode,omitempty"`
+	Password      string `json:"password,omitempty"`
+	PrivateKey    string `json:"privateKey,omitempty"`
+	InstallDir    string `json:"installDir,omitempty"`
+	Version       string `json:"version,omitempty"`
 	Zone          string `json:"zone,omitempty"`
 	Role          string `json:"role,omitempty"`
 	Capacity      int    `json:"capacity,omitempty"`
 	CPUPercent    int    `json:"cpuPercent,omitempty"`
 	MemoryPercent int    `json:"memoryPercent,omitempty"`
+}
+
+type NodeConnectionTestResult struct {
+	Success   bool   `json:"success"`
+	Message   string `json:"message"`
+	CheckedAt string `json:"checkedAt"`
+	LatencyMS int    `json:"latencyMs"`
+}
+
+type NodeOperationStep struct {
+	Key    string `json:"key"`
+	Label  string `json:"label"`
+	Status string `json:"status"`
+	Detail string `json:"detail"`
+}
+
+type NodeOperationResult struct {
+	Action        string              `json:"action"`
+	Success       bool                `json:"success"`
+	Message       string              `json:"message"`
+	FinishedAt    string              `json:"finishedAt"`
+	Node          *ClusterNode        `json:"node,omitempty"`
+	RemovedNodeID string              `json:"removedNodeId,omitempty"`
+	Steps         []NodeOperationStep `json:"steps"`
 }
 
 type TaskLease struct {

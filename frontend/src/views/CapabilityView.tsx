@@ -179,7 +179,6 @@ export function CapabilityView({
   const latestSubscriptionJobId = mode === "subscription" ? latestJob?.id ?? "" : "";
   const pendingDDLs = structureDDLs.filter((statement) => statement.status === "pending");
   const pendingDiffs = qualityDiffs.filter((diff) => diff.status === "pending");
-  const pendingSubscriptionChanges = subscriptionChanges.filter((change) => change.status === "pending");
 
   useEffect(() => {
     setSelectedMode(config.modes[0]?.value || "");

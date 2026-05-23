@@ -14,7 +14,9 @@ import type {
   ErrorEvent,
   FailoverDrillReport,
   LoginResponse,
+  NodeConnectionTestResult,
   NodeDrainReport,
+  NodeOperationResult,
   OperationLog,
   PositionResetInput,
   QualityDiff,
@@ -279,6 +281,24 @@ export const api = {
       method: "POST",
       body: JSON.stringify(input)
     });
+  },
+  testNodeConnection(input: ClusterNodeInput) {
+    return request<NodeConnectionTestResult>("/cluster/nodes/test-connection", {
+      method: "POST",
+      body: JSON.stringify(input)
+    });
+  },
+  deployNode(input: ClusterNodeInput) {
+    return request<NodeOperationResult>("/cluster/nodes/deploy", {
+      method: "POST",
+      body: JSON.stringify(input)
+    });
+  },
+  upgradeNode(id: string) {
+    return request<NodeOperationResult>(`/cluster/nodes/${id}/upgrade`, { method: "POST" });
+  },
+  uninstallNode(id: string) {
+    return request<NodeOperationResult>(`/cluster/nodes/${id}/uninstall`, { method: "POST" });
   },
   nodeAction(id: string, action: "online" | "offline" | "heartbeat") {
     return request<ClusterSnapshot | unknown>(`/cluster/nodes/${id}/${action}`, { method: "POST" });

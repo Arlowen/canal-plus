@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -541,7 +542,7 @@ func (s *Store) TransitionTask(id string, action string) (SyncTask, bool, error)
 		timestamp := now()
 		switch action {
 		case "start", "resume":
-			if task.Strategy.InitMode == "full_then_incremental" && runtime.FullSyncedRows < runtime.FullTotalRows {
+			if task.Strategy.InitMode != "incremental_only" && runtime.FullSyncedRows < runtime.FullTotalRows {
 				task.Status = TaskFullSyncing
 				runtime.Phase = "full"
 			} else {
@@ -744,6 +745,11 @@ func (s *Store) RegisterNode(input ClusterNodeInput) (ClusterNode, bool, error) 
 		node := &s.data.Nodes[index]
 		node.Name = strings.TrimSpace(input.Name)
 		node.Endpoint = strings.TrimSpace(input.Endpoint)
+		node.SSHPort = normalizeNodeSSHPort(input.SSHPort)
+		node.SSHUser = strings.TrimSpace(input.SSHUser)
+		node.AuthMode = normalizeNodeAuthMode(input.AuthMode)
+		node.InstallDir = valueOr(strings.TrimSpace(input.InstallDir), "/opt/canal-plus")
+		node.Version = normalizeNodeVersion(input.Version)
 		node.Zone = valueOr(strings.TrimSpace(input.Zone), "default")
 		node.Role = valueOr(strings.TrimSpace(input.Role), "worker")
 		node.Capacity = normalizeNodeCapacity(input.Capacity)
@@ -765,6 +771,11 @@ func (s *Store) RegisterNode(input ClusterNodeInput) (ClusterNode, bool, error) 
 		ID:              nodeID,
 		Name:            strings.TrimSpace(input.Name),
 		Endpoint:        strings.TrimSpace(input.Endpoint),
+		SSHPort:         normalizeNodeSSHPort(input.SSHPort),
+		SSHUser:         strings.TrimSpace(input.SSHUser),
+		AuthMode:        normalizeNodeAuthMode(input.AuthMode),
+		InstallDir:      valueOr(strings.TrimSpace(input.InstallDir), "/opt/canal-plus"),
+		Version:         normalizeNodeVersion(input.Version),
 		Zone:            valueOr(strings.TrimSpace(input.Zone), "default"),
 		Status:          NodeOnline,
 		Role:            valueOr(strings.TrimSpace(input.Role), "worker"),
@@ -782,6 +793,155 @@ func (s *Store) RegisterNode(input ClusterNodeInput) (ClusterNode, bool, error) 
 		return ClusterNode{}, false, err
 	}
 	return cloneJSON(node), created, nil
+}
+
+func (s *Store) TestNodeConnection(input ClusterNodeInput) NodeConnectionTestResult {
+	message, success := simulateNodeConnection(input)
+	return NodeConnectionTestResult{
+		Success:   success,
+		Message:   message,
+		CheckedAt: now(),
+		LatencyMS: 18 + rand.Intn(42),
+	}
+}
+
+func (s *Store) DeployNode(input ClusterNodeInput) (NodeOperationResult, error) {
+	checked := s.TestNodeConnection(input)
+	steps := []NodeOperationStep{
+		{Key: "connect", Label: "连接机器", Status: "done", Detail: checked.Message},
+		{Key: "upload", Label: "上传安装包", Status: "done", Detail: "安装包已上传到目标机器"},
+		{Key: "install", Label: "安装依赖", Status: "done", Detail: "运行环境与依赖检查通过"},
+		{Key: "start", Label: "启动节点", Status: "done", Detail: "节点进程已启动"},
+		{Key: "register", Label: "注册节点", Status: "done", Detail: "节点已加入调度集群"},
+	}
+	if !checked.Success {
+		steps[0].Status = "failed"
+		return NodeOperationResult{
+			Action:     "deploy",
+			Success:    false,
+			Message:    "SSH 连接失败，请检查地址、端口和凭据",
+			FinishedAt: now(),
+			Steps:      steps[:1],
+		}, nil
+	}
+	node, _, err := s.RegisterNode(input)
+	if err != nil {
+		return NodeOperationResult{}, err
+	}
+	return NodeOperationResult{
+		Action:     "deploy",
+		Success:    true,
+		Message:    node.Name + " 已部署完成",
+		FinishedAt: now(),
+		Node:       &node,
+		Steps:      steps,
+	}, nil
+}
+
+func (s *Store) UpgradeNode(id string) (NodeOperationResult, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.ensureClusterLocked()
+	node := s.getNodeLocked(id)
+	if node == nil {
+		return NodeOperationResult{}, false, nil
+	}
+	steps := []NodeOperationStep{
+		{Key: "connect", Label: "连接机器", Status: "done", Detail: "已连接到目标节点"},
+		{Key: "backup", Label: "备份当前版本", Status: "done", Detail: "现有版本已完成备份"},
+		{Key: "replace", Label: "替换程序包", Status: "done", Detail: "新版本程序包已覆盖"},
+		{Key: "restart", Label: "重启节点", Status: "done", Detail: "节点已重启并恢复心跳"},
+	}
+	node.Version = nextNodeVersion(node.Version)
+	node.Status = NodeOnline
+	node.LastHeartbeatAt = now()
+	node.UpdatedAt = now()
+	s.logLocked("admin", "node_upgrade", "cluster_node", id, "升级节点："+node.Name+" 到 "+node.Version)
+	s.reconcileClusterLocked()
+	if err := s.saveLocked(); err != nil {
+		return NodeOperationResult{}, true, err
+	}
+	updated := cloneJSON(*node)
+	return NodeOperationResult{
+		Action:     "upgrade",
+		Success:    true,
+		Message:    updated.Name + " 已升级到 " + updated.Version,
+		FinishedAt: now(),
+		Node:       &updated,
+		Steps:      steps,
+	}, true, nil
+}
+
+func (s *Store) UninstallNode(id string) (NodeOperationResult, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.ensureClusterLocked()
+	node := s.getNodeLocked(id)
+	if node == nil {
+		return NodeOperationResult{}, false, nil
+	}
+
+	steps := []NodeOperationStep{
+		{Key: "connect", Label: "连接机器", Status: "done", Detail: "已连接到目标节点"},
+		{Key: "drain", Label: "迁移任务", Status: "done", Detail: "节点当前没有承载运行中任务"},
+		{Key: "stop", Label: "停止节点", Status: "done", Detail: "节点进程已停止"},
+		{Key: "cleanup", Label: "清理安装目录", Status: "done", Detail: "安装目录与服务文件已移除"},
+		{Key: "remove", Label: "注销节点", Status: "done", Detail: "节点已从集群中移除"},
+	}
+
+	before := s.clusterSnapshotLocked()
+	affectedBefore := leasesOnNode(before.Leases, id)
+	if len(affectedBefore) > 0 {
+		tasksByID := s.tasksByIDLocked()
+		node.Status = NodeDraining
+		node.UpdatedAt = now()
+		s.reconcileClusterLocked()
+		afterDrain := s.clusterSnapshotLocked()
+		handoffs, success := s.buildClusterHandoffsLocked(affectedBefore, afterDrain.Leases, tasksByID, id)
+		if !success {
+			steps[1].Status = "failed"
+			steps[1].Detail = "仍有任务无法迁移，请先增加在线节点容量"
+			return NodeOperationResult{
+				Action:     "uninstall",
+				Success:    false,
+				Message:    "卸载前仍有任务未迁移，请先扩容或停止相关任务",
+				FinishedAt: now(),
+				Node:       cloneNodePointer(node),
+				Steps:      steps[:2],
+			}, true, nil
+		}
+		if len(handoffs) > 0 {
+			steps[1].Detail = "已迁移 " + intToString(len(handoffs)) + " 个任务到其他在线节点"
+		}
+	}
+
+	for index := range s.data.Nodes {
+		if s.data.Nodes[index].ID != id {
+			continue
+		}
+		s.data.Nodes = append(s.data.Nodes[:index], s.data.Nodes[index+1:]...)
+		break
+	}
+	filteredLeases := make([]TaskLease, 0, len(s.data.TaskLeases))
+	for _, lease := range s.data.TaskLeases {
+		if lease.NodeID != id {
+			filteredLeases = append(filteredLeases, lease)
+		}
+	}
+	s.data.TaskLeases = filteredLeases
+	s.reconcileClusterLocked()
+	s.logLocked("admin", "node_uninstall", "cluster_node", id, "卸载节点："+node.Name)
+	if err := s.saveLocked(); err != nil {
+		return NodeOperationResult{}, true, err
+	}
+	return NodeOperationResult{
+		Action:        "uninstall",
+		Success:       true,
+		Message:       node.Name + " 已卸载",
+		FinishedAt:    now(),
+		RemovedNodeID: id,
+		Steps:         steps,
+	}, true, nil
 }
 
 func (s *Store) MarkNodeStatus(id string, status NodeStatus) (ClusterNode, bool, error) {
@@ -1962,11 +2122,67 @@ func validateClusterNodeInput(input ClusterNodeInput) error {
 	return nil
 }
 
+func simulateNodeConnection(input ClusterNodeInput) (string, bool) {
+	endpoint := strings.TrimSpace(strings.ToLower(input.Endpoint))
+	if endpoint == "" || strings.TrimSpace(input.SSHUser) == "" {
+		return "请先填写主机地址和 SSH 用户", false
+	}
+	if strings.Contains(endpoint, "fail") || strings.Contains(endpoint, "offline") || strings.Contains(endpoint, "unreachable") {
+		return "目标机器不可达，SSH 握手超时", false
+	}
+	if input.AuthMode == string(NodeAuthPrivateKey) && strings.TrimSpace(input.PrivateKey) == "" {
+		return "私钥为空，无法建立 SSH 连接", false
+	}
+	if input.AuthMode != string(NodeAuthPrivateKey) && strings.TrimSpace(input.Password) == "" {
+		return "密码为空，无法建立 SSH 连接", false
+	}
+	return "SSH 连接正常，可继续部署", true
+}
+
 func normalizeNodeCapacity(capacity int) int {
 	if capacity <= 0 {
 		return 4
 	}
 	return capacity
+}
+
+func normalizeNodeSSHPort(port int) int {
+	if port <= 0 {
+		return 22
+	}
+	return port
+}
+
+func normalizeNodeAuthMode(value string) NodeAuthMode {
+	if value == string(NodeAuthPrivateKey) {
+		return NodeAuthPrivateKey
+	}
+	return NodeAuthPassword
+}
+
+func normalizeNodeVersion(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "v1.0.0"
+	}
+	if strings.HasPrefix(value, "v") {
+		return value
+	}
+	return "v" + value
+}
+
+func nextNodeVersion(current string) string {
+	current = strings.TrimPrefix(strings.TrimSpace(current), "v")
+	parts := strings.Split(current, ".")
+	for len(parts) < 3 {
+		parts = append(parts, "0")
+	}
+	patch, err := strconv.Atoi(parts[2])
+	if err != nil {
+		return "v1.0.0"
+	}
+	parts[2] = intToString(patch + 1)
+	return "v" + strings.Join(parts[:3], ".")
 }
 
 func clampPercent(value int) int {
@@ -1977,6 +2193,14 @@ func clampPercent(value int) int {
 		return 100
 	}
 	return value
+}
+
+func cloneNodePointer(node *ClusterNode) *ClusterNode {
+	if node == nil {
+		return nil
+	}
+	cloned := cloneJSON(*node)
+	return &cloned
 }
 
 func validateAlertRuleInput(input AlertRuleInput) error {
@@ -2162,10 +2386,20 @@ func (s *Store) refreshRuntimeStatesLocked() {
 			runtime.UpdatedAt = timestamp
 			changed = true
 			if runtime.FullSyncedRows >= runtime.FullTotalRows {
-				task.Status = TaskIncrementalRunning
 				task.UpdatedAt = timestamp
-				runtime.Phase = "incremental"
-				runtime.EventsPerSecond = 90 + rand.Intn(80)
+				if task.Strategy.InitMode == "full_only" {
+					task.Status = TaskStopped
+					runtime.Phase = "stopped"
+					runtime.EventsPerSecond = 0
+					runtime.NodeID = ""
+					runtime.LeaseExpiresAt = ""
+					s.removeLeaseLocked(task.ID)
+					s.recordTaskCheckpointLocked(*runtime, "full_completed", "")
+				} else {
+					task.Status = TaskIncrementalRunning
+					runtime.Phase = "incremental"
+					runtime.EventsPerSecond = 90 + rand.Intn(80)
+				}
 			}
 			s.recordTaskCheckpointLocked(*runtime, "runtime_tick", "")
 		case TaskIncrementalRunning:
