@@ -341,6 +341,35 @@ type AlertRuleEvaluation struct {
 	UpdatedAt       string   `json:"updatedAt"`
 }
 
+type AlertEventStatus string
+
+const (
+	AlertEventTriggered AlertEventStatus = "triggered"
+	AlertEventRecovered AlertEventStatus = "recovered"
+)
+
+type AlertNotificationStatus string
+
+const (
+	AlertNotificationSkipped AlertNotificationStatus = "skipped"
+	AlertNotificationRecorded AlertNotificationStatus = "recorded"
+)
+
+type AlertEvent struct {
+	ID                 string                  `json:"id"`
+	RuleID             string                  `json:"ruleId"`
+	RuleName           string                  `json:"ruleName"`
+	Status             AlertEventStatus        `json:"status"`
+	MatchedTasks       int                     `json:"matchedTasks"`
+	MaxDelaySeconds    int                     `json:"maxDelaySeconds"`
+	PendingErrors      int                     `json:"pendingErrors"`
+	Reasons            []string                `json:"reasons"`
+	NotificationStatus AlertNotificationStatus `json:"notificationStatus"`
+	NotificationTarget string                  `json:"notificationTarget,omitempty"`
+	Message            string                  `json:"message"`
+	CreatedAt          string                  `json:"createdAt"`
+}
+
 type CapabilityJobType string
 
 const (
@@ -595,6 +624,7 @@ type DatabaseShape struct {
 	ErrorEvents         []ErrorEvent         `json:"errorEvents"`
 	OperationLogs       []OperationLog       `json:"operationLogs"`
 	AlertRules          []AlertRule          `json:"alertRules"`
+	AlertEvents         []AlertEvent         `json:"alertEvents"`
 	CapabilityJobs      []CapabilityJob      `json:"capabilityJobs"`
 	Nodes               []ClusterNode        `json:"nodes"`
 	TaskLeases          []TaskLease          `json:"taskLeases"`

@@ -34,6 +34,7 @@ import { SettingsView } from "./views/SettingsView";
 import { TaskView } from "./views/TaskView";
 import type {
   AlertRule,
+  AlertEvent,
   AlertRuleEvaluation,
   CapabilityJob,
   DashboardSummary,
@@ -93,6 +94,7 @@ function App() {
   const [cluster, setCluster] = useState<ClusterSnapshot | null>(null);
   const [capabilityJobs, setCapabilityJobs] = useState<CapabilityJob[]>([]);
   const [alertRules, setAlertRules] = useState<AlertRule[]>([]);
+  const [alertEvents, setAlertEvents] = useState<AlertEvent[]>([]);
   const [alertEvaluations, setAlertEvaluations] = useState<AlertRuleEvaluation[]>([]);
   const [loading, setLoading] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
@@ -104,7 +106,7 @@ function App() {
     if (!quiet) setLoading(true);
     setError(null);
     try {
-      const [nextSummary, nextDatasources, nextTasks, nextErrors, nextLogs, nextCluster, nextCapabilityJobs, nextAlertRules, nextAlertEvaluations] = await Promise.all([
+      const [nextSummary, nextDatasources, nextTasks, nextErrors, nextLogs, nextCluster, nextCapabilityJobs, nextAlertRules, nextAlertState] = await Promise.all([
         api.summary(),
         api.datasources(),
         api.tasks(),
@@ -113,7 +115,10 @@ function App() {
         api.cluster(),
         api.capabilityJobs(),
         api.alertRules(),
-        api.alertEvaluations()
+        api.alertEvaluations().then(async (evaluations) => ({
+          evaluations,
+          events: await api.alertEvents()
+        }))
       ]);
       setSummary(nextSummary);
       setDatasources(nextDatasources);
@@ -123,7 +128,8 @@ function App() {
       setCluster(nextCluster);
       setCapabilityJobs(nextCapabilityJobs);
       setAlertRules(nextAlertRules);
-      setAlertEvaluations(nextAlertEvaluations);
+      setAlertEvents(nextAlertState.events);
+      setAlertEvaluations(nextAlertState.evaluations);
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "加载失败");
     } finally {
@@ -302,7 +308,7 @@ function App() {
                 <OperationLogsView logs={logs} />
               )}
               {view === "settings" && (
-                <SettingsView alertRules={alertRules} evaluations={alertEvaluations} tasks={tasks} canManage={canManage} onChanged={() => refresh(true)} />
+                <SettingsView alertRules={alertRules} alertEvents={alertEvents} evaluations={alertEvaluations} tasks={tasks} canManage={canManage} onChanged={() => refresh(true)} />
               )}
             </>
           )}

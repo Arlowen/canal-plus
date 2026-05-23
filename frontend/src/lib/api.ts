@@ -1,5 +1,6 @@
 import type {
   AlertRule,
+  AlertEvent,
   AlertRuleEvaluation,
   AlertRuleInput,
   CapabilityJob,
@@ -209,6 +210,10 @@ export const api = {
   },
   alertEvaluations() {
     return request<AlertRuleEvaluation[]>("/alert-rules/evaluations");
+  },
+  alertEvents(ruleId?: string) {
+    const query = ruleId ? `?ruleId=${encodeURIComponent(ruleId)}` : "";
+    return request<AlertEvent[]>(`/alert-rules/events${query}`);
   },
   createAlertRule(input: AlertRuleInput) {
     return request<AlertRule>("/alert-rules", {

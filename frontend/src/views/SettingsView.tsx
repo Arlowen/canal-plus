@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
-import { BellRinging, FileText, Plus, Trash } from "@phosphor-icons/react";
+import { BellRinging, CheckCircle, FileText, Plus, Trash, WarningCircle } from "@phosphor-icons/react";
 import { PermissionNotice } from "../components/PermissionNotice";
 import { api } from "../lib/api";
-import { cx } from "../lib/format";
-import type { AlertRule, AlertRuleEvaluation, AlertRuleInput, SyncTask } from "../types/api";
+import { cx, formatDate } from "../lib/format";
+import type { AlertEvent, AlertRule, AlertRuleEvaluation, AlertRuleInput, SyncTask } from "../types/api";
 
 function emptyRule(): AlertRuleInput {
   return {
@@ -39,14 +39,34 @@ function EvaluationBadge({ evaluation }: { evaluation?: AlertRuleEvaluation }) {
   );
 }
 
+function AlertEventBadge({ event }: { event: AlertEvent }) {
+  const triggered = event.status === "triggered";
+  return (
+    <span className={cx(
+      "inline-flex items-center gap-1 rounded-full border px-2 py-1 text-xs",
+      triggered ? "border-red-200 bg-red-50 text-red-700" : "border-emerald-200 bg-emerald-50 text-emerald-700"
+    )}>
+      {triggered ? <WarningCircle size={13} /> : <CheckCircle size={13} />}
+      {triggered ? "已触发" : "已恢复"}
+    </span>
+  );
+}
+
+function notificationText(event: AlertEvent) {
+  if (event.notificationStatus === "recorded") return "Webhook 已记录";
+  return "未配置通知";
+}
+
 export function SettingsView({
   alertRules,
+  alertEvents,
   evaluations,
   tasks,
   canManage,
   onChanged
 }: {
   alertRules: AlertRule[];
+  alertEvents: AlertEvent[];
   evaluations: AlertRuleEvaluation[];
   tasks: SyncTask[];
   canManage: boolean;
@@ -62,6 +82,10 @@ export function SettingsView({
   const editingRuleDelayThreshold = editingRule?.delayThresholdSeconds ?? 300;
   const editingRuleErrorThreshold = editingRule?.errorThreshold ?? 1;
   const editingRuleWebhook = editingRule?.webhookUrl ?? "";
+  const visibleAlertEvents = useMemo(
+    () => editingRuleId ? alertEvents.filter((event) => event.ruleId === editingRuleId).slice(0, 5) : alertEvents.slice(0, 5),
+    [alertEvents, editingRuleId]
+  );
   const [form, setForm] = useState<AlertRuleInput>(emptyRule());
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -260,6 +284,37 @@ export function SettingsView({
                   tasks {evaluation.matchedTasks} / delay {evaluation.maxDelaySeconds}s / errors {evaluation.pendingErrors}
                 </div>
                 {evaluation.reasons.length > 0 && <div className="mt-1 text-xs text-red-700">{evaluation.reasons.join("，")}</div>}
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <section className="rounded-xl border border-line bg-white p-5 shadow-panel">
+          <div className="flex items-center gap-2 text-coal">
+            <BellRinging size={20} />
+            <h2 className="font-semibold tracking-tight">告警事件</h2>
+          </div>
+          <div className="mt-1 text-sm text-muted">触发、恢复和通知记录</div>
+          <div className="mt-4 space-y-3">
+            {visibleAlertEvents.length === 0 ? (
+              <div className="rounded-lg border border-dashed border-line bg-[#fcfcf8] p-4 text-center text-sm text-muted">暂无告警事件</div>
+            ) : visibleAlertEvents.map((event) => (
+              <div key={event.id} className="rounded-lg border border-line bg-[#fcfcf8] p-3 text-sm">
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <div>
+                    <div className="font-medium text-coal">{event.ruleName}</div>
+                    <div className="mt-1 text-xs text-muted">{formatDate(event.createdAt)}</div>
+                  </div>
+                  <AlertEventBadge event={event} />
+                </div>
+                <div className="mt-3 rounded-lg border border-line bg-white p-3 text-xs text-zinc-600">
+                  <div>{event.message}</div>
+                  <div className="mt-2 font-mono">tasks {event.matchedTasks} / delay {event.maxDelaySeconds}s / errors {event.pendingErrors}</div>
+                </div>
+                <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted">
+                  <span>{notificationText(event)}</span>
+                  {event.notificationTarget && <span className="max-w-full truncate font-mono">{event.notificationTarget}</span>}
+                </div>
               </div>
             ))}
           </div>

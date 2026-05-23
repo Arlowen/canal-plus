@@ -258,6 +258,24 @@ export interface AlertRuleEvaluation {
   updatedAt: string;
 }
 
+export type AlertEventStatus = "triggered" | "recovered";
+export type AlertNotificationStatus = "skipped" | "recorded";
+
+export interface AlertEvent {
+  id: string;
+  ruleId: string;
+  ruleName: string;
+  status: AlertEventStatus;
+  matchedTasks: number;
+  maxDelaySeconds: number;
+  pendingErrors: number;
+  reasons: string[];
+  notificationStatus: AlertNotificationStatus;
+  notificationTarget?: string;
+  message: string;
+  createdAt: string;
+}
+
 export type CapabilityJobType = "structure" | "quality" | "subscription";
 export type CapabilityJobStatus = "draft" | "running" | "completed" | "failed";
 

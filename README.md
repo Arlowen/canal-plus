@@ -23,7 +23,7 @@ canal-plus/
 - 任务功能列表：支持修改运行参数、停止后重置 binlog 位点、导出任务配置包。
 - 任务运行剖面：在任务详情内聚合链路拓扑、node lease、接管次数、待处理错误和最近操作。
 - 运行监控：任务数量、异常数量、延迟、吞吐、binlog 位点、全量进度。
-- 告警规则：支持配置延迟阈值、错误阈值、任务范围、Webhook，并实时评估触发状态。
+- 告警规则：支持配置延迟阈值、错误阈值、任务范围、Webhook，并实时评估触发状态、沉淀触发/恢复事件和通知记录。
 - 分布式部署：内置 node 节点、任务 lease、后台 supervisor、心跳超时下线、任务自动接管、任务级故障演练/维护排空/重新均衡报告和 API。
 - Node 接入：支持通过控制台或 API 注册/更新 worker node，新节点上线后会参与 lease 调度并接管等待任务。
 - 产品模块：任务中心、结构迁移、数据校验订正、订阅变更、节点集群、错误中心、操作审计。
@@ -124,6 +124,7 @@ cp backend/.env.example backend/.env
 - `PUT /api/alert-rules/{id}`: 更新告警规则。
 - `DELETE /api/alert-rules/{id}`: 删除告警规则。
 - `GET /api/alert-rules/evaluations`: 查看每条规则当前是否触发。
+- `GET /api/alert-rules/events`: 查看告警触发、恢复和通知记录，可通过 `ruleId` 查询单条规则历史。
 
 ## 下一步建议
 

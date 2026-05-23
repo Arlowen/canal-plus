@@ -1138,6 +1138,7 @@ func TestAlertRuleCrudAndEvaluation(t *testing.T) {
 		Enabled:               &enabled,
 		DelayThresholdSeconds: 9999,
 		ErrorThreshold:        1,
+		WebhookURL:            "https://example.com/hook",
 	})
 	if err != nil {
 		t.Fatalf("CreateAlertRule(triggered) error = %v", err)
@@ -1155,6 +1156,34 @@ func TestAlertRuleCrudAndEvaluation(t *testing.T) {
 	}
 	if !found.Triggered || found.PendingErrors == 0 || len(found.Reasons) == 0 {
 		t.Fatalf("expected global error rule to trigger, got %#v", found)
+	}
+	events := store.AlertEvents(triggeredRule.ID)
+	if len(events) != 1 || events[0].Status != AlertEventTriggered {
+		t.Fatalf("expected one triggered alert event, got %#v", events)
+	}
+	if events[0].NotificationStatus != AlertNotificationRecorded || events[0].NotificationTarget == "" {
+		t.Fatalf("expected webhook notification to be marked recorded: %#v", events[0])
+	}
+	store.AlertRuleEvaluations()
+	events = store.AlertEvents(triggeredRule.ID)
+	if len(events) != 1 {
+		t.Fatalf("expected repeated evaluation to avoid duplicate events, got %#v", events)
+	}
+
+	_, ok, err = store.UpdateAlertRule(triggeredRule.ID, AlertRuleInput{
+		Name:                  "全局错误验证",
+		Enabled:               &enabled,
+		DelayThresholdSeconds: 9999,
+		ErrorThreshold:        999,
+		WebhookURL:            "https://example.com/hook",
+	})
+	if err != nil || !ok {
+		t.Fatalf("UpdateAlertRule(recover) ok %v err %v", ok, err)
+	}
+	store.AlertRuleEvaluations()
+	events = store.AlertEvents(triggeredRule.ID)
+	if len(events) != 2 || events[0].Status != AlertEventRecovered {
+		t.Fatalf("expected recovered alert event after thresholds clear, got %#v", events)
 	}
 }
 

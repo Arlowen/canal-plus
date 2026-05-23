@@ -931,7 +931,10 @@ func (s *Store) StartEmbeddedNodeHeartbeat(interval time.Duration) func() {
 	ticker := time.NewTicker(interval)
 	done := make(chan struct{})
 	var stopOnce sync.Once
+	var stopped sync.WaitGroup
+	stopped.Add(1)
 	go func() {
+		defer stopped.Done()
 		defer ticker.Stop()
 		for {
 			select {
@@ -945,6 +948,7 @@ func (s *Store) StartEmbeddedNodeHeartbeat(interval time.Duration) func() {
 	return func() {
 		stopOnce.Do(func() {
 			close(done)
+			stopped.Wait()
 		})
 	}
 }
@@ -956,7 +960,10 @@ func (s *Store) StartClusterSupervisor(interval time.Duration) func() {
 	ticker := time.NewTicker(interval)
 	done := make(chan struct{})
 	var stopOnce sync.Once
+	var stopped sync.WaitGroup
+	stopped.Add(1)
 	go func() {
+		defer stopped.Done()
 		defer ticker.Stop()
 		for {
 			select {
@@ -970,6 +977,7 @@ func (s *Store) StartClusterSupervisor(interval time.Duration) func() {
 	return func() {
 		stopOnce.Do(func() {
 			close(done)
+			stopped.Wait()
 		})
 	}
 }
@@ -1166,11 +1174,25 @@ func (s *Store) DeleteAlertRule(id string) (bool, error) {
 	return false, nil
 }
 
+func (s *Store) AlertEvents(ruleID string) []AlertEvent {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	events := make([]AlertEvent, 0, len(s.data.AlertEvents))
+	for _, event := range s.data.AlertEvents {
+		if ruleID == "" || event.RuleID == ruleID {
+			events = append(events, event)
+		}
+	}
+	sortAlertEvents(events)
+	return cloneJSON(firstN(events, 100))
+}
+
 func (s *Store) AlertRuleEvaluations() []AlertRuleEvaluation {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.reconcileClusterLocked()
 	s.refreshRuntimeStatesLocked()
+	timestamp := now()
 	runtimeByTask := map[string]TaskRuntimeState{}
 	for _, runtime := range s.data.RuntimeStates {
 		runtimeByTask[runtime.TaskID] = runtime
@@ -1186,7 +1208,7 @@ func (s *Store) AlertRuleEvaluations() []AlertRuleEvaluation {
 		evaluation := AlertRuleEvaluation{
 			RuleID:    rule.ID,
 			RuleName:  rule.Name,
-			UpdatedAt: now(),
+			UpdatedAt: timestamp,
 			Reasons:   []string{},
 		}
 		if !rule.Enabled {
@@ -1214,7 +1236,94 @@ func (s *Store) AlertRuleEvaluations() []AlertRuleEvaluation {
 		}
 		evaluations = append(evaluations, evaluation)
 	}
+	if s.recordAlertEventsLocked(evaluations, timestamp) {
+		_ = s.saveLocked()
+	}
 	return cloneJSON(evaluations)
+}
+
+func (s *Store) recordAlertEventsLocked(evaluations []AlertRuleEvaluation, timestamp string) bool {
+	changed := false
+	for _, evaluation := range evaluations {
+		rule := s.alertRuleByIDLocked(evaluation.RuleID)
+		if rule == nil {
+			continue
+		}
+		lastEvent := s.lastAlertEventLocked(evaluation.RuleID)
+		if evaluation.Triggered {
+			if lastEvent != nil && lastEvent.Status == AlertEventTriggered {
+				continue
+			}
+			event := buildAlertEvent(*rule, evaluation, AlertEventTriggered, timestamp)
+			s.data.AlertEvents = append([]AlertEvent{event}, s.data.AlertEvents...)
+			s.logLocked("system", "alert_triggered", "alert_rule", rule.ID, "告警触发："+rule.Name+"，"+strings.Join(evaluation.Reasons, "，"))
+			changed = true
+			continue
+		}
+		if lastEvent == nil || lastEvent.Status != AlertEventTriggered {
+			continue
+		}
+		event := buildAlertEvent(*rule, evaluation, AlertEventRecovered, timestamp)
+		s.data.AlertEvents = append([]AlertEvent{event}, s.data.AlertEvents...)
+		s.logLocked("system", "alert_recovered", "alert_rule", rule.ID, "告警恢复："+rule.Name)
+		changed = true
+	}
+	if len(s.data.AlertEvents) > 300 {
+		s.data.AlertEvents = s.data.AlertEvents[:300]
+	}
+	return changed
+}
+
+func buildAlertEvent(rule AlertRule, evaluation AlertRuleEvaluation, status AlertEventStatus, timestamp string) AlertEvent {
+	notificationStatus := AlertNotificationSkipped
+	message := "告警已恢复"
+	if status == AlertEventTriggered {
+		message = strings.Join(evaluation.Reasons, "，")
+		if strings.TrimSpace(rule.WebhookURL) != "" {
+			notificationStatus = AlertNotificationRecorded
+		}
+	}
+	if message == "" {
+		message = "规则当前处于正常状态"
+	}
+	return AlertEvent{
+		ID:                 newID(),
+		RuleID:             rule.ID,
+		RuleName:           rule.Name,
+		Status:             status,
+		MatchedTasks:       evaluation.MatchedTasks,
+		MaxDelaySeconds:    evaluation.MaxDelaySeconds,
+		PendingErrors:      evaluation.PendingErrors,
+		Reasons:            append([]string{}, evaluation.Reasons...),
+		NotificationStatus: notificationStatus,
+		NotificationTarget: rule.WebhookURL,
+		Message:            message,
+		CreatedAt:          timestamp,
+	}
+}
+
+func (s *Store) alertRuleByIDLocked(id string) *AlertRule {
+	for index := range s.data.AlertRules {
+		if s.data.AlertRules[index].ID == id {
+			return &s.data.AlertRules[index]
+		}
+	}
+	return nil
+}
+
+func (s *Store) lastAlertEventLocked(ruleID string) *AlertEvent {
+	for index := range s.data.AlertEvents {
+		if s.data.AlertEvents[index].RuleID == ruleID {
+			return &s.data.AlertEvents[index]
+		}
+	}
+	return nil
+}
+
+func sortAlertEvents(events []AlertEvent) {
+	sort.SliceStable(events, func(left, right int) bool {
+		return events[left].CreatedAt > events[right].CreatedAt
+	})
 }
 
 func (s *Store) CapabilityJobs(jobType CapabilityJobType) []CapabilityJob {

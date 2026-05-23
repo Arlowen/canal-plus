@@ -798,6 +798,8 @@ func (s *Server) handleAlertRules(response http.ResponseWriter, request *http.Re
 		writeJSON(response, http.StatusCreated, rule)
 	case len(parts) == 2 && parts[1] == "evaluations" && request.Method == http.MethodGet:
 		writeJSON(response, http.StatusOK, s.store.AlertRuleEvaluations())
+	case len(parts) == 2 && parts[1] == "events" && request.Method == http.MethodGet:
+		writeJSON(response, http.StatusOK, s.store.AlertEvents(request.URL.Query().Get("ruleId")))
 	case len(parts) == 2 && request.Method == http.MethodPut:
 		var input AlertRuleInput
 		if err := decodeJSON(request, &input); err != nil {
