@@ -43,8 +43,7 @@ import type {
   User
 } from "./types/api";
 
-type View = "tasks" | "wizard" | "errors";
-type NavView = Exclude<View, "wizard">;
+type View = "workspace" | "wizard";
 
 const defaultStrategy: SyncStrategy = {
   initMode: "full_then_incremental",
@@ -60,21 +59,17 @@ const defaultStrategy: SyncStrategy = {
   retryIntervalSeconds: 10
 };
 
-const navItems: Array<{ id: NavView; label: string; icon: typeof Stack }> = [
-  { id: "tasks", label: "任务", icon: FlowArrow },
-  { id: "errors", label: "问题", icon: WarningCircle }
-];
-
-const viewTitles: Record<View, string> = {
+const workspaceTitles = {
   tasks: "任务",
-  wizard: "新建任务",
-  errors: "问题"
-};
+  capabilities: "能力",
+  resources: "资源",
+  issues: "问题"
+} as const;
 
 function App() {
   const [tokenState, setTokenState] = useState(getToken());
   const [user, setUser] = useState<User | null>(null);
-  const [view, setView] = useState<View>("tasks");
+  const [view, setView] = useState<View>("workspace");
   const [datasources, setDatasources] = useState<Datasource[]>([]);
   const [tasks, setTasks] = useState<SyncTask[]>([]);
   const [errors, setErrors] = useState<ErrorEvent[]>([]);
@@ -82,7 +77,7 @@ function App() {
   const [cluster, setCluster] = useState<ClusterSnapshot | null>(null);
   const [capabilityJobs, setCapabilityJobs] = useState<CapabilityJob[]>([]);
   const [capabilityMode, setCapabilityMode] = useState<CapabilityJobType>("structure");
-  const [taskMode, setTaskMode] = useState<"tasks" | "capabilities" | "resources">("tasks");
+  const [workspaceMode, setWorkspaceMode] = useState<"tasks" | "capabilities" | "resources" | "issues">("tasks");
   const [resourceMode, setResourceMode] = useState<"datasources" | "cluster">("datasources");
   const [issueMode, setIssueMode] = useState<"errors" | "alerts" | "logs">("errors");
   const [alertRules, setAlertRules] = useState<AlertRule[]>([]);
@@ -155,7 +150,8 @@ function App() {
     setToken(response.token);
     setTokenState(response.token);
     setUser(response.user);
-    setView("tasks");
+    setView("workspace");
+    setWorkspaceMode("tasks");
     setNotice("登录成功");
   };
 
@@ -183,116 +179,75 @@ function App() {
 
   return (
     <div className="min-h-[100dvh] bg-mist text-ink">
-      <div className="mx-auto grid min-h-[100dvh] max-w-[1500px] grid-cols-1 lg:grid-cols-[260px_minmax(0,1fr)]">
-        <aside className="border-b border-line bg-[#fdfdf9] px-4 py-4 lg:border-b-0 lg:border-r lg:px-5 lg:py-6">
-          <div>
-            <div className="text-xl font-semibold tracking-tight text-coal">canal-plus</div>
+      <div className="mx-auto min-h-[100dvh] max-w-[1500px] px-4 py-5 md:px-6 lg:px-8 lg:py-7">
+        <div className="text-xl font-semibold tracking-tight text-coal">canal-plus</div>
+        <Header title={view === "wizard" ? "新建任务" : workspaceTitles[workspaceMode]} user={user} onRefresh={() => refresh()} onLogout={handleLogout} />
+
+        {notice && (
+          <div className="mb-4 flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+            <CheckCircle size={18} />
+            <span>{notice}</span>
           </div>
+        )}
 
-          <nav className="mt-5 flex gap-2 overflow-x-auto lg:block lg:space-y-1">
-            {navItems.map((item) => {
-              const Icon = item.icon;
-              return (
-                <button
-                  key={item.id}
-                  onClick={() => setView(item.id)}
-                  className={cx(
-                    "inline-flex min-w-max items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition active:scale-[0.98] lg:w-full",
-                    view === item.id
-                      ? "bg-coal text-white shadow-panel"
-                      : "text-zinc-600 hover:bg-zinc-100 hover:text-coal"
-                  )}
-                >
-                  <Icon size={18} />
-                  <span>{item.label}</span>
-                </button>
-              );
-            })}
-          </nav>
-        </aside>
+        {error && (
+          <div className="mb-4 flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            <XCircle size={18} />
+            <span>{error}</span>
+          </div>
+        )}
 
-        <main className="min-w-0 px-4 py-5 md:px-6 lg:px-8 lg:py-7">
-          <Header view={view} user={user} onRefresh={() => refresh()} onLogout={handleLogout} />
-
-          {notice && (
-            <div className="mb-4 flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
-              <CheckCircle size={18} />
-              <span>{notice}</span>
-            </div>
-          )}
-
-          {error && (
-            <div className="mb-4 flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-              <XCircle size={18} />
-              <span>{error}</span>
-            </div>
-          )}
-
-          {loading && tasks.length === 0 && datasources.length === 0 && errors.length === 0 && logs.length === 0 && !cluster ? (
-            <SkeletonPage />
-          ) : (
-            <>
-              {view === "tasks" && (
-                <TaskWorkspace
-                  mode={taskMode}
-                  onModeChange={setTaskMode}
-                  resourceMode={resourceMode}
-                  onResourceModeChange={setResourceMode}
-                  tasks={tasks}
-                  errors={errors}
-                  logs={logs}
-                  cluster={cluster}
-                  datasources={datasources}
-                  canManage={canManage}
-                  onAction={handleTaskAction}
-                  onCreate={() => setView("wizard")}
-                  capabilityMode={capabilityMode}
-                  onCapabilityModeChange={setCapabilityMode}
-                  capabilityJobs={capabilityJobs}
-                  onChanged={() => refresh(true)}
-                />
-              )}
-              {view === "wizard" && (
-                canManage ? (
-                  <TaskWizard datasources={datasources} onCreated={() => {
-                    setNotice("同步任务已创建");
-                    setView("tasks");
-                    refresh(true);
-                  }} />
-                ) : (
-                  <PermissionNotice
-                    title="新建任务需要管理员"
-                    description="运维操作员可以启停任务、处理错误和查看运行态；新增同步链路会改变配置版本，需要管理员执行。"
-                  />
-                )
-              )}
-              {view === "errors" && (
-                <IssueCenter
-                  mode={issueMode}
-                  onModeChange={setIssueMode}
-                  errors={errors}
-                  tasks={tasks}
-                  logs={logs}
-                  alertRules={alertRules}
-                  alertEvents={alertEvents}
-                  alertEvaluations={alertEvaluations}
-                  canManage={canManage}
-                  onChanged={() => refresh(true)}
-                />
-              )}
-            </>
-          )}
-        </main>
+        {loading && tasks.length === 0 && datasources.length === 0 && errors.length === 0 && logs.length === 0 && !cluster ? (
+          <SkeletonPage />
+        ) : view === "workspace" ? (
+          <Workspace
+            mode={workspaceMode}
+            onModeChange={setWorkspaceMode}
+            resourceMode={resourceMode}
+            onResourceModeChange={setResourceMode}
+            issueMode={issueMode}
+            onIssueModeChange={setIssueMode}
+            tasks={tasks}
+            errors={errors}
+            logs={logs}
+            cluster={cluster}
+            datasources={datasources}
+            canManage={canManage}
+            onAction={handleTaskAction}
+            onCreate={() => setView("wizard")}
+            capabilityMode={capabilityMode}
+            onCapabilityModeChange={setCapabilityMode}
+            capabilityJobs={capabilityJobs}
+            alertRules={alertRules}
+            alertEvents={alertEvents}
+            alertEvaluations={alertEvaluations}
+            onChanged={() => refresh(true)}
+          />
+        ) : canManage ? (
+          <TaskWizard datasources={datasources} onCreated={() => {
+            setNotice("同步任务已创建");
+            setView("workspace");
+            setWorkspaceMode("tasks");
+            refresh(true);
+          }} />
+        ) : (
+          <PermissionNotice
+            title="新建任务需要管理员"
+            description="运维操作员可以启停任务、处理错误和查看运行态；新增同步链路会改变配置版本，需要管理员执行。"
+          />
+        )}
       </div>
     </div>
   );
 }
 
-function TaskWorkspace({
+function Workspace({
   mode,
   onModeChange,
   resourceMode,
   onResourceModeChange,
+  issueMode,
+  onIssueModeChange,
   tasks,
   errors,
   logs,
@@ -304,12 +259,17 @@ function TaskWorkspace({
   capabilityMode,
   onCapabilityModeChange,
   capabilityJobs,
+  alertRules,
+  alertEvents,
+  alertEvaluations,
   onChanged
 }: {
-  mode: "tasks" | "capabilities" | "resources";
-  onModeChange: (mode: "tasks" | "capabilities" | "resources") => void;
+  mode: "tasks" | "capabilities" | "resources" | "issues";
+  onModeChange: (mode: "tasks" | "capabilities" | "resources" | "issues") => void;
   resourceMode: "datasources" | "cluster";
   onResourceModeChange: (mode: "datasources" | "cluster") => void;
+  issueMode: "errors" | "alerts" | "logs";
+  onIssueModeChange: (mode: "errors" | "alerts" | "logs") => void;
   tasks: SyncTask[];
   errors: ErrorEvent[];
   logs: OperationLog[];
@@ -321,6 +281,9 @@ function TaskWorkspace({
   capabilityMode: CapabilityJobType;
   onCapabilityModeChange: (mode: CapabilityJobType) => void;
   capabilityJobs: CapabilityJob[];
+  alertRules: AlertRule[];
+  alertEvents: AlertEvent[];
+  alertEvaluations: AlertRuleEvaluation[];
   onChanged: () => Promise<void> | void;
 }) {
   return (
@@ -353,6 +316,15 @@ function TaskWorkspace({
         >
           资源
         </button>
+        <button
+          onClick={() => onModeChange("issues")}
+          className={cx(
+            "inline-flex items-center justify-center rounded-full border px-3 py-1.5 text-sm transition active:scale-[0.98]",
+            mode === "issues" ? "border-coal bg-coal text-white" : "border-line bg-white text-zinc-600 hover:bg-zinc-50"
+          )}
+        >
+          问题
+        </button>
       </div>
 
       {mode === "tasks" ? (
@@ -375,13 +347,26 @@ function TaskWorkspace({
           canManage={canManage}
           onChanged={onChanged}
         />
-      ) : (
+      ) : mode === "resources" ? (
         <ResourceCenter
           mode={resourceMode}
           onModeChange={onResourceModeChange}
           datasources={datasources}
           cluster={cluster}
           tasks={tasks}
+          canManage={canManage}
+          onChanged={onChanged}
+        />
+      ) : (
+        <IssueCenter
+          mode={issueMode}
+          onModeChange={onIssueModeChange}
+          errors={errors}
+          tasks={tasks}
+          logs={logs}
+          alertRules={alertRules}
+          alertEvents={alertEvents}
+          alertEvaluations={alertEvaluations}
           canManage={canManage}
           onChanged={onChanged}
         />
@@ -513,17 +498,16 @@ function IssueCenter({
 }
 
 function Header({
-  view,
+  title,
   user,
   onRefresh,
   onLogout
 }: {
-  view: View;
+  title: string;
   user: User | null;
   onRefresh: () => void;
   onLogout: () => void;
 }) {
-  const title = viewTitles[view] || "控制台";
   return (
     <div className="mb-6 flex flex-col gap-4 border-b border-line pb-5 md:flex-row md:items-center md:justify-between">
       <div>
