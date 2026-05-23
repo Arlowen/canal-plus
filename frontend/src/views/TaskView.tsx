@@ -206,7 +206,7 @@ function ActionButton({
 type TaskTool = "params" | "position" | "export" | "versions" | "checkpoints" | "lifecycle";
 
 function TaskFunctionPanel({ task, canManage, onChanged }: { task: SyncTask; canManage: boolean; onChanged: () => Promise<void> | void }) {
-  const [activeTool, setActiveTool] = useState<TaskTool>(canManage ? "params" : "export");
+  const [activeTool, setActiveTool] = useState<TaskTool>("export");
   const [params, setParams] = useState({
     batchSize: task.strategy.batchSize,
     retryTimes: task.strategy.retryTimes,
@@ -231,7 +231,6 @@ function TaskFunctionPanel({ task, canManage, onChanged }: { task: SyncTask; can
   const canRerun = task.status === "stopped" || task.status === "failed";
   const canDelete = task.status === "stopped" || task.status === "draft";
   const latestCheckpoint = checkpoints[0];
-  const latestTakeover = checkpoints.find((checkpoint) => checkpoint.reason === "failover_takeover" || checkpoint.previousNodeId);
   const currentCheckpointPosition = latestCheckpoint
     ? `${latestCheckpoint.binlogFile}:${formatNumber(latestCheckpoint.binlogPosition)}`
     : task.runtime
@@ -380,28 +379,14 @@ function TaskFunctionPanel({ task, canManage, onChanged }: { task: SyncTask; can
         <span className="rounded-full border border-line bg-white px-2 py-1 text-xs text-muted">v{task.configVersion}</span>
       </div>
 
-      <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
-        {toolItems.map((item) => {
-          const Icon = item.icon;
-          const disabled = item.adminOnly && !canManage;
-          return (
-            <button
-              key={item.id}
-              onClick={() => {
-                if (!disabled) setActiveTool(item.id);
-              }}
-              disabled={disabled}
-              className={cx(
-                "inline-flex items-center justify-center gap-2 rounded-lg border px-2 py-2 text-sm transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45",
-                activeTool === item.id ? "border-coal bg-coal text-white" : "border-line bg-white text-zinc-700 hover:bg-zinc-50"
-              )}
-            >
-              <Icon size={16} />
-              {item.label}
-            </button>
-          );
-        })}
-      </div>
+      <label className="mt-4 block">
+        <span className="mb-2 block text-xs font-medium text-zinc-700">操作</span>
+        <select className="control" value={activeTool} onChange={(event) => setActiveTool(event.target.value as TaskTool)}>
+          {toolItems.filter((item) => !item.adminOnly || canManage).map((item) => (
+            <option key={item.id} value={item.id}>{item.label}</option>
+          ))}
+        </select>
+      </label>
 
       {!canManage && (
         <div className="mt-4">
@@ -512,11 +497,6 @@ function TaskFunctionPanel({ task, canManage, onChanged }: { task: SyncTask; can
 
       {activeTool === "versions" && (
         <div className="mt-4 grid gap-3">
-          <div className="grid gap-3 sm:grid-cols-3">
-            <Info label="当前版本" value={`v${task.configVersion}`} mono />
-            <Info label="历史快照" value={`${revisions.length} 条`} mono />
-            <Info label="最近变更" value={formatDate(revisions[0]?.createdAt)} />
-          </div>
           {loadingRevisions ? (
             <div className="rounded-lg border border-line bg-white p-4 text-sm text-muted">正在读取版本记录</div>
           ) : revisions.length === 0 ? (
@@ -565,10 +545,8 @@ function TaskFunctionPanel({ task, canManage, onChanged }: { task: SyncTask; can
 
       {activeTool === "checkpoints" && (
         <div className="mt-4 grid gap-3">
-          <div className="grid gap-3 sm:grid-cols-3">
-            <Info label="当前恢复点" value={currentCheckpointPosition} mono />
-            <Info label="检查点" value={`${checkpoints.length} 条`} mono />
-            <Info label="最近接管" value={formatDate(latestTakeover?.createdAt)} />
+          <div className="rounded-lg border border-line bg-white px-3 py-2 text-sm text-zinc-700">
+            当前恢复点 <span className="ml-2 font-mono text-coal">{currentCheckpointPosition}</span>
           </div>
           {loadingCheckpoints ? (
             <div className="grid gap-2">

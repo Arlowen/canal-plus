@@ -542,7 +542,6 @@ function Dashboard({
 function TaskWizard({ datasources, onCreated }: { datasources: Datasource[]; onCreated: () => void }) {
   const sourceOptions = datasources.filter((item) => item.purpose === "source" || item.purpose === "both");
   const targetOptions = datasources.filter((item) => item.purpose === "target" || item.purpose === "both");
-  const [step, setStep] = useState(0);
   const [draft, setDraft] = useState({
     name: "客户订单同步",
     description: "通过向导创建的 MySQL 到 MySQL 同步任务",
@@ -649,7 +648,6 @@ function TaskWizard({ datasources, onCreated }: { datasources: Datasource[]; onC
     try {
       const report = await api.preflightTask(buildTaskInput());
       setPreflight(report);
-      setStep(5);
       if (!report.ok) {
         setError("预检未通过，请处理失败项后再发布。");
       }
@@ -669,7 +667,6 @@ function TaskWizard({ datasources, onCreated }: { datasources: Datasource[]; onC
       const report = preflight ?? await api.preflightTask(buildTaskInput());
       setPreflight(report);
       if (!report.ok) {
-        setStep(5);
         setError("预检未通过，请处理失败项后再发布。");
         return;
       }
@@ -682,144 +679,116 @@ function TaskWizard({ datasources, onCreated }: { datasources: Datasource[]; onC
     }
   };
 
-  const stepTitles = ["任务", "源端", "目标端", "映射", "策略", "预检"];
-
   return (
-    <div className="grid gap-5 xl:grid-cols-[260px_1fr]">
-      <aside className="rounded-xl border border-line bg-white p-4 shadow-panel">
-        <div className="space-y-2">
-          {stepTitles.map((title, index) => (
-            <button
-              key={title}
-              onClick={() => setStep(index)}
-              className={cx(
-                "flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm transition active:scale-[0.98]",
-                step === index ? "bg-coal text-white" : "text-zinc-600 hover:bg-zinc-50"
-              )}
-            >
-              <span className="font-mono">{index + 1}</span>
-              <span>{title}</span>
-            </button>
-          ))}
+    <section className="rounded-xl border border-line bg-white p-5 shadow-panel">
+      <h2 className="text-xl font-semibold tracking-tight text-coal">新建任务</h2>
+
+      {error && <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>}
+
+      <div className="mt-6 grid gap-6">
+        <div className="grid gap-4 md:grid-cols-2">
+          <Field label="任务名称">
+            <input className="control" value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} />
+          </Field>
+          <Field label="负责人">
+            <input className="control" value={draft.owner} onChange={(event) => setDraft({ ...draft, owner: event.target.value })} />
+          </Field>
         </div>
-      </aside>
 
-      <section className="rounded-xl border border-line bg-white p-5 shadow-panel">
-        {error && <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>}
-
-        {step === 0 && (
+        <div className="grid gap-4 md:grid-cols-2">
           <div className="space-y-4">
-            <SectionTitle title="任务信息" subtitle="任务名称、负责人和描述" />
-            <Field label="任务名称">
-              <input className="control" value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} />
-            </Field>
-            <Field label="负责人">
-              <input className="control" value={draft.owner} onChange={(event) => setDraft({ ...draft, owner: event.target.value })} />
-            </Field>
-            <Field label="描述">
-              <textarea className="control min-h-24" value={draft.description} onChange={(event) => setDraft({ ...draft, description: event.target.value })} />
-            </Field>
-          </div>
-        )}
-
-        {step === 1 && (
-          <div className="space-y-4">
-            <SectionTitle title="源端 MySQL" subtitle="选择库表并读取字段" />
-            <Field label="源数据源">
+            <h3 className="text-sm font-semibold text-coal">源端</h3>
+            <Field label="数据源">
               <select className="control" value={draft.sourceDatasourceId} onChange={(event) => setDraft({ ...draft, sourceDatasourceId: event.target.value, sourceSchema: "", sourceTable: "" })}>
                 {sourceOptions.map((datasource) => <option key={datasource.id} value={datasource.id}>{datasource.name}</option>)}
               </select>
             </Field>
-            <div className="grid gap-4 md:grid-cols-2">
-              <Field label="源库">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label="库">
                 <select className="control" value={draft.sourceSchema} onChange={(event) => setDraft({ ...draft, sourceSchema: event.target.value, sourceTable: "" })}>
                   {sourceSchemas.map((schema) => <option key={schema} value={schema}>{schema}</option>)}
                 </select>
               </Field>
-              <Field label="源表">
+              <Field label="表">
                 <select className="control" value={draft.sourceTable} onChange={(event) => setDraft({ ...draft, sourceTable: event.target.value })}>
                   {tables.map((tableInfo) => <option key={tableInfo.name} value={tableInfo.name}>{tableInfo.name}</option>)}
                 </select>
               </Field>
             </div>
-            <ColumnPreview columns={columns} />
           </div>
-        )}
 
-        {step === 2 && (
           <div className="space-y-4">
-            <SectionTitle title="目标 MySQL" subtitle="确认目标库表策略" />
-            <Field label="目标数据源">
+            <h3 className="text-sm font-semibold text-coal">目标端</h3>
+            <Field label="数据源">
               <select className="control" value={draft.targetDatasourceId} onChange={(event) => setDraft({ ...draft, targetDatasourceId: event.target.value, targetSchema: "" })}>
                 {targetOptions.map((datasource) => <option key={datasource.id} value={datasource.id}>{datasource.name}</option>)}
               </select>
             </Field>
-            <div className="grid gap-4 md:grid-cols-2">
-              <Field label="目标库">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label="库">
                 <select className="control" value={draft.targetSchema} onChange={(event) => setDraft({ ...draft, targetSchema: event.target.value })}>
                   {targetSchemas.map((schema) => <option key={schema} value={schema}>{schema}</option>)}
                 </select>
               </Field>
-              <Field label="目标表">
+              <Field label="表">
                 <input className="control" value={draft.targetTable} onChange={(event) => setDraft({ ...draft, targetTable: event.target.value })} />
               </Field>
             </div>
           </div>
-        )}
+        </div>
 
-        {step === 3 && (
-          <div className="space-y-4">
-            <SectionTitle title="字段映射" subtitle="同名字段已自动映射" />
-            <div className="overflow-x-auto rounded-lg border border-line">
-              <table className="w-full min-w-[720px] text-left text-sm">
-                <thead className="bg-zinc-50 text-xs uppercase tracking-[0.12em] text-muted">
-                  <tr>
-                    <th className="px-3 py-3">源字段</th>
-                    <th className="px-3 py-3">目标字段</th>
-                    <th className="px-3 py-3">类型</th>
-                    <th className="px-3 py-3">主键</th>
-                    <th className="px-3 py-3">忽略</th>
+        <div className="space-y-4">
+          <h3 className="text-sm font-semibold text-coal">字段映射</h3>
+          <ColumnPreview columns={columns} />
+          <div className="overflow-x-auto rounded-lg border border-line">
+            <table className="w-full min-w-[720px] text-left text-sm">
+              <thead className="bg-zinc-50 text-xs uppercase tracking-[0.12em] text-muted">
+                <tr>
+                  <th className="px-3 py-3">源字段</th>
+                  <th className="px-3 py-3">目标字段</th>
+                  <th className="px-3 py-3">类型</th>
+                  <th className="px-3 py-3">主键</th>
+                  <th className="px-3 py-3">忽略</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-line">
+                {fieldMappings.map((field, index) => (
+                  <tr key={field.sourceField}>
+                    <td className="px-3 py-3 font-mono text-zinc-700">{field.sourceField}</td>
+                    <td className="px-3 py-3">
+                      <input
+                        className="w-full rounded-md border border-line px-2 py-1.5 outline-none focus:border-accent"
+                        value={field.targetField}
+                        onChange={(event) => {
+                          const next = [...fieldMappings];
+                          next[index] = { ...field, targetField: event.target.value };
+                          setFieldMappings(next);
+                        }}
+                      />
+                    </td>
+                    <td className="px-3 py-3 text-zinc-600">{field.sourceType}</td>
+                    <td className="px-3 py-3">{field.primaryKey ? "是" : "否"}</td>
+                    <td className="px-3 py-3">
+                      <input
+                        type="checkbox"
+                        checked={field.ignored}
+                        onChange={(event) => {
+                          const next = [...fieldMappings];
+                          next[index] = { ...field, ignored: event.target.checked };
+                          setFieldMappings(next);
+                        }}
+                      />
+                    </td>
                   </tr>
-                </thead>
-                <tbody className="divide-y divide-line">
-                  {fieldMappings.map((field, index) => (
-                    <tr key={field.sourceField}>
-                      <td className="px-3 py-3 font-mono text-zinc-700">{field.sourceField}</td>
-                      <td className="px-3 py-3">
-                        <input
-                          className="w-full rounded-md border border-line px-2 py-1.5 outline-none focus:border-accent"
-                          value={field.targetField}
-                          onChange={(event) => {
-                            const next = [...fieldMappings];
-                            next[index] = { ...field, targetField: event.target.value };
-                            setFieldMappings(next);
-                          }}
-                        />
-                      </td>
-                      <td className="px-3 py-3 text-zinc-600">{field.sourceType}</td>
-                      <td className="px-3 py-3">{field.primaryKey ? "是" : "否"}</td>
-                      <td className="px-3 py-3">
-                        <input
-                          type="checkbox"
-                          checked={field.ignored}
-                          onChange={(event) => {
-                            const next = [...fieldMappings];
-                            next[index] = { ...field, ignored: event.target.checked };
-                            setFieldMappings(next);
-                          }}
-                        />
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                ))}
+              </tbody>
+            </table>
           </div>
-        )}
+        </div>
 
-        {step === 4 && (
-          <div className="space-y-4">
-            <SectionTitle title="同步策略" subtitle="初始化、写入模式和失败重试" />
+        <details className="rounded-lg border border-line bg-[#fcfcf8] p-4">
+          <summary className="cursor-pointer text-sm font-semibold text-coal">高级策略</summary>
+          <div className="mt-4 space-y-4">
             <div className="grid gap-4 md:grid-cols-2">
               <Field label="初始化策略">
                 <select className="control" value={strategy.initMode} onChange={(event) => setStrategy({ ...strategy, initMode: event.target.value as SyncStrategy["initMode"] })}>
@@ -841,10 +810,10 @@ function TaskWizard({ datasources, onCreated }: { datasources: Datasource[]; onC
                   <option value="ignore">忽略删除</option>
                 </select>
               </Field>
-              <Field label="批量写入大小">
+              <Field label="批量写入">
                 <input className="control" type="number" value={strategy.batchSize} onChange={(event) => setStrategy({ ...strategy, batchSize: Number(event.target.value) })} />
               </Field>
-              <Field label="失败重试次数">
+              <Field label="重试次数">
                 <input className="control" type="number" value={strategy.retryTimes} onChange={(event) => setStrategy({ ...strategy, retryTimes: Number(event.target.value) })} />
               </Field>
               <Field label="重试间隔秒">
@@ -867,44 +836,32 @@ function TaskWizard({ datasources, onCreated }: { datasources: Datasource[]; onC
               ))}
             </div>
           </div>
-        )}
+        </details>
 
-        {step === 5 && (
-          <div className="space-y-4">
-            <SectionTitle title="发布前预检" subtitle="连接性、表结构、策略、重复订阅和 node 承载能力" />
-            <PreflightPanel report={preflight} checking={checking} onRun={runPreflight} />
-          </div>
-        )}
+        <div className="space-y-4">
+          <h3 className="text-sm font-semibold text-coal">预检</h3>
+          <PreflightPanel report={preflight} checking={checking} onRun={runPreflight} />
+        </div>
 
-        <div className="mt-6 flex flex-col gap-3 border-t border-line pt-5 sm:flex-row sm:justify-between">
+        <div className="flex flex-col gap-3 border-t border-line pt-5 sm:flex-row sm:justify-end">
           <button
-            onClick={() => setStep(Math.max(0, step - 1))}
-            disabled={step === 0}
+            onClick={() => void runPreflight()}
+            disabled={checking}
             className="rounded-lg border border-line bg-white px-4 py-2 text-sm text-zinc-700 transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
           >
-            上一步
+            {checking ? "预检中" : "运行预检"}
           </button>
-          {step < stepTitles.length - 1 ? (
-            <button
-              onClick={() => setStep(Math.min(stepTitles.length - 1, step + 1))}
-              className="inline-flex items-center justify-center gap-2 rounded-lg bg-coal px-4 py-2 text-sm text-white transition active:scale-[0.98]"
-            >
-              下一步
-              <ArrowRight size={16} />
-            </button>
-          ) : (
-            <button
-              onClick={submit}
-              disabled={loading || checking}
-              className="inline-flex items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm text-white transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              <CheckCircle size={16} />
-              {loading ? "发布中" : preflight?.ok ? "发布任务" : "预检并发布"}
-            </button>
-          )}
+          <button
+            onClick={submit}
+            disabled={loading || checking}
+            className="inline-flex items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm text-white transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <CheckCircle size={16} />
+            {loading ? "创建中" : preflight?.ok ? "创建任务" : "预检并创建"}
+          </button>
         </div>
-      </section>
-    </div>
+      </div>
+    </section>
   );
 }
 
@@ -914,15 +871,6 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
       <span className="mb-2 block text-sm font-medium text-zinc-700">{label}</span>
       {children}
     </label>
-  );
-}
-
-function SectionTitle({ title, subtitle }: { title: string; subtitle: string }) {
-  return (
-    <div>
-      <h2 className="text-lg font-semibold tracking-tight text-coal">{title}</h2>
-      <div className="mt-1 text-sm text-muted">{subtitle}</div>
-    </div>
   );
 }
 
