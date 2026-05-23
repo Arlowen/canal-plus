@@ -472,6 +472,7 @@ function App() {
               <NodesPage
                 cluster={cluster}
                 tasks={tasks}
+                logs={logs}
                 canManage={canManage}
                 onChanged={refresh}
                 pushNotice={pushNotice}
@@ -1523,6 +1524,7 @@ function fromNodeStatusChangeResult(report: NodeStatusChangeResult): ClusterHand
 function NodesPage({
   cluster,
   tasks,
+  logs,
   canManage,
   onChanged,
   pushNotice,
@@ -1532,6 +1534,7 @@ function NodesPage({
 }: {
   cluster: ClusterSnapshot | null;
   tasks: SyncTask[];
+  logs: OperationLog[];
   canManage: boolean;
   onChanged: (quiet?: boolean) => Promise<void>;
   pushNotice: (notice: Notice) => void;
@@ -1580,6 +1583,17 @@ function NodesPage({
     if (!nodeID) return "待分配";
     return nodes.find((node) => node.id === nodeID)?.name || nodeID;
   };
+  const nodeEvents = selected
+    ? logs.filter((log) => {
+      if (log.targetType === "cluster_node" && log.targetId === selected.id) {
+        return true;
+      }
+      if (log.targetType === "sync_task") {
+        return log.detail.includes(selected.id) || log.detail.includes(selected.name);
+      }
+      return false;
+    }).slice(0, 8)
+    : [];
 
   const runQuickAction = async (node: ClusterNode, action: "upgrade" | "uninstall") => {
     if (!canManage) {
@@ -1812,6 +1826,27 @@ function NodesPage({
             <div className="mt-5 text-sm text-slate-500">选择一个节点查看详情。</div>
           )}
         </section>
+        {selected && (
+          <section className="surface p-6">
+            <SectionHeader title="最近运维事件" description="围绕当前节点的操作和任务迁移。" />
+            <div className="mt-4 grid gap-3">
+              {nodeEvents.length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-line bg-slate-50/70 px-4 py-6 text-sm text-slate-500">
+                  当前没有可展示的节点运维事件。
+                </div>
+              ) : nodeEvents.map((log) => (
+                <div key={log.id} className="rounded-2xl border border-line bg-white px-4 py-4">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge tone={log.targetType === "cluster_node" ? "blue" : "yellow"}>{log.action}</Badge>
+                    <span className="text-xs text-slate-500">{formatDateTime(log.createdAt)}</span>
+                  </div>
+                  <div className="mt-2 text-sm text-coal">{log.detail}</div>
+                  <div className="mt-2 text-xs text-slate-500">{log.actor}</div>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
         {!canManage && (
           <PermissionNotice compact description="当前角色可查看节点状态；部署、升级、卸载节点需要管理员权限。" />
         )}
