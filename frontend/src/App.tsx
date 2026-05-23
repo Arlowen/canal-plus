@@ -67,6 +67,7 @@ import type {
 type Page = "dashboard" | "datasources" | "tasks" | "nodes" | "settings";
 type NoticeTone = "success" | "error" | "warning";
 type TaskBlueprintType = "full_migration" | "incremental_sync" | "data_validation" | "data_correction" | "structure_compare";
+type TaskStateFilter = "all" | "running" | "awaiting" | "remote" | "failed" | "stopped";
 type WorkloadItem = {
   id: string;
   key: string;
@@ -1201,6 +1202,7 @@ function TasksPage({
   const visibleCapabilityJobs = capabilityJobs.filter((job) => job.type !== "subscription");
   const [keyword, setKeyword] = useState("");
   const [typeFilter, setTypeFilter] = useState("all");
+  const [stateFilter, setStateFilter] = useState<TaskStateFilter>("all");
   const [hostingFilter, setHostingFilter] = useState<"all" | "local" | "remote" | "unassigned">("all");
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [creatorOpen, setCreatorOpen] = useState(false);
@@ -1217,12 +1219,19 @@ function TasksPage({
   const filtered = workloads.filter((item) => {
     const matchesKeyword = !keyword.trim() || `${item.title} ${item.detail} ${item.type}`.toLowerCase().includes(keyword.trim().toLowerCase());
     const matchesType = typeFilter === "all" || item.type === typeFilter;
+    const matchesState = !item.rawTask
+      || stateFilter === "all"
+      || (stateFilter === "running" && (item.rawTask.status === "full_syncing" || item.rawTask.status === "incremental_running"))
+      || (stateFilter === "awaiting" && taskAwaitingNode(item.rawTask))
+      || (stateFilter === "remote" && item.rawTask.runtime?.managedByLocalNode === false)
+      || (stateFilter === "failed" && item.rawTask.status === "failed")
+      || (stateFilter === "stopped" && item.rawTask.status === "stopped");
     const matchesHosting = !item.rawTask
       || hostingFilter === "all"
       || (hostingFilter === "local" && item.rawTask.runtime?.managedByLocalNode !== false && Boolean(item.rawTask.runtime?.nodeId))
       || (hostingFilter === "remote" && item.rawTask.runtime?.managedByLocalNode === false)
       || (hostingFilter === "unassigned" && !item.rawTask.runtime?.nodeId);
-    return matchesKeyword && matchesType && matchesHosting;
+    return matchesKeyword && matchesType && matchesState && matchesHosting;
   });
   const selected = filtered.find((item) => item.key === selectedKey) ?? filtered[0];
 
@@ -1342,6 +1351,13 @@ function TasksPage({
   const pendingErrors = errors.filter((item) => item.status === "pending").length;
   const awaitingTasks = tasks.filter(taskAwaitingNode).length;
   const typeCounts = filteredTypeCounts(workloads);
+  const stateCounts = {
+    running: tasks.filter((task) => task.status === "full_syncing" || task.status === "incremental_running").length,
+    awaiting: awaitingTasks,
+    remote: tasks.filter((task) => task.runtime?.managedByLocalNode === false).length,
+    failed: tasks.filter((task) => task.status === "failed").length,
+    stopped: tasks.filter((task) => task.status === "stopped").length
+  };
 
   return (
     <div className="grid gap-5 xl:grid-cols-[1.08fr_0.92fr]">
@@ -1407,6 +1423,27 @@ function TasksPage({
             <FilterChip active={hostingFilter === "local"} onClick={() => setHostingFilter("local")} label="当前节点托管" />
             <FilterChip active={hostingFilter === "remote"} onClick={() => setHostingFilter("remote")} label="远程托管" />
             <FilterChip active={hostingFilter === "unassigned"} onClick={() => setHostingFilter("unassigned")} label="待分配" />
+          </div>
+        </div>
+
+        <div className="mt-3 grid gap-3 lg:grid-cols-[220px_minmax(0,1fr)]">
+          <Field label="运行视角">
+            <select className="select" value={stateFilter} onChange={(event) => setStateFilter(event.target.value as TaskStateFilter)}>
+              <option value="all">全部状态</option>
+              <option value="running">运行中</option>
+              <option value="awaiting">待接管</option>
+              <option value="remote">远程托管</option>
+              <option value="failed">异常</option>
+              <option value="stopped">已停止</option>
+            </select>
+          </Field>
+          <div className="flex flex-wrap items-end gap-2">
+            <FilterChip active={stateFilter === "all"} onClick={() => setStateFilter("all")} label="全部" />
+            <FilterChip active={stateFilter === "running"} onClick={() => setStateFilter("running")} label={`运行中 ${stateCounts.running}`} />
+            <FilterChip active={stateFilter === "awaiting"} onClick={() => setStateFilter("awaiting")} label={`待接管 ${stateCounts.awaiting}`} />
+            <FilterChip active={stateFilter === "remote"} onClick={() => setStateFilter("remote")} label={`远程托管 ${stateCounts.remote}`} />
+            <FilterChip active={stateFilter === "failed"} onClick={() => setStateFilter("failed")} label={`异常 ${stateCounts.failed}`} />
+            <FilterChip active={stateFilter === "stopped"} onClick={() => setStateFilter("stopped")} label={`已停止 ${stateCounts.stopped}`} />
           </div>
         </div>
 
