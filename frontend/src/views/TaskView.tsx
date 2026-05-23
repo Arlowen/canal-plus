@@ -12,6 +12,7 @@ import {
   MagnifyingGlass,
   Pause,
   Play,
+  Plus,
   SortAscending,
   Stop,
   Trash,
@@ -139,14 +140,23 @@ function checkpointTone(reason: string) {
   return "bg-emerald-500";
 }
 
-function EmptyTaskState() {
+function EmptyTaskState({ canManage, onCreate }: { canManage: boolean; onCreate: () => void }) {
   return (
     <div className="rounded-lg border border-dashed border-line bg-[#fcfcf8] p-8 text-center">
       <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-lg border border-line bg-white text-zinc-500">
         <ClipboardText size={18} />
       </div>
       <div className="mt-3 font-medium text-coal">暂无同步任务</div>
-      <div className="mt-1 text-sm text-muted">使用新建任务向导创建第一条链路</div>
+      <div className="mt-1 text-sm text-muted">先创建第一条任务</div>
+      {canManage && (
+        <button
+          onClick={onCreate}
+          className="mt-4 inline-flex items-center justify-center gap-2 rounded-lg bg-coal px-3 py-2 text-sm text-white transition active:scale-[0.98]"
+        >
+          <Plus size={16} />
+          新建任务
+        </button>
+      )}
     </div>
   );
 }
@@ -158,7 +168,7 @@ function EmptyFilteredTaskState({ onReset }: { onReset: () => void }) {
         <FunnelSimple size={18} />
       </div>
       <div className="mt-3 font-medium text-coal">没有匹配的任务</div>
-      <div className="mt-1 text-sm text-muted">调整关键词、负责人或状态筛选后再查看链路</div>
+      <div className="mt-1 text-sm text-muted">调整关键词或状态后再查看</div>
       <button
         onClick={onReset}
         className="mt-4 inline-flex items-center justify-center gap-2 rounded-lg border border-line bg-white px-3 py-2 text-sm text-zinc-700 transition hover:bg-zinc-50 active:scale-[0.98]"
@@ -365,8 +375,7 @@ function TaskFunctionPanel({ task, canManage, onChanged }: { task: SyncTask; can
     <div className="mt-5 rounded-xl border border-line bg-[#fcfcf8] p-4">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <div className="text-sm font-semibold text-coal">功能列表</div>
-          <div className="mt-1 text-xs text-muted">参数、位点和导出操作集中处理</div>
+          <div className="text-sm font-semibold text-coal">更多操作</div>
         </div>
         <span className="rounded-full border border-line bg-white px-2 py-1 text-xs text-muted">v{task.configVersion}</span>
       </div>
@@ -655,6 +664,7 @@ export function TaskView({
   cluster,
   canManage,
   onAction,
+  onCreate,
   onChanged
 }: {
   tasks: SyncTask[];
@@ -663,33 +673,29 @@ export function TaskView({
   cluster: ClusterSnapshot | null;
   canManage: boolean;
   onAction: (task: SyncTask, action: TaskAction) => Promise<void>;
+  onCreate: () => void;
   onChanged: () => Promise<void> | void;
 }) {
   const [selectedId, setSelectedId] = useState<string | null>(tasks[0]?.id ?? null);
   const [keyword, setKeyword] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
-  const [ownerFilter, setOwnerFilter] = useState("all");
   const [sortMode, setSortMode] = useState<SortMode>("delay_desc");
   const statusCounts = useMemo(() => buildStatusCounts(tasks), [tasks]);
-  const ownerOptions = useMemo(() => Array.from(new Set(tasks.map((task) => task.owner).filter(Boolean))).sort((left, right) => left.localeCompare(right, "zh-Hans-CN")), [tasks]);
   const visibleTasks = useMemo(() => {
     const normalizedKeyword = keyword.trim().toLowerCase();
     const filteredTasks = tasks.filter((task) => {
       const matchesKeyword = !normalizedKeyword || taskSearchText(task).includes(normalizedKeyword);
       const matchesStatus = statusFilter === "all" || task.status === statusFilter;
-      const matchesOwner = ownerFilter === "all" || task.owner === ownerFilter;
-      return matchesKeyword && matchesStatus && matchesOwner;
+      return matchesKeyword && matchesStatus;
     });
     return sortTasks(filteredTasks, sortMode);
-  }, [keyword, ownerFilter, sortMode, statusFilter, tasks]);
+  }, [keyword, sortMode, statusFilter, tasks]);
   const selected = visibleTasks.find((task) => task.id === selectedId) ?? visibleTasks[0];
   const selectedErrors = selected ? errors.filter((event) => event.taskId === selected.id) : [];
   const selectedLogs = selected ? logs.filter((log) => log.targetId === selected.id || log.detail.includes(selected.name)) : [];
   const selectedLease = selected ? cluster?.leases.find((lease) => lease.taskId === selected.id) : undefined;
   const selectedNode = cluster?.nodes.find((node) => node.id === (selectedLease?.nodeId || selected?.runtime?.nodeId));
-  const maxDelaySeconds = tasks.reduce((maxDelay, task) => Math.max(maxDelay, task.runtime?.delaySeconds ?? 0), 0);
-  const runningTasks = statusCounts.incremental_running + statusCounts.full_syncing;
-  const filterActive = Boolean(keyword.trim()) || statusFilter !== "all" || ownerFilter !== "all" || sortMode !== "delay_desc";
+  const filterActive = Boolean(keyword.trim()) || statusFilter !== "all" || sortMode !== "delay_desc";
 
   useEffect(() => {
     if (tasks.length === 0) {
@@ -703,12 +709,11 @@ export function TaskView({
   const resetFilters = () => {
     setKeyword("");
     setStatusFilter("all");
-    setOwnerFilter("all");
     setSortMode("delay_desc");
   };
 
   if (tasks.length === 0) {
-    return <EmptyTaskState />;
+    return <EmptyTaskState canManage={canManage} onCreate={onCreate} />;
   }
 
   return (
@@ -717,28 +722,22 @@ export function TaskView({
         <div className="border-b border-line p-5">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div>
-              <h2 className="text-lg font-semibold tracking-tight text-coal">任务列表</h2>
-              <div className="mt-1 text-sm text-muted">生命周期、吞吐、延迟和操作入口</div>
+              <h2 className="text-lg font-semibold tracking-tight text-coal">任务</h2>
             </div>
-            <div className="grid grid-cols-3 gap-2 text-sm lg:min-w-[320px]">
-              <div className="rounded-lg border border-line bg-[#fcfcf8] px-3 py-2">
-                <div className="text-xs text-muted">运行</div>
-                <div className="mt-1 font-mono font-semibold text-coal">{runningTasks}</div>
-              </div>
-              <div className="rounded-lg border border-line bg-[#fcfcf8] px-3 py-2">
-                <div className="text-xs text-muted">异常</div>
-                <div className="mt-1 font-mono font-semibold text-red-700">{statusCounts.failed}</div>
-              </div>
-              <div className="rounded-lg border border-line bg-[#fcfcf8] px-3 py-2">
-                <div className="text-xs text-muted">最高延迟</div>
-                <div className="mt-1 font-mono font-semibold text-coal">{maxDelaySeconds}s</div>
-              </div>
-            </div>
+            {canManage && (
+              <button
+                onClick={onCreate}
+                className="inline-flex items-center justify-center gap-2 rounded-lg bg-coal px-3 py-2 text-sm text-white transition active:scale-[0.98]"
+              >
+                <Plus size={16} />
+                新建任务
+              </button>
+            )}
           </div>
 
-          <div className="mt-5 grid gap-3 md:grid-cols-[minmax(0,1fr)_160px_170px]">
+          <div className="mt-5 grid gap-3 md:grid-cols-[minmax(0,1fr)_170px]">
             <label className="block min-w-0">
-              <span className="mb-2 block text-xs font-medium text-zinc-700">搜索任务</span>
+              <span className="mb-2 block text-xs font-medium text-zinc-700">搜索</span>
               <span className="relative block">
                 <MagnifyingGlass className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={17} />
                 <input
@@ -748,15 +747,6 @@ export function TaskView({
                   placeholder="名称、表、数据源、节点"
                 />
               </span>
-            </label>
-            <label className="block">
-              <span className="mb-2 block text-xs font-medium text-zinc-700">负责人</span>
-              <select className="control" value={ownerFilter} onChange={(event) => setOwnerFilter(event.target.value)}>
-                <option value="all">全部负责人</option>
-                {ownerOptions.map((owner) => (
-                  <option key={owner} value={owner}>{owner}</option>
-                ))}
-              </select>
             </label>
             <label className="block">
               <span className="mb-2 flex items-center gap-1 text-xs font-medium text-zinc-700">
@@ -801,13 +791,9 @@ export function TaskView({
                 className="inline-flex items-center gap-2 rounded-full border border-line bg-[#fcfcf8] px-3 py-1.5 text-xs text-zinc-600 transition hover:bg-zinc-50 active:scale-[0.98]"
               >
                 <FunnelSimple size={14} />
-                清空筛选
+                清空
               </button>
             )}
-          </div>
-
-          <div className="mt-4 text-xs text-muted">
-            当前显示 <span className="font-mono text-coal">{visibleTasks.length}</span> / <span className="font-mono text-coal">{tasks.length}</span> 条任务
           </div>
         </div>
         <div className="divide-y divide-line">
@@ -826,7 +812,6 @@ export function TaskView({
                   <span className="truncate font-medium text-coal">{task.name}</span>
                   <StatusBadge status={task.status} />
                 </div>
-                <div className="mt-1 line-clamp-2 text-sm text-muted">{task.description}</div>
                 <div className="mt-3 flex flex-wrap gap-2 text-xs text-zinc-500">
                   <span className="rounded-full border border-line bg-white px-2 py-1">负责人 {task.owner}</span>
                   <span className="rounded-full border border-line bg-white px-2 py-1">v{task.configVersion}</span>
@@ -896,7 +881,7 @@ export function TaskView({
 
           {!canManage && (
             <div className="mt-4">
-              <PermissionNotice compact description="当前角色可启停任务、查看运行态和处理异常；复制任务会创建新配置，需要管理员权限。" />
+              <PermissionNotice compact description="当前角色可启停任务、查看运行态和处理异常；复制任务需要管理员权限。" />
             </div>
           )}
 

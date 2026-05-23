@@ -11,7 +11,6 @@ import {
   Gauge,
   GearSix,
   GitBranch,
-  Plus,
   Pulse,
   ShieldCheck,
   SignOut,
@@ -53,6 +52,7 @@ import type {
 } from "./types/api";
 
 type View = "dashboard" | "datasources" | "tasks" | "wizard" | "structure" | "quality" | "subscription" | "cluster" | "errors" | "logs" | "settings";
+type NavView = Exclude<View, "wizard">;
 
 const defaultStrategy: SyncStrategy = {
   initMode: "full_then_incremental",
@@ -68,24 +68,37 @@ const defaultStrategy: SyncStrategy = {
   retryIntervalSeconds: 10
 };
 
-const navItems: Array<{ id: View; label: string; icon: typeof Gauge }> = [
-  { id: "dashboard", label: "作战室", icon: Gauge },
+const navItems: Array<{ id: NavView; label: string; icon: typeof Gauge }> = [
+  { id: "dashboard", label: "概览", icon: Gauge },
   { id: "datasources", label: "数据源", icon: Database },
-  { id: "tasks", label: "任务中心", icon: FlowArrow },
-  { id: "wizard", label: "新建任务", icon: Plus },
+  { id: "tasks", label: "任务", icon: FlowArrow },
   { id: "structure", label: "结构迁移", icon: Stack },
   { id: "quality", label: "校验订正", icon: ShieldCheck },
   { id: "subscription", label: "订阅变更", icon: GitBranch },
-  { id: "cluster", label: "节点集群", icon: Cloud },
-  { id: "errors", label: "错误中心", icon: WarningCircle },
-  { id: "logs", label: "操作日志", icon: ClipboardText },
-  { id: "settings", label: "系统设置", icon: GearSix }
+  { id: "cluster", label: "节点", icon: Cloud },
+  { id: "errors", label: "错误", icon: WarningCircle },
+  { id: "logs", label: "日志", icon: ClipboardText },
+  { id: "settings", label: "设置", icon: GearSix }
 ];
+
+const viewTitles: Record<View, string> = {
+  dashboard: "概览",
+  datasources: "数据源",
+  tasks: "任务",
+  wizard: "新建任务",
+  structure: "结构迁移",
+  quality: "校验订正",
+  subscription: "订阅变更",
+  cluster: "节点",
+  errors: "错误",
+  logs: "日志",
+  settings: "设置"
+};
 
 function App() {
   const [tokenState, setTokenState] = useState(getToken());
   const [user, setUser] = useState<User | null>(null);
-  const [view, setView] = useState<View>("dashboard");
+  const [view, setView] = useState<View>("tasks");
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [datasources, setDatasources] = useState<Datasource[]>([]);
   const [tasks, setTasks] = useState<SyncTask[]>([]);
@@ -154,12 +167,18 @@ function App() {
     return () => window.clearInterval(timer);
   }, [refresh, tokenState]);
 
+  useEffect(() => {
+    if (!notice) return;
+    const timer = window.setTimeout(() => setNotice(null), 2500);
+    return () => window.clearTimeout(timer);
+  }, [notice]);
+
   const handleLogin = async (username: string, password: string) => {
     const response = await api.login({ username, password });
     setToken(response.token);
     setTokenState(response.token);
     setUser(response.user);
-    setView("dashboard");
+    setView("tasks");
     setNotice("登录成功");
   };
 
@@ -193,18 +212,8 @@ function App() {
     <div className="min-h-[100dvh] bg-mist text-ink">
       <div className="mx-auto grid min-h-[100dvh] max-w-[1500px] grid-cols-1 lg:grid-cols-[260px_minmax(0,1fr)]">
         <aside className="border-b border-line bg-[#fdfdf9] px-4 py-4 lg:border-b-0 lg:border-r lg:px-5 lg:py-6">
-          <div className="flex items-center justify-between lg:block">
-            <div>
-              <div className="text-xl font-semibold tracking-tight text-coal">Canal Plus</div>
-              <div className="mt-1 text-xs text-muted">MySQL CDC 控制台</div>
-            </div>
-            <button
-              className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-line bg-white text-zinc-600 transition active:scale-[0.98] lg:hidden"
-              onClick={handleLogout}
-              title="退出登录"
-            >
-              <SignOut size={18} />
-            </button>
+          <div>
+            <div className="text-xl font-semibold tracking-tight text-coal">canal-plus</div>
           </div>
 
           <nav className="mt-5 flex gap-2 overflow-x-auto lg:block lg:space-y-1">
@@ -227,31 +236,15 @@ function App() {
               );
             })}
           </nav>
-
-          <div className="mt-8 hidden border-t border-line pt-5 lg:block">
-            <div className="text-xs uppercase tracking-[0.16em] text-muted">当前账号</div>
-            <div className="mt-3 rounded-lg border border-line bg-white p-3">
-              <div className="text-sm font-medium text-coal">{user?.name || "admin"}</div>
-              <div className="mt-1 text-xs text-muted">{roleLabel(user?.role)}</div>
-            </div>
-            <button
-              onClick={handleLogout}
-              className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-lg border border-line bg-white px-3 py-2 text-sm text-zinc-700 transition hover:bg-zinc-50 active:scale-[0.98]"
-            >
-              <SignOut size={16} />
-              退出登录
-            </button>
-          </div>
         </aside>
 
         <main className="min-w-0 px-4 py-5 md:px-6 lg:px-8 lg:py-7">
-          <Header view={view} user={user} onRefresh={() => refresh()} />
+          <Header view={view} user={user} onRefresh={() => refresh()} onLogout={handleLogout} />
 
           {notice && (
             <div className="mb-4 flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
               <CheckCircle size={18} />
               <span>{notice}</span>
-              <button className="ml-auto text-emerald-700" onClick={() => setNotice(null)}>关闭</button>
             </div>
           )}
 
@@ -267,13 +260,22 @@ function App() {
           ) : (
             <>
               {view === "dashboard" && (
-                <Dashboard summary={summary} tasks={tasks} errors={errors} logs={logs} cluster={cluster} />
+                <Dashboard summary={summary} tasks={tasks} errors={errors} cluster={cluster} />
               )}
               {view === "datasources" && (
                 <DatasourceView datasources={datasources} tasks={tasks} canManage={canManage} onChanged={() => refresh(true)} />
               )}
               {view === "tasks" && (
-                <TaskView tasks={tasks} errors={errors} logs={logs} cluster={cluster} canManage={canManage} onAction={handleTaskAction} onChanged={() => refresh(true)} />
+                <TaskView
+                  tasks={tasks}
+                  errors={errors}
+                  logs={logs}
+                  cluster={cluster}
+                  canManage={canManage}
+                  onAction={handleTaskAction}
+                  onCreate={() => setView("wizard")}
+                  onChanged={() => refresh(true)}
+                />
               )}
               {view === "wizard" && (
                 canManage ? (
@@ -318,16 +320,25 @@ function App() {
   );
 }
 
-function Header({ view, user, onRefresh }: { view: View; user: User | null; onRefresh: () => void }) {
-  const title = navItems.find((item) => item.id === view)?.label || "控制台";
+function Header({
+  view,
+  user,
+  onRefresh,
+  onLogout
+}: {
+  view: View;
+  user: User | null;
+  onRefresh: () => void;
+  onLogout: () => void;
+}) {
+  const title = viewTitles[view] || "控制台";
   return (
-    <div className="mb-6 flex flex-col gap-4 border-b border-line pb-5 md:flex-row md:items-end md:justify-between">
+    <div className="mb-6 flex flex-col gap-4 border-b border-line pb-5 md:flex-row md:items-center md:justify-between">
       <div>
-        <div className="text-sm text-muted">Canal Plus / {title}</div>
-        <h1 className="mt-1 text-3xl font-semibold tracking-tight text-coal md:text-4xl">{title}</h1>
+        <h1 className="text-3xl font-semibold tracking-tight text-coal md:text-4xl">{title}</h1>
       </div>
       <div className="flex items-center gap-3">
-        <div className="hidden rounded-lg border border-line bg-white px-3 py-2 text-sm text-zinc-600 md:block">
+        <div className="hidden rounded-lg border border-line bg-white px-3 py-2 text-sm text-zinc-600 sm:block">
           {user?.name || "admin"} · {roleLabel(user?.role)}
         </div>
         <button
@@ -336,6 +347,13 @@ function Header({ view, user, onRefresh }: { view: View; user: User | null; onRe
         >
           <ArrowsClockwise size={16} />
           刷新
+        </button>
+        <button
+          onClick={onLogout}
+          className="inline-flex items-center gap-2 rounded-lg border border-line bg-white px-3 py-2 text-sm text-zinc-700 transition hover:bg-zinc-50 active:scale-[0.98]"
+        >
+          <SignOut size={16} />
+          退出
         </button>
       </div>
     </div>
@@ -408,76 +426,52 @@ function Dashboard({
   summary,
   tasks,
   errors,
-  logs,
   cluster
 }: {
   summary: DashboardSummary | null;
   tasks: SyncTask[];
   errors: ErrorEvent[];
-  logs: OperationLog[];
   cluster: ClusterSnapshot | null;
 }) {
   const highDelayTask = [...tasks].sort((a, b) => (b.runtime?.delaySeconds ?? 0) - (a.runtime?.delaySeconds ?? 0))[0];
+  const activeTasks = [...tasks]
+    .sort((left, right) => (right.runtime?.delaySeconds ?? 0) - (left.runtime?.delaySeconds ?? 0))
+    .slice(0, 6);
   const failedTasks = tasks.filter((task) => task.status === "failed");
+  const runningTasks = tasks.filter((task) => task.status === "incremental_running" || task.status === "full_syncing").length;
   const metrics = [
-    { label: "任务总数", value: summary?.taskTotal ?? 0, detail: `${summary?.runningTasks ?? 0} 个运行中` },
-    { label: "异常任务", value: summary?.failedTasks ?? 0, detail: `${summary?.failuresLast24Hours ?? 0} 条 24h 错误` },
-    { label: "平均延迟", value: `${summary?.averageDelaySeconds ?? 0}s`, detail: "运行中任务" },
-    { label: "事件吞吐", value: `${formatNumber(summary?.eventsPerSecond ?? 0)}/s`, detail: "当前估算" },
-    { label: "在线节点", value: `${summary?.onlineNodes ?? 0}/${summary?.totalNodes ?? 0}`, detail: `${summary?.failoverCount ?? 0} 次接管` }
+    { label: "任务", value: summary?.taskTotal ?? 0, detail: "总量" },
+    { label: "运行中", value: runningTasks, detail: "当前运行" },
+    { label: "异常", value: summary?.failedTasks ?? 0, detail: "待处理" },
+    { label: "在线节点", value: `${summary?.onlineNodes ?? 0}/${summary?.totalNodes ?? 0}`, detail: "集群状态" }
   ];
 
   return (
     <div className="space-y-5">
-      <section className="relative overflow-hidden rounded-[1.4rem] border border-line bg-[#111412] p-5 text-white shadow-panel">
-        <div className="absolute inset-y-0 right-0 w-1/2 opacity-30 [background:radial-gradient(circle_at_65%_35%,#66d0a0,transparent_32%),linear-gradient(135deg,transparent,#ffffff12)]" />
-        <div className="relative grid gap-6 lg:grid-cols-[1.2fr_0.8fr] lg:items-end">
-          <div>
-            <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/10 px-3 py-1 text-xs text-emerald-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.12)]">
-              <Pulse size={15} />
-              分布式数据管道作战室
-            </div>
-            <h2 className="mt-5 max-w-3xl text-3xl font-semibold leading-tight tracking-tight md:text-5xl">
-              从任务编排、结构准备到数据质量，统一在一张运行图里处理。
-            </h2>
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        {metrics.map((metric) => (
+          <div key={metric.label} className="rounded-lg border border-line bg-white p-4 shadow-panel">
+            <div className="text-sm text-muted">{metric.label}</div>
+            <div className="mt-3 font-mono text-3xl font-semibold text-coal">{metric.value}</div>
+            <div className="mt-2 text-xs text-zinc-500">{metric.detail}</div>
           </div>
-          <div className="grid gap-2 rounded-xl border border-white/10 bg-white/10 p-4 text-sm shadow-[inset_0_1px_0_rgba(255,255,255,0.12)]">
-            {(cluster?.nodes ?? []).slice(0, 3).map((node) => (
-              <div key={node.id} className="flex items-center justify-between gap-3 rounded-lg bg-white/10 px-3 py-2">
-                <span className="font-medium">{node.name}</span>
-                <span className="font-mono text-xs text-emerald-100">{node.runningTasks}/{node.capacity} tasks</span>
-                <span className={cx("h-2.5 w-2.5 rounded-full", node.status === "online" ? "bg-emerald-300" : node.status === "draining" ? "bg-amber-300" : "bg-red-300")} />
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
+        ))}
+      </div>
 
       <div className="grid gap-5 xl:grid-cols-[1.55fr_0.9fr]">
       <section className="space-y-5">
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-          {metrics.map((metric) => (
-            <div key={metric.label} className="rounded-lg border border-line bg-white p-4 shadow-panel">
-              <div className="text-sm text-muted">{metric.label}</div>
-              <div className="mt-3 font-mono text-3xl font-semibold text-coal">{metric.value}</div>
-              <div className="mt-2 text-xs text-zinc-500">{metric.detail}</div>
-            </div>
-          ))}
-        </div>
-
         <div className="rounded-xl border border-line bg-white p-5 shadow-panel">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <h2 className="text-lg font-semibold tracking-tight text-coal">任务运行面</h2>
-              <p className="mt-1 text-sm text-muted">当前同步阶段、延迟和位点</p>
+              <h2 className="text-lg font-semibold tracking-tight text-coal">关键任务</h2>
             </div>
             <div className="rounded-lg bg-zinc-100 px-3 py-2 font-mono text-sm text-zinc-700">
-              全量 {summary?.fullSyncProgress ?? 0}%
+              峰值延迟 {highDelayTask?.runtime?.delaySeconds ?? 0}s
             </div>
           </div>
 
           <div className="mt-5 divide-y divide-line">
-            {tasks.slice(0, 6).map((task) => (
+            {activeTasks.map((task) => (
               <div key={task.id} className="grid gap-3 py-4 md:grid-cols-[minmax(0,1fr)_minmax(230px,auto)] md:items-center">
                 <div>
                   <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-2">
@@ -507,11 +501,11 @@ function Dashboard({
         <div className="rounded-xl border border-line bg-[#fcfcf8] p-5 shadow-panel">
           <div className="flex items-center gap-2 text-coal">
             <BellRinging size={20} />
-            <h2 className="font-semibold tracking-tight">风险队列</h2>
+            <h2 className="font-semibold tracking-tight">异常</h2>
           </div>
           <div className="mt-4 space-y-3">
             {failedTasks.length === 0 && errors.length === 0 ? (
-              <EmptyState title="暂无待处理异常" description="任务运行态正常" />
+              <EmptyState title="暂无异常" description="当前运行正常" />
             ) : (
               <>
                 {failedTasks.map((task) => (
@@ -530,25 +524,13 @@ function Dashboard({
         </div>
 
         <div className="rounded-xl border border-line bg-white p-5 shadow-panel">
-          <h2 className="font-semibold tracking-tight text-coal">最高延迟</h2>
-          {highDelayTask ? (
-            <div className="mt-4">
-              <div className="text-sm text-muted">{highDelayTask.name}</div>
-              <div className="mt-2 font-mono text-4xl font-semibold text-coal">{highDelayTask.runtime?.delaySeconds ?? 0}s</div>
-              <div className="mt-2 text-sm text-zinc-600">{highDelayTask.runtime?.binlogFile}</div>
-            </div>
-          ) : (
-            <EmptyState title="暂无任务" description="创建任务后展示同步延迟" />
-          )}
-        </div>
-
-        <div className="rounded-xl border border-line bg-white p-5 shadow-panel">
-          <h2 className="font-semibold tracking-tight text-coal">最近操作</h2>
+          <h2 className="font-semibold tracking-tight text-coal">节点</h2>
           <div className="mt-4 space-y-3">
-            {logs.slice(0, 5).map((log) => (
-              <div key={log.id} className="border-l border-line pl-3">
-                <div className="text-sm text-coal">{log.detail}</div>
-                <div className="mt-1 text-xs text-muted">{formatDate(log.createdAt)} / {log.actor}</div>
+            {(cluster?.nodes ?? []).slice(0, 4).map((node) => (
+              <div key={node.id} className="flex items-center justify-between gap-3 rounded-lg border border-line bg-[#fcfcf8] px-3 py-2 text-sm">
+                <span className="font-medium text-coal">{node.name}</span>
+                <span className="font-mono text-xs text-zinc-600">{node.runningTasks}/{node.capacity}</span>
+                <span className={cx("h-2.5 w-2.5 rounded-full", node.status === "online" ? "bg-emerald-400" : node.status === "draining" ? "bg-amber-400" : "bg-red-400")} />
               </div>
             ))}
           </div>
