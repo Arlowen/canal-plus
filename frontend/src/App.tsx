@@ -1543,6 +1543,8 @@ function NodesPage({
   onOpenTask: (taskID: string) => void;
 }) {
   const nodes = cluster?.nodes ?? emptyNodes;
+  const [keyword, setKeyword] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"all" | ClusterNode["status"]>("all");
   const [selectedId, setSelectedId] = useState<string | null>(nodes[0]?.id ?? null);
   const [creatorOpen, setCreatorOpen] = useState(false);
   const [operationResult, setOperationResult] = useState<NodeOperationResult | null>(null);
@@ -1561,17 +1563,24 @@ function NodesPage({
     setSelectedId(focusedNodeId);
   }, [focusedNodeId]);
 
+  const visibleNodes = nodes.filter((node) => {
+    const matchesKeyword = !keyword.trim()
+      || `${node.name} ${node.endpoint} ${node.zone} ${node.role} ${node.installDir}`.toLowerCase().includes(keyword.trim().toLowerCase());
+    const matchesStatus = statusFilter === "all" || node.status === statusFilter;
+    return matchesKeyword && matchesStatus;
+  });
+
   useEffect(() => {
-    if (nodes.length === 0) {
+    if (visibleNodes.length === 0) {
       setSelectedId(null);
       return;
     }
-    if (!selectedId || !nodes.some((item) => item.id === selectedId)) {
-      setSelectedId(nodes[0].id);
+    if (!selectedId || !visibleNodes.some((item) => item.id === selectedId)) {
+      setSelectedId(visibleNodes[0].id);
     }
-  }, [nodes, selectedId]);
+  }, [selectedId, visibleNodes]);
 
-  const selected = nodes.find((item) => item.id === selectedId) ?? nodes[0];
+  const selected = visibleNodes.find((item) => item.id === selectedId) ?? visibleNodes[0];
   const taskByNodeId = new Map<string, SyncTask[]>();
   tasks.forEach((task) => {
     if (!task.runtime?.nodeId) return;
@@ -1690,6 +1699,36 @@ function NodesPage({
           <MetricMini label="Failover" value={`${cluster?.failovers ?? 0}`} />
         </div>
 
+        <div className="mt-5 grid gap-3 lg:grid-cols-[minmax(0,1fr)_220px]">
+          <label className="block">
+            <span className="mb-2 block text-xs font-medium uppercase tracking-[0.18em] text-slate-500">搜索</span>
+            <span className="relative block">
+              <MagnifyingGlass className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+              <input
+                className="input pl-9"
+                value={keyword}
+                onChange={(event) => setKeyword(event.target.value)}
+                placeholder="节点名、地址、角色"
+              />
+            </span>
+          </label>
+          <Field label="状态">
+            <select className="select" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as "all" | ClusterNode["status"])}>
+              <option value="all">全部状态</option>
+              <option value="online">在线</option>
+              <option value="draining">排空中</option>
+              <option value="offline">离线</option>
+            </select>
+          </Field>
+        </div>
+
+        <div className="mt-3 flex flex-wrap gap-2">
+          <FilterChip active={statusFilter === "all"} onClick={() => setStatusFilter("all")} label={`全部 ${nodes.length}`} />
+          <FilterChip active={statusFilter === "online"} onClick={() => setStatusFilter("online")} label={`在线 ${nodes.filter((node) => node.status === "online").length}`} />
+          <FilterChip active={statusFilter === "draining"} onClick={() => setStatusFilter("draining")} label={`排空中 ${nodes.filter((node) => node.status === "draining").length}`} />
+          <FilterChip active={statusFilter === "offline"} onClick={() => setStatusFilter("offline")} label={`离线 ${nodes.filter((node) => node.status === "offline").length}`} />
+        </div>
+
         {nodes.length === 0 ? (
           <EmptyPanel
             icon={HardDrives}
@@ -1704,7 +1743,7 @@ function NodesPage({
           />
         ) : (
           <div className="mt-5 grid gap-4">
-            {nodes.map((node) => {
+            {visibleNodes.map((node) => {
               const isCurrentNode = localNodeId === node.id;
               return (
                 <div key={node.id} className="rounded-3xl border border-line bg-white p-4">
