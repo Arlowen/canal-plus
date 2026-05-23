@@ -59,6 +59,7 @@ import type {
   TaskCheckpoint,
   TaskLogEntry,
   TaskPreflightReport,
+  TaskRevision,
   TaskRuntimeState,
   User
 } from "./types/api";
@@ -1481,7 +1482,15 @@ function TasksPage({
           {!selected ? (
             <div className="mt-5 text-sm text-slate-500">选择一条任务查看详情。</div>
           ) : selected.rawTask ? (
-            <SyncTaskDetail task={selected.rawTask} errors={errors} cluster={cluster} onOpenNode={onOpenNode} />
+            <SyncTaskDetail
+              task={selected.rawTask}
+              errors={errors}
+              cluster={cluster}
+              canManage={canManage}
+              onOpenNode={onOpenNode}
+              onChanged={onChanged}
+              pushNotice={pushNotice}
+            />
           ) : selected.rawJob ? (
             <CapabilityJobDetail job={selected.rawJob} qualityDiffs={qualityDiffs} structureItems={structureItems} tasks={tasks} />
           ) : null}
@@ -3071,18 +3080,26 @@ function SyncTaskDetail({
   task,
   errors,
   cluster,
-  onOpenNode
+  canManage,
+  onOpenNode,
+  onChanged,
+  pushNotice
 }: {
   task: SyncTask;
   errors: ErrorEvent[];
   cluster: ClusterSnapshot | null;
+  canManage: boolean;
   onOpenNode: (nodeID: string) => void;
+  onChanged: (quiet?: boolean) => Promise<void>;
+  pushNotice: (notice: Notice) => void;
 }) {
   const [runtime, setRuntime] = useState(task.runtime);
   const [checkpoints, setCheckpoints] = useState<TaskCheckpoint[]>([]);
+  const [revisions, setRevisions] = useState<TaskRevision[]>([]);
   const [taskLogs, setTaskLogs] = useState<TaskLogEntry[]>([]);
   const [logConnected, setLogConnected] = useState(false);
   const [logNotice, setLogNotice] = useState<string | null>(null);
+  const [rollingBackVersion, setRollingBackVersion] = useState<number | null>(null);
   const progress = runtime && runtime.fullTotalRows > 0 ? Math.min(100, Math.round((runtime.fullSyncedRows / runtime.fullTotalRows) * 100)) : 0;
   const taskErrors = errors.filter((item) => item.taskId === task.id).slice(0, 4);
   const localNodeId = cluster?.localNodeId;
@@ -3094,6 +3111,24 @@ function SyncTaskDetail({
   useEffect(() => {
     setRuntime(task.runtime);
   }, [task.id, task.runtime]);
+
+  useEffect(() => {
+    let cancelled = false;
+    api.taskRevisions(task.id)
+      .then((items) => {
+        if (!cancelled) {
+          setRevisions(items.slice(0, 8));
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setRevisions([]);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [task.id]);
 
   useEffect(() => {
     let cancelled = false;
@@ -3112,6 +3147,23 @@ function SyncTaskDetail({
       cancelled = true;
     };
   }, [task.id]);
+
+  const rollbackRevision = async (version: number) => {
+    if (!canManage) {
+      pushNotice({ tone: "warning", message: "回滚任务版本需要管理员权限" });
+      return;
+    }
+    setRollingBackVersion(version);
+    try {
+      await api.rollbackTaskRevision(task.id, version);
+      pushNotice({ tone: "success", message: `任务已回滚到 v${version}` });
+      await onChanged();
+    } catch (requestError) {
+      pushNotice({ tone: "error", message: requestError instanceof Error ? requestError.message : "回滚失败" });
+    } finally {
+      setRollingBackVersion(null);
+    }
+  };
 
   useEffect(() => {
     if (remoteManaged) {
@@ -3252,6 +3304,41 @@ function SyncTaskDetail({
                 to {mapping.targetSchema}.{mapping.targetTable}
               </div>
               <div className="mt-2 text-xs text-slate-500">{mapping.fields.filter((item) => !item.ignored).length} 个字段</div>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="rounded-3xl border border-line bg-slate-50/70 p-4">
+        <div className="font-medium text-coal">配置版本</div>
+        <div className="mt-3 grid gap-3">
+          {revisions.length === 0 ? (
+            <div className="text-sm text-slate-500">当前没有可展示的版本历史。</div>
+          ) : revisions.map((revision) => (
+            <div key={revision.id} className="rounded-2xl border border-line bg-white p-4">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge tone={revision.version === task.configVersion ? "blue" : "neutral"}>{`v${revision.version}`}</Badge>
+                    <span className="text-sm font-medium text-coal">{revision.summary}</span>
+                  </div>
+                  <div className="mt-2 flex flex-wrap gap-2 text-xs text-slate-500">
+                    <span>{revision.actor}</span>
+                    <span>{revision.changeType}</span>
+                    <span>{formatDateTime(revision.createdAt)}</span>
+                  </div>
+                </div>
+                {canManage && revision.version !== task.configVersion && (
+                  <button
+                    type="button"
+                    onClick={() => void rollbackRevision(revision.version)}
+                    disabled={rollingBackVersion === revision.version}
+                    className="btn-secondary px-3 py-2 text-xs"
+                  >
+                    {rollingBackVersion === revision.version ? <ArrowsClockwise size={14} /> : <ArrowRight size={14} />}
+                    {rollingBackVersion === revision.version ? "回滚中" : "回滚到此版本"}
+                  </button>
+                )}
+              </div>
             </div>
           ))}
         </div>
