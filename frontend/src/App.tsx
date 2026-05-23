@@ -35,6 +35,7 @@ import type {
   AlertRuleEvaluation,
   AlertRuleInput,
   CapabilityJob,
+  ClusterRebalanceReport,
   ClusterNode,
   ClusterNodeInput,
   ClusterSnapshot,
@@ -44,7 +45,10 @@ import type {
   DatasourceStatus,
   ErrorEvent,
   FieldMapping,
+  FailoverDrillReport,
+  FailoverDrillTask,
   NodeConnectionTestResult,
+  NodeDrainReport,
   NodeOperationResult,
   OperationLog,
   SyncStrategy,
@@ -76,6 +80,18 @@ type WorkloadItem = {
 type Notice = {
   tone: NoticeTone;
   message: string;
+};
+
+type ClusterHandoffReport = {
+  id: string;
+  kind: "drain" | "drill" | "rebalance";
+  happenedAt: string;
+  node?: ClusterNode;
+  success: boolean;
+  message: string;
+  affectedTasks: FailoverDrillTask[];
+  before: ClusterSnapshot;
+  after: ClusterSnapshot;
 };
 
 const navItems: Array<{ id: Page; label: string; icon: typeof SquaresFour }> = [
@@ -1370,6 +1386,59 @@ function TasksPage({
   );
 }
 
+function handoffTitle(kind: ClusterHandoffReport["kind"]) {
+  if (kind === "drain") return "排空结果";
+  if (kind === "drill") return "故障演练结果";
+  return "重新均衡结果";
+}
+
+function handoffTrackTitle(kind: ClusterHandoffReport["kind"]) {
+  if (kind === "drill") return "故障切换路径";
+  if (kind === "drain") return "排空迁移路径";
+  return "任务重新分布";
+}
+
+function fromDrainReport(report: NodeDrainReport): ClusterHandoffReport {
+  return {
+    id: report.id,
+    kind: "drain",
+    happenedAt: report.drainedAt,
+    node: report.node,
+    success: report.success,
+    message: report.message,
+    affectedTasks: report.affectedTasks,
+    before: report.before,
+    after: report.after
+  };
+}
+
+function fromFailoverDrillReport(report: FailoverDrillReport): ClusterHandoffReport {
+  return {
+    id: report.id,
+    kind: "drill",
+    happenedAt: report.drilledAt,
+    node: report.node,
+    success: report.success,
+    message: report.message,
+    affectedTasks: report.affectedTasks,
+    before: report.before,
+    after: report.after
+  };
+}
+
+function fromRebalanceReport(report: ClusterRebalanceReport): ClusterHandoffReport {
+  return {
+    id: report.id,
+    kind: "rebalance",
+    happenedAt: report.rebalancedAt,
+    success: report.success,
+    message: report.message,
+    affectedTasks: report.movedTasks,
+    before: report.before,
+    after: report.after
+  };
+}
+
 function NodesPage({
   cluster,
   tasks,
@@ -1389,6 +1458,7 @@ function NodesPage({
   const [selectedId, setSelectedId] = useState<string | null>(nodes[0]?.id ?? null);
   const [creatorOpen, setCreatorOpen] = useState(false);
   const [operationResult, setOperationResult] = useState<NodeOperationResult | null>(null);
+  const [handoffReport, setHandoffReport] = useState<ClusterHandoffReport | null>(null);
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const localNodeId = cluster?.localNodeId;
   const localNodeName = cluster?.localNodeName || localNodeId;
@@ -1416,6 +1486,10 @@ function NodesPage({
     list.push(task);
     taskByNodeId.set(task.runtime.nodeId, list);
   });
+  const nodeName = (nodeID?: string) => {
+    if (!nodeID) return "待分配";
+    return nodes.find((node) => node.id === nodeID)?.name || nodeID;
+  };
 
   const runQuickAction = async (node: ClusterNode, action: "upgrade" | "uninstall") => {
     if (!canManage) {
@@ -1444,9 +1518,11 @@ function NodesPage({
     try {
       if (action === "drain") {
         const report = await api.drainNode(node.id);
+        setHandoffReport(fromDrainReport(report));
         pushNotice({ tone: report.success ? "success" : "warning", message: report.message });
       } else if (action === "drill") {
         const report = await api.failoverDrill(node.id);
+        setHandoffReport(fromFailoverDrillReport(report));
         pushNotice({ tone: report.success ? "success" : "warning", message: report.message });
       } else {
         await api.nodeAction(node.id, action);
@@ -1460,6 +1536,24 @@ function NodesPage({
     }
   };
 
+  const rebalanceCluster = async () => {
+    if (!canManage) {
+      pushNotice({ tone: "warning", message: "节点运维需要管理员权限" });
+      return;
+    }
+    setBusyKey("rebalance");
+    try {
+      const report = await api.rebalanceCluster();
+      setHandoffReport(fromRebalanceReport(report));
+      pushNotice({ tone: report.success ? "success" : "warning", message: report.message });
+      await onChanged();
+    } catch (requestError) {
+      pushNotice({ tone: "error", message: requestError instanceof Error ? requestError.message : "集群均衡失败" });
+    } finally {
+      setBusyKey(null);
+    }
+  };
+
   return (
     <div className="grid gap-5 xl:grid-cols-[1.08fr_0.92fr]">
       <section className="surface min-w-0 p-6">
@@ -1467,10 +1561,16 @@ function NodesPage({
           title="节点列表"
           description={localNodeName ? `当前控制节点：${localNodeName}` : "部署、升级、卸载都在页面完成。"}
           action={canManage ? (
-            <button onClick={() => setCreatorOpen(true)} className="btn-primary">
-              <Plus size={16} />
-              添加节点
-            </button>
+            <div className="flex flex-wrap gap-2">
+              <button onClick={() => void rebalanceCluster()} disabled={busyKey === "rebalance"} className="btn-secondary">
+                <ArrowsClockwise size={16} />
+                {busyKey === "rebalance" ? "均衡中" : "重新均衡"}
+              </button>
+              <button onClick={() => setCreatorOpen(true)} className="btn-primary">
+                <Plus size={16} />
+                添加节点
+              </button>
+            </div>
           ) : undefined}
         />
 
@@ -1612,6 +1712,80 @@ function NodesPage({
         onChanged={onChanged}
         pushNotice={pushNotice}
       />
+
+      <Modal
+        open={Boolean(handoffReport)}
+        title={handoffReport ? handoffTitle(handoffReport.kind) : ""}
+        description={handoffReport?.message || ""}
+        onClose={() => setHandoffReport(null)}
+      >
+        {handoffReport && (
+          <div className="grid gap-4">
+            <div className="grid gap-3 sm:grid-cols-3">
+              <DetailCard label="发生时间" value={formatDateTime(handoffReport.happenedAt)} />
+              <DetailCard label="在线节点" value={`${handoffReport.after.onlineNodes}/${handoffReport.after.totalNodes}`} />
+              <DetailCard label="影响任务" value={`${handoffReport.affectedTasks.length} 条`} />
+            </div>
+
+            <div className="rounded-3xl border border-line bg-slate-50/70 p-4">
+              <div className="text-sm font-medium text-coal">{handoffTrackTitle(handoffReport.kind)}</div>
+              <div className="mt-3 grid gap-3 sm:grid-cols-[1fr_auto_1fr] sm:items-center">
+                <div className="rounded-2xl border border-line bg-white px-4 py-4">
+                  <div className="text-xs uppercase tracking-[0.18em] text-slate-500">
+                    {handoffReport.kind === "drill" ? "故障节点" : handoffReport.kind === "drain" ? "排空节点" : "原承载节点"}
+                  </div>
+                  <div className="mt-2 text-sm font-medium text-coal">
+                    {handoffReport.node ? nodeName(handoffReport.node.id) : "多节点"}
+                  </div>
+                </div>
+                <div className="hidden justify-center sm:flex">
+                  <ArrowRight size={18} className="text-slate-400" />
+                </div>
+                <div className="rounded-2xl border border-line bg-white px-4 py-4">
+                  <div className="text-xs uppercase tracking-[0.18em] text-slate-500">接管结果</div>
+                  <div className="mt-2 text-sm font-medium text-coal">
+                    {handoffReport.affectedTasks.length === 0 ? "无任务迁移" : Array.from(new Set(handoffReport.affectedTasks.map((item) => nodeName(item.newNodeId)))).join(" / ")}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="grid gap-3">
+              {handoffReport.affectedTasks.length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-line bg-slate-50/70 px-4 py-6 text-center text-sm text-slate-500">
+                  {handoffReport.kind === "rebalance" ? "当前集群已经均衡，没有任务需要迁移。" : "当前节点没有承载任务，本次操作只更新节点状态。"}
+                </div>
+              ) : handoffReport.affectedTasks.map((item) => (
+                <div key={item.taskId} className="rounded-3xl border border-line bg-white p-4">
+                  <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <div className="font-medium text-coal">{item.taskName}</div>
+                        <Badge tone={item.newNodeId ? "green" : "red"}>{item.newNodeId ? "已接管" : "待处理"}</Badge>
+                      </div>
+                      <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                        <span className="rounded-full border border-line bg-slate-50 px-2 py-1">{nodeName(item.previousNodeId)}</span>
+                        <ArrowRight size={14} className="text-slate-400" />
+                        <span className="rounded-full border border-line bg-slate-50 px-2 py-1">{nodeName(item.newNodeId)}</span>
+                      </div>
+                    </div>
+                    <div className="rounded-2xl border border-line bg-slate-50/70 px-4 py-3">
+                      <div className="text-xs uppercase tracking-[0.18em] text-slate-500">恢复位点</div>
+                      <div className="mt-2 mono text-coal">{item.recoveryBinlogFile}:{formatNumber(item.recoveryBinlogPosition)}</div>
+                    </div>
+                  </div>
+                  <div className="mt-3 grid gap-3 sm:grid-cols-4">
+                    <DetailCard label="运行阶段" value={taskRuntimePhaseText(item.runtimePhase)} />
+                    <DetailCard label="Lease" value={`${item.previousLeaseEpoch} -> ${item.leaseEpoch}`} mono />
+                    <DetailCard label="延迟" value={`${item.recoveryDelaySeconds}s`} />
+                    <DetailCard label="接管次数" value={`${item.takeoverCount}`} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </Modal>
 
       <Modal
         open={Boolean(operationResult)}
@@ -3243,6 +3417,15 @@ function taskProcessTone(status?: TaskRuntimeState["processStatus"]) {
   if (status === "starting" || status === "stopping") return "yellow";
   if (status === "failed") return "red";
   return "neutral";
+}
+
+function taskRuntimePhaseText(phase?: string) {
+  if (phase === "full") return "全量";
+  if (phase === "incremental") return "增量";
+  if (phase === "paused") return "暂停";
+  if (phase === "failed") return "异常";
+  if (phase === "stopped") return "停止";
+  return "空闲";
 }
 
 function taskLogTone(level: string) {
