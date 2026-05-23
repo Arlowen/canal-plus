@@ -3,7 +3,6 @@ import {
   ArrowRight,
   ArrowsClockwise,
   CheckCircle,
-  Cloud,
   Database,
   FlowArrow,
   Pulse,
@@ -45,7 +44,7 @@ import type {
   User
 } from "./types/api";
 
-type View = "datasources" | "tasks" | "wizard" | "capabilities" | "cluster" | "errors";
+type View = "resources" | "tasks" | "wizard" | "capabilities" | "errors";
 type NavView = Exclude<View, "wizard">;
 
 const defaultStrategy: SyncStrategy = {
@@ -63,19 +62,17 @@ const defaultStrategy: SyncStrategy = {
 };
 
 const navItems: Array<{ id: NavView; label: string; icon: typeof Stack }> = [
-  { id: "datasources", label: "数据源", icon: Database },
+  { id: "resources", label: "资源", icon: Database },
   { id: "tasks", label: "任务", icon: FlowArrow },
   { id: "capabilities", label: "能力", icon: Stack },
-  { id: "cluster", label: "节点", icon: Cloud },
   { id: "errors", label: "问题", icon: WarningCircle }
 ];
 
 const viewTitles: Record<View, string> = {
-  datasources: "数据源",
+  resources: "资源",
   tasks: "任务",
   wizard: "新建任务",
   capabilities: "能力",
-  cluster: "节点",
   errors: "问题"
 };
 
@@ -90,6 +87,7 @@ function App() {
   const [cluster, setCluster] = useState<ClusterSnapshot | null>(null);
   const [capabilityJobs, setCapabilityJobs] = useState<CapabilityJob[]>([]);
   const [capabilityMode, setCapabilityMode] = useState<CapabilityJobType>("structure");
+  const [resourceMode, setResourceMode] = useState<"datasources" | "cluster">("datasources");
   const [issueMode, setIssueMode] = useState<"errors" | "alerts" | "logs">("errors");
   const [alertRules, setAlertRules] = useState<AlertRule[]>([]);
   const [alertEvents, setAlertEvents] = useState<AlertEvent[]>([]);
@@ -238,8 +236,16 @@ function App() {
             <SkeletonPage />
           ) : (
             <>
-              {view === "datasources" && (
-                <DatasourceView datasources={datasources} tasks={tasks} canManage={canManage} onChanged={() => refresh(true)} />
+              {view === "resources" && (
+                <ResourceCenter
+                  mode={resourceMode}
+                  onModeChange={setResourceMode}
+                  datasources={datasources}
+                  cluster={cluster}
+                  tasks={tasks}
+                  canManage={canManage}
+                  onChanged={() => refresh(true)}
+                />
               )}
               {view === "tasks" && (
                 <TaskView
@@ -277,9 +283,6 @@ function App() {
                   onChanged={() => refresh(true)}
                 />
               )}
-              {view === "cluster" && (
-                <ClusterView cluster={cluster} tasks={tasks} canManage={canManage} onChanged={() => refresh(true)} />
-              )}
               {view === "errors" && (
                 <IssueCenter
                   mode={issueMode}
@@ -298,6 +301,55 @@ function App() {
           )}
         </main>
       </div>
+    </div>
+  );
+}
+
+function ResourceCenter({
+  mode,
+  onModeChange,
+  datasources,
+  cluster,
+  tasks,
+  canManage,
+  onChanged
+}: {
+  mode: "datasources" | "cluster";
+  onModeChange: (mode: "datasources" | "cluster") => void;
+  datasources: Datasource[];
+  cluster: ClusterSnapshot | null;
+  tasks: SyncTask[];
+  canManage: boolean;
+  onChanged: () => Promise<void> | void;
+}) {
+  return (
+    <div className="space-y-5">
+      <div className="flex flex-wrap gap-2">
+        <button
+          onClick={() => onModeChange("datasources")}
+          className={cx(
+            "inline-flex items-center justify-center rounded-full border px-3 py-1.5 text-sm transition active:scale-[0.98]",
+            mode === "datasources" ? "border-coal bg-coal text-white" : "border-line bg-white text-zinc-600 hover:bg-zinc-50"
+          )}
+        >
+          数据源
+        </button>
+        <button
+          onClick={() => onModeChange("cluster")}
+          className={cx(
+            "inline-flex items-center justify-center rounded-full border px-3 py-1.5 text-sm transition active:scale-[0.98]",
+            mode === "cluster" ? "border-coal bg-coal text-white" : "border-line bg-white text-zinc-600 hover:bg-zinc-50"
+          )}
+        >
+          节点
+        </button>
+      </div>
+
+      {mode === "datasources" ? (
+        <DatasourceView datasources={datasources} tasks={tasks} canManage={canManage} onChanged={onChanged} />
+      ) : (
+        <ClusterView cluster={cluster} tasks={tasks} canManage={canManage} onChanged={onChanged} />
+      )}
     </div>
   );
 }
