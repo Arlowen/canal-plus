@@ -55,6 +55,7 @@ import type {
   SyncTask,
   TableColumn,
   TableInfo,
+  TaskCheckpoint,
   TaskLogEntry,
   TaskPreflightReport,
   TaskRuntimeState,
@@ -2788,6 +2789,7 @@ function SyncTaskDetail({
   cluster: ClusterSnapshot | null;
 }) {
   const [runtime, setRuntime] = useState(task.runtime);
+  const [checkpoints, setCheckpoints] = useState<TaskCheckpoint[]>([]);
   const [taskLogs, setTaskLogs] = useState<TaskLogEntry[]>([]);
   const [logConnected, setLogConnected] = useState(false);
   const [logNotice, setLogNotice] = useState<string | null>(null);
@@ -2801,6 +2803,24 @@ function SyncTaskDetail({
   useEffect(() => {
     setRuntime(task.runtime);
   }, [task.id, task.runtime]);
+
+  useEffect(() => {
+    let cancelled = false;
+    api.taskCheckpoints(task.id)
+      .then((items) => {
+        if (!cancelled) {
+          setCheckpoints(items.slice(0, 8));
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setCheckpoints([]);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [task.id]);
 
   useEffect(() => {
     if (remoteManaged) {
@@ -2931,6 +2951,44 @@ function SyncTaskDetail({
                 to {mapping.targetSchema}.{mapping.targetTable}
               </div>
               <div className="mt-2 text-xs text-slate-500">{mapping.fields.filter((item) => !item.ignored).length} 个字段</div>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="rounded-3xl border border-line bg-slate-50/70 p-4">
+        <div className="font-medium text-coal">运行轨迹</div>
+        <div className="mt-3 grid gap-3">
+          {checkpoints.length === 0 ? (
+            <div className="text-sm text-slate-500">当前没有可展示的运行轨迹。</div>
+          ) : checkpoints.map((checkpoint) => (
+            <div key={checkpoint.id} className="rounded-2xl border border-line bg-white p-4">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge tone={checkpointReasonTone(checkpoint.reason)}>{checkpointReasonText(checkpoint.reason)}</Badge>
+                    <span className="text-sm font-medium text-coal">{taskRuntimePhaseText(checkpoint.phase)}</span>
+                  </div>
+                  <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                    <span className="rounded-full border border-line bg-slate-50 px-2 py-1">{checkpoint.nodeId || "待分配"}</span>
+                    {checkpoint.previousNodeId && checkpoint.previousNodeId !== checkpoint.nodeId && (
+                      <>
+                        <ArrowRight size={14} className="text-slate-400" />
+                        <span className="rounded-full border border-line bg-slate-50 px-2 py-1">{checkpoint.previousNodeId}</span>
+                      </>
+                    )}
+                    <span>{formatDateTime(checkpoint.createdAt)}</span>
+                  </div>
+                </div>
+                <div className="rounded-2xl border border-line bg-slate-50/70 px-4 py-3">
+                  <div className="text-xs uppercase tracking-[0.18em] text-slate-500">位点</div>
+                  <div className="mt-2 mono text-coal">{checkpoint.binlogFile}:{checkpoint.binlogPosition}</div>
+                </div>
+              </div>
+              <div className="mt-3 grid gap-3 sm:grid-cols-3">
+                <DetailCard label="Lease Epoch" value={`${checkpoint.leaseEpoch}`} mono />
+                <DetailCard label="延迟" value={`${checkpoint.delaySeconds}s`} />
+                <DetailCard label="吞吐" value={`${checkpoint.eventsPerSecond} eps`} />
+              </div>
             </div>
           ))}
         </div>
@@ -3473,6 +3531,32 @@ function taskRuntimePhaseText(phase?: string) {
   if (phase === "failed") return "异常";
   if (phase === "stopped") return "停止";
   return "空闲";
+}
+
+function checkpointReasonText(reason: string) {
+  if (reason === "create") return "创建任务";
+  if (reason === "rerun") return "任务重跑";
+  if (reason === "manual_reset") return "重置位点";
+  if (reason === "full_completed") return "全量完成";
+  if (reason === "lease_assign") return "分配节点";
+  if (reason === "failover_takeover") return "故障接管";
+  if (reason === "lease_unassigned") return "等待接管";
+  if (reason.startsWith("lifecycle_")) {
+    const action = reason.replace("lifecycle_", "");
+    if (action === "start") return "启动任务";
+    if (action === "pause") return "暂停任务";
+    if (action === "resume") return "恢复任务";
+    if (action === "stop") return "停止任务";
+  }
+  return reason;
+}
+
+function checkpointReasonTone(reason: string) {
+  if (reason === "failover_takeover") return "yellow";
+  if (reason === "lease_unassigned") return "red";
+  if (reason === "manual_reset") return "blue";
+  if (reason === "full_completed") return "green";
+  return "neutral";
 }
 
 function taskLogTone(level: string) {
