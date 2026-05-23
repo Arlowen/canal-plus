@@ -1162,6 +1162,47 @@ func TestDeleteTaskRequiresDraftOrStoppedTask(t *testing.T) {
 	}
 }
 
+func TestTransitionTaskWritesTaskLog(t *testing.T) {
+	store := newTestStore(t)
+	snapshot := store.Snapshot()
+	task := snapshot.SyncTasks[0]
+
+	if _, ok, err := store.TransitionTask(task.ID, "pause"); err != nil || !ok {
+		t.Fatalf("TransitionTask(pause) ok %v err %v", ok, err)
+	}
+
+	logs := store.Snapshot().TaskLogs
+	found := false
+	for _, entry := range logs {
+		if entry.TaskID == task.ID && entry.Message == "任务已暂停" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected task pause log entry, got %#v", logs)
+	}
+}
+
+func TestDeleteTaskRemovesTaskLogs(t *testing.T) {
+	store := newTestStore(t)
+	snapshot := store.Snapshot()
+	task := snapshot.SyncTasks[0]
+
+	if _, ok, err := store.TransitionTask(task.ID, "stop"); err != nil || !ok {
+		t.Fatalf("TransitionTask(stop) ok %v err %v", ok, err)
+	}
+	if deleted, err := store.DeleteTask(task.ID); err != nil || !deleted {
+		t.Fatalf("DeleteTask() deleted %v err %v", deleted, err)
+	}
+
+	for _, entry := range store.Snapshot().TaskLogs {
+		if entry.TaskID == task.ID {
+			t.Fatalf("expected task logs removed after delete, got %#v", entry)
+		}
+	}
+}
+
 func TestUpgradeNodeReturnsTaskHandoffs(t *testing.T) {
 	store := newTestStore(t)
 	before := store.ClusterSnapshot()

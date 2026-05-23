@@ -305,6 +305,7 @@ func (s *Store) CreateTask(input SyncTask) (SyncTask, error) {
 	}
 	s.data.RuntimeStates = append([]TaskRuntimeState{runtime}, s.data.RuntimeStates...)
 	s.recordTaskCheckpointLocked(runtime, "create", "")
+	s.appendTaskLogLocked(input.ID, runtime.NodeID, 0, "info", runtime.Phase, "任务已创建，等待启动")
 	s.logLocked("admin", "create", "sync_task", input.ID, "创建同步任务 "+input.Name)
 	if err := s.saveLocked(); err != nil {
 		return SyncTask{}, err
@@ -361,6 +362,7 @@ func (s *Store) UpdateTask(id string, patch SyncTask) (SyncTask, bool, error) {
 		updated := *task
 		if changedConfig {
 			s.recordTaskRevisionLocked(updated, "update", "更新同步任务配置", "admin")
+			s.appendTaskLogLocked(id, s.ensureRuntimeLocked(id).NodeID, 0, "info", s.ensureRuntimeLocked(id).Phase, "任务配置已更新")
 		}
 		s.logLocked("admin", "update", "sync_task", id, "更新同步任务 "+updated.Name)
 		return cloneJSON(updated), true, s.saveLocked()
@@ -387,6 +389,7 @@ func (s *Store) DeleteTask(id string) (bool, error) {
 		}
 		s.removeTaskRevisionsLocked(id)
 		s.removeTaskCheckpointsLocked(id)
+		s.removeTaskLogsLocked(id)
 		s.logLocked("admin", "delete", "sync_task", id, "删除同步任务")
 		return true, s.saveLocked()
 	}
@@ -529,6 +532,7 @@ func (s *Store) RerunTask(id string) (SyncTask, bool, error) {
 		}
 		task.UpdatedAt = timestamp
 		s.recordTaskCheckpointLocked(*runtime, "rerun", "")
+		s.appendTaskLogLocked(id, runtime.NodeID, 0, "info", runtime.Phase, "任务已重跑，运行态已重置")
 		s.recountNodeTasksLocked()
 		s.logLocked("admin", "rerun", "sync_task", id, "重跑同步任务 "+task.Name)
 		return cloneJSON(*task), true, s.saveLocked()
@@ -591,6 +595,7 @@ func (s *Store) TransitionTask(id string, action string) (SyncTask, bool, error)
 		task.UpdatedAt = timestamp
 		updated := *task
 		s.recordTaskCheckpointLocked(*runtime, "lifecycle_"+action, "")
+		s.appendTaskLogLocked(id, runtime.NodeID, 0, "info", runtime.Phase, lifecycleActionMessage(action, task.Status))
 		s.recountNodeTasksLocked()
 		s.logLocked("admin", action, "sync_task", id, action+" 同步任务 "+task.Name)
 		return cloneJSON(updated), true, s.saveLocked()
@@ -658,6 +663,7 @@ func (s *Store) UpdateTaskParameters(id string, patch TaskParameterPatch) (SyncT
 			task.ConfigVersion++
 			task.UpdatedAt = now()
 			s.recordTaskRevisionLocked(*task, "params", "修改任务运行参数", "admin")
+			s.appendTaskLogLocked(id, s.ensureRuntimeLocked(id).NodeID, 0, "info", s.ensureRuntimeLocked(id).Phase, "任务运行参数已更新")
 			s.logLocked("admin", "params", "sync_task", id, "修改任务参数 "+task.Name)
 			return cloneJSON(*task), true, s.saveLocked()
 		}
@@ -692,6 +698,7 @@ func (s *Store) ResetTaskPosition(id string, input PositionResetInput) (SyncTask
 		if input.ServerID != "" {
 			detail += " serverId=" + input.ServerID
 		}
+		s.appendTaskLogLocked(id, runtime.NodeID, 0, "info", runtime.Phase, detail)
 		s.logLocked("admin", "reset_position", "sync_task", id, detail)
 		return cloneJSON(*task), true, s.saveLocked()
 	}
@@ -2522,6 +2529,31 @@ func (s *Store) removeTaskCheckpointsLocked(taskID string) {
 		}
 	}
 	s.data.TaskCheckpoints = checkpoints
+}
+
+func (s *Store) removeTaskLogsLocked(taskID string) {
+	logs := s.data.TaskLogs[:0]
+	for _, entry := range s.data.TaskLogs {
+		if entry.TaskID != taskID {
+			logs = append(logs, entry)
+		}
+	}
+	s.data.TaskLogs = logs
+}
+
+func lifecycleActionMessage(action string, status TaskStatus) string {
+	switch action {
+	case "start":
+		return "任务已启动"
+	case "resume":
+		return "任务已恢复"
+	case "pause":
+		return "任务已暂停"
+	case "stop":
+		return "任务已停止"
+	default:
+		return "任务状态已更新为 " + string(status)
+	}
 }
 
 func sortTaskRevisionsDesc(revisions []TaskRevision) {
