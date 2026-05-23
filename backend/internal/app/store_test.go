@@ -229,6 +229,16 @@ func TestBringNodeOnlineReturnsRecoveryReport(t *testing.T) {
 	if report.After.OnlineNodes < report.Before.OnlineNodes {
 		t.Fatalf("expected online node count to recover: before=%#v after=%#v", report.Before, report.After)
 	}
+	recoveredRunningTasks := 0
+	for _, node := range report.After.Nodes {
+		if node.ID == offlineNode.ID {
+			recoveredRunningTasks = node.RunningTasks
+			break
+		}
+	}
+	if recoveredRunningTasks == 0 && len(report.AffectedTasks) == 0 {
+		t.Fatalf("expected recovered node to resume task capacity or trigger rebalance: %#v", report)
+	}
 }
 
 func TestDrainNodeReturnsMaintenanceHandoffReport(t *testing.T) {

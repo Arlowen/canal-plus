@@ -1107,6 +1107,7 @@ func (s *Store) BringNodeOnline(id string) (NodeStatusChangeResult, bool, error)
 	node.UpdatedAt = timestamp
 	s.logLocked("admin", "node_online", "cluster_node", id, "节点恢复上线："+node.Name)
 	s.reconcileClusterLocked()
+	s.rebalanceAssignmentsLocked("节点恢复上线重新分配", id)
 	after := s.clusterSnapshotLocked()
 	movedBefore = movedLeases(before.Leases, after.Leases)
 	handoffs, success := s.buildClusterHandoffsLocked(movedBefore, after.Leases, tasksByID, "")
@@ -1114,7 +1115,7 @@ func (s *Store) BringNodeOnline(id string) (NodeStatusChangeResult, bool, error)
 	if len(handoffs) == 0 {
 		message = "节点已上线，当前没有待分配任务"
 	} else if success {
-		message = "节点已上线，待分配任务已恢复承载"
+		message = "节点已上线，任务已按当前负载重新分配"
 	} else {
 		message = "节点已上线，但仍有任务待接管，请检查节点容量"
 	}
@@ -1315,35 +1316,7 @@ func (s *Store) RebalanceCluster() (ClusterRebalanceReport, error) {
 	s.markStaleNodesLocked()
 	before := s.clusterSnapshotLocked()
 	tasksByID := s.tasksByIDLocked()
-	plannedLoads := map[string]int{}
-	for index := range s.data.Nodes {
-		if s.data.Nodes[index].Status == NodeOnline {
-			plannedLoads[s.data.Nodes[index].ID] = 0
-		}
-	}
-	for taskIndex := range s.data.SyncTasks {
-		if !leaseRequired(s.data.SyncTasks[taskIndex].Status) {
-			continue
-		}
-		runtime := s.ensureRuntimeLocked(s.data.SyncTasks[taskIndex].ID)
-		currentNode := s.getNodeLocked(runtime.NodeID)
-		targetNode := s.selectNodeForLoadLocked(plannedLoads)
-		if targetNode == nil {
-			runtime.NodeID = ""
-			runtime.LeaseExpiresAt = ""
-			runtime.UpdatedAt = now()
-			s.removeLeaseLocked(runtime.TaskID)
-			s.recordTaskCheckpointLocked(*runtime, "lease_unassigned", "")
-			continue
-		}
-		if currentNode == nil || currentNode.Status != NodeOnline || targetNode.ID != runtime.NodeID {
-			s.assignTaskToNodeLocked(runtime, targetNode.ID, "任务重新均衡", false)
-		} else {
-			runtime.LeaseExpiresAt = leaseExpiry()
-			s.upsertLeaseLocked(runtime.TaskID, runtime.NodeID, false)
-		}
-		plannedLoads[targetNode.ID]++
-	}
+	s.rebalanceAssignmentsLocked("任务重新均衡", "")
 	if err := s.saveLocked(); err != nil {
 		return ClusterRebalanceReport{}, err
 	}
@@ -1366,6 +1339,38 @@ func (s *Store) RebalanceCluster() (ClusterRebalanceReport, error) {
 		report.Message = "重新均衡完成，但存在未分配任务，请检查在线 node 容量"
 	}
 	return cloneJSON(report), nil
+}
+
+func (s *Store) rebalanceAssignmentsLocked(reason string, preferredNodeID string) {
+	plannedLoads := map[string]int{}
+	for index := range s.data.Nodes {
+		if s.data.Nodes[index].Status == NodeOnline {
+			plannedLoads[s.data.Nodes[index].ID] = 0
+		}
+	}
+	for taskIndex := range s.data.SyncTasks {
+		if !leaseRequired(s.data.SyncTasks[taskIndex].Status) {
+			continue
+		}
+		runtime := s.ensureRuntimeLocked(s.data.SyncTasks[taskIndex].ID)
+		currentNode := s.getNodeLocked(runtime.NodeID)
+		targetNode := s.selectNodeForLoadLocked(plannedLoads, preferredNodeID)
+		if targetNode == nil {
+			runtime.NodeID = ""
+			runtime.LeaseExpiresAt = ""
+			runtime.UpdatedAt = now()
+			s.removeLeaseLocked(runtime.TaskID)
+			s.recordTaskCheckpointLocked(*runtime, "lease_unassigned", "")
+			continue
+		}
+		if currentNode == nil || currentNode.Status != NodeOnline || targetNode.ID != runtime.NodeID {
+			s.assignTaskToNodeLocked(runtime, targetNode.ID, reason, false)
+		} else {
+			runtime.LeaseExpiresAt = leaseExpiry()
+			s.upsertLeaseLocked(runtime.TaskID, runtime.NodeID, false)
+		}
+		plannedLoads[targetNode.ID]++
+	}
 }
 
 func (s *Store) ErrorEvents() []ErrorEvent {
@@ -2206,7 +2211,7 @@ func (s *Store) selectNodeLocked(excludeID string) *ClusterNode {
 	return nil
 }
 
-func (s *Store) selectNodeForLoadLocked(loads map[string]int) *ClusterNode {
+func (s *Store) selectNodeForLoadLocked(loads map[string]int, preferredNodeID string) *ClusterNode {
 	var selected *ClusterNode
 	for index := range s.data.Nodes {
 		node := &s.data.Nodes[index]
@@ -2218,6 +2223,7 @@ func (s *Store) selectNodeForLoadLocked(loads map[string]int) *ClusterNode {
 		}
 		if selected == nil ||
 			loads[node.ID] < loads[selected.ID] ||
+			(loads[node.ID] == loads[selected.ID] && preferredNodeID != "" && node.ID == preferredNodeID && selected.ID != preferredNodeID) ||
 			(loads[node.ID] == loads[selected.ID] && node.CPUPercent < selected.CPUPercent) {
 			selected = node
 		}
