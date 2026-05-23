@@ -429,6 +429,7 @@ function App() {
                 tasks={tasks}
                 capabilityJobs={capabilityJobs}
                 errors={errors}
+                cluster={cluster}
                 canManage={canManage}
                 onChanged={refresh}
                 pushNotice={pushNotice}
@@ -1064,6 +1065,7 @@ function TasksPage({
   tasks,
   capabilityJobs,
   errors,
+  cluster,
   canManage,
   onChanged,
   pushNotice,
@@ -1074,6 +1076,7 @@ function TasksPage({
   tasks: SyncTask[];
   capabilityJobs: CapabilityJob[];
   errors: ErrorEvent[];
+  cluster: ClusterSnapshot | null;
   canManage: boolean;
   onChanged: (quiet?: boolean) => Promise<void>;
   pushNotice: (notice: Notice) => void;
@@ -1344,7 +1347,7 @@ function TasksPage({
           {!selected ? (
             <div className="mt-5 text-sm text-slate-500">选择一条任务查看详情。</div>
           ) : selected.rawTask ? (
-            <SyncTaskDetail task={selected.rawTask} errors={errors} />
+            <SyncTaskDetail task={selected.rawTask} errors={errors} cluster={cluster} />
           ) : selected.rawJob ? (
             <CapabilityJobDetail job={selected.rawJob} qualityDiffs={qualityDiffs} structureItems={structureItems} tasks={tasks} />
           ) : null}
@@ -2554,28 +2557,49 @@ function NodeCreatorModal({
   );
 }
 
-function SyncTaskDetail({ task, errors }: { task: SyncTask; errors: ErrorEvent[] }) {
+function SyncTaskDetail({
+  task,
+  errors,
+  cluster
+}: {
+  task: SyncTask;
+  errors: ErrorEvent[];
+  cluster: ClusterSnapshot | null;
+}) {
   const [runtime, setRuntime] = useState(task.runtime);
   const [taskLogs, setTaskLogs] = useState<TaskLogEntry[]>([]);
   const [logConnected, setLogConnected] = useState(false);
+  const [logNotice, setLogNotice] = useState<string | null>(null);
   const progress = runtime && runtime.fullTotalRows > 0 ? Math.min(100, Math.round((runtime.fullSyncedRows / runtime.fullTotalRows) * 100)) : 0;
   const taskErrors = errors.filter((item) => item.taskId === task.id).slice(0, 4);
+  const localNodeId = cluster?.localNodeId;
+  const runtimeNode = runtime?.nodeId;
+  const remoteManaged = Boolean(localNodeId && runtimeNode && runtimeNode !== localNodeId);
+  const runtimeNodeLabel = cluster?.nodes.find((node) => node.id === runtimeNode)?.name || runtimeNode;
 
   useEffect(() => {
     setRuntime(task.runtime);
   }, [task.id, task.runtime]);
 
   useEffect(() => {
+    if (remoteManaged) {
+      setTaskLogs([]);
+      setLogNotice(`当前任务由节点 ${runtimeNodeLabel} 托管，请切换到该节点查看实时日志。`);
+      setLogConnected(false);
+      return;
+    }
     let cancelled = false;
     api.taskLogs(task.id, 120)
       .then((items) => {
         if (!cancelled) {
           setTaskLogs(items);
+          setLogNotice(null);
         }
       })
-      .catch(() => {
+      .catch((error) => {
         if (!cancelled) {
           setTaskLogs([]);
+          setLogNotice(error instanceof Error ? error.message : "日志加载失败");
         }
       });
 
@@ -2590,6 +2614,7 @@ function SyncTaskDetail({ task, errors }: { task: SyncTask; errors: ErrorEvent[]
       try {
         const entry = JSON.parse(event.data) as TaskLogEntry;
         setTaskLogs((current) => [...current.slice(-119), entry]);
+        setLogNotice(null);
       } catch {
         return;
       }
@@ -2605,7 +2630,7 @@ function SyncTaskDetail({ task, errors }: { task: SyncTask; errors: ErrorEvent[]
       setLogConnected(false);
       stream.close();
     };
-  }, [task.id]);
+  }, [remoteManaged, runtimeNodeLabel, task.id]);
 
   useEffect(() => {
     const active = task.status === "full_syncing" || task.status === "incremental_running" || runtime?.processStatus === "starting" || runtime?.processStatus === "running";
@@ -2639,6 +2664,7 @@ function SyncTaskDetail({ task, errors }: { task: SyncTask; errors: ErrorEvent[]
         <TypeBadge type={syncTaskTypeText(task)} />
         <StatusBadge status={task.status} />
         <Badge tone={taskProcessTone(runtime?.processStatus)}>{taskProcessStatusText(runtime?.processStatus)}</Badge>
+        {remoteManaged && <Badge tone="yellow">远程托管</Badge>}
       </div>
       <div className="text-lg font-semibold text-coal">{task.name}</div>
       <div className="text-sm text-slate-500">
@@ -2665,8 +2691,8 @@ function SyncTaskDetail({ task, errors }: { task: SyncTask; errors: ErrorEvent[]
         </div>
         <div className="mt-3 grid gap-3 sm:grid-cols-3">
           <DetailCard label="进程 PID" value={runtime?.processId ? `${runtime.processId}` : "-"} mono />
-          <DetailCard label="最近心跳" value={runtime?.lastHeartbeatAt ? formatDateTime(runtime.lastHeartbeatAt) : "-"} />
-          <DetailCard label="最近日志" value={runtime?.lastLogAt ? formatDateTime(runtime.lastLogAt) : "-"} />
+                <DetailCard label="最近心跳" value={runtime?.lastHeartbeatAt ? formatDateTime(runtime.lastHeartbeatAt) : "-"} />
+                <DetailCard label="最近日志" value={runtime?.lastLogAt ? formatDateTime(runtime.lastLogAt) : "-"} />
         </div>
         <div className="mt-3 rounded-2xl border border-line bg-white px-4 py-3 text-sm text-slate-500">
           {runtime?.lastLogMessage || "暂无运行日志摘要。"}
@@ -2691,11 +2717,15 @@ function SyncTaskDetail({ task, errors }: { task: SyncTask; errors: ErrorEvent[]
       <div className="rounded-3xl border border-line bg-slate-50/70 p-4">
         <div className="flex items-center justify-between gap-3">
           <div className="font-medium text-coal">实时日志</div>
-          <Badge tone={logConnected ? "green" : "yellow"}>{logConnected ? "实时连接" : "等待连接"}</Badge>
+          <Badge tone={remoteManaged ? "yellow" : logConnected ? "green" : "yellow"}>
+            {remoteManaged ? "远程节点" : logConnected ? "实时连接" : "等待连接"}
+          </Badge>
         </div>
         <div className="mt-3 rounded-2xl border border-line bg-white">
           <div className="max-h-[320px] overflow-auto px-4 py-3">
-            {taskLogs.length === 0 ? (
+            {logNotice ? (
+              <div className="text-sm text-slate-500">{logNotice}</div>
+            ) : taskLogs.length === 0 ? (
               <div className="text-sm text-slate-500">当前还没有任务进程日志。</div>
             ) : (
               <div className="grid gap-2">

@@ -518,6 +518,10 @@ func (s *Server) handleSyncTasks(response http.ResponseWriter, request *http.Req
 		}
 		writeJSON(response, http.StatusOK, runtime)
 	case len(parts) == 3 && parts[2] == "logs" && request.Method == http.MethodGet:
+		if ok, message := s.canAccessTaskLogs(parts[1]); !ok {
+			writeError(response, http.StatusConflict, message)
+			return
+		}
 		limit := 120
 		if value := strings.TrimSpace(request.URL.Query().Get("limit")); value != "" {
 			if parsed, err := strconv.Atoi(value); err == nil && parsed > 0 {
@@ -532,6 +536,10 @@ func (s *Server) handleSyncTasks(response http.ResponseWriter, request *http.Req
 	case len(parts) == 4 && parts[2] == "logs" && parts[3] == "stream" && request.Method == http.MethodGet:
 		if s.taskLogs == nil {
 			writeError(response, http.StatusServiceUnavailable, "日志流未启用")
+			return
+		}
+		if ok, message := s.canAccessTaskLogs(parts[1]); !ok {
+			writeError(response, http.StatusConflict, message)
 			return
 		}
 		s.streamTaskLogs(response, request, parts[1])
@@ -1215,6 +1223,28 @@ func (s *Server) isLocalControlNode(nodeID string) bool {
 		return false
 	}
 	return nodeID != "" && nodeID == s.processes.LocalNodeID()
+}
+
+func (s *Server) canAccessTaskLogs(taskID string) (bool, string) {
+	if s.processes == nil {
+		return true, ""
+	}
+	runtime, ok := s.store.Runtime(taskID)
+	if !ok {
+		return false, "同步任务不存在"
+	}
+	if runtime.NodeID == "" || runtime.NodeID == s.processes.LocalNodeID() {
+		return true, ""
+	}
+	label := runtime.NodeID
+	snapshot := s.store.ClusterSnapshot()
+	for _, node := range snapshot.Nodes {
+		if node.ID == runtime.NodeID {
+			label = valueOr(node.Name, node.ID)
+			break
+		}
+	}
+	return false, fmt.Sprintf("任务当前由节点 %s 托管，请切换到该节点查看实时日志", label)
 }
 
 func clusterOnline(nodes []ClusterNode) int {
