@@ -13,12 +13,15 @@ import (
 )
 
 type Server struct {
-	store          *Store
-	taskLogs       *TaskLogService
-	taskStatus     *TaskStatusService
-	processes      *TaskProcessManager
-	port           string
-	allowedOrigins map[string]struct{}
+	store           *Store
+	taskLogs        *TaskLogService
+	taskStatus      *TaskStatusService
+	processes       *TaskProcessManager
+	port            string
+	dataFile        string
+	frontendOrigins []string
+	runtimeConfig   RuntimeConfig
+	allowedOrigins  map[string]struct{}
 }
 
 func NewServer() (*Server, error) {
@@ -43,33 +46,53 @@ func NewServer() (*Server, error) {
 	taskStatus := NewTaskStatusService(store)
 	localNodeID := resolveLocalNodeID(store, os.Getenv("CANAL_PLUS_NODE_ID"))
 	processes := NewTaskProcessManager(store, taskLogs, taskStatus, binaryPath, localNodeID)
-	if os.Getenv("CANAL_PLUS_CLUSTER_SUPERVISOR") != "false" {
-		store.StartClusterSupervisor(envDurationSeconds("CANAL_PLUS_CLUSTER_SUPERVISOR_INTERVAL_SECONDS", 5*time.Second))
+	clusterSupervisorEnabled := os.Getenv("CANAL_PLUS_CLUSTER_SUPERVISOR") != "false"
+	clusterSupervisorInterval := envDurationSeconds("CANAL_PLUS_CLUSTER_SUPERVISOR_INTERVAL_SECONDS", 5*time.Second)
+	if clusterSupervisorEnabled {
+		store.StartClusterSupervisor(clusterSupervisorInterval)
 	}
-	if os.Getenv("CANAL_PLUS_EMBEDDED_NODE_HEARTBEAT") != "false" {
-		store.StartEmbeddedNodeHeartbeat(localNodeID, envDurationSeconds("CANAL_PLUS_EMBEDDED_NODE_HEARTBEAT_INTERVAL_SECONDS", 10*time.Second))
+	embeddedHeartbeatEnabled := os.Getenv("CANAL_PLUS_EMBEDDED_NODE_HEARTBEAT") != "false"
+	embeddedHeartbeatInterval := envDurationSeconds("CANAL_PLUS_EMBEDDED_NODE_HEARTBEAT_INTERVAL_SECONDS", 10*time.Second)
+	if embeddedHeartbeatEnabled {
+		store.StartEmbeddedNodeHeartbeat(localNodeID, embeddedHeartbeatInterval)
 	}
-	processes.StartSupervisor(envDurationSeconds("CANAL_PLUS_TASK_PROCESS_SUPERVISOR_INTERVAL_SECONDS", 2*time.Second))
+	taskProcessSupervisorInterval := envDurationSeconds("CANAL_PLUS_TASK_PROCESS_SUPERVISOR_INTERVAL_SECONDS", 2*time.Second)
+	processes.StartSupervisor(taskProcessSupervisorInterval)
 
 	frontendOrigin := os.Getenv("FRONTEND_ORIGIN")
 	if frontendOrigin == "" {
 		frontendOrigin = "http://localhost:5173"
 	}
 	allowedOrigins := map[string]struct{}{}
+	frontendOrigins := []string{}
 	for _, origin := range strings.Split(frontendOrigin, ",") {
 		origin = strings.TrimSpace(origin)
 		if origin != "" {
 			allowedOrigins[origin] = struct{}{}
+			frontendOrigins = append(frontendOrigins, origin)
 		}
 	}
 
 	server := &Server{
-		store:          store,
-		taskLogs:       taskLogs,
-		taskStatus:     taskStatus,
-		processes:      processes,
-		port:           port,
-		allowedOrigins: allowedOrigins,
+		store:           store,
+		taskLogs:        taskLogs,
+		taskStatus:      taskStatus,
+		processes:       processes,
+		port:            port,
+		dataFile:        dataFile,
+		frontendOrigins: frontendOrigins,
+		allowedOrigins:  allowedOrigins,
+		runtimeConfig: RuntimeConfig{
+			BackendPort:                          port,
+			FrontendOrigins:                      frontendOrigins,
+			DataFile:                             dataFile,
+			LocalNodeID:                          localNodeID,
+			ClusterSupervisorEnabled:             clusterSupervisorEnabled,
+			ClusterSupervisorIntervalSeconds:     int(clusterSupervisorInterval.Seconds()),
+			EmbeddedHeartbeatEnabled:             embeddedHeartbeatEnabled,
+			EmbeddedHeartbeatIntervalSeconds:     int(embeddedHeartbeatInterval.Seconds()),
+			TaskProcessSupervisorIntervalSeconds: int(taskProcessSupervisorInterval.Seconds()),
+		},
 	}
 	server.processes.RecoverActiveTasks()
 	return server, nil
@@ -137,6 +160,8 @@ func (s *Server) ServeHTTP(response http.ResponseWriter, request *http.Request) 
 	switch {
 	case len(parts) == 1 && parts[0] == "me" && request.Method == http.MethodGet:
 		writeJSON(response, http.StatusOK, toPublicUser(user))
+	case len(parts) == 2 && parts[0] == "runtime" && parts[1] == "config" && request.Method == http.MethodGet:
+		writeJSON(response, http.StatusOK, s.runtimeConfig)
 	case len(parts) == 2 && parts[0] == "dashboard" && parts[1] == "summary" && request.Method == http.MethodGet:
 		s.handleDashboardSummary(response)
 	case len(parts) >= 1 && parts[0] == "datasources":

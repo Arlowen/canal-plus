@@ -40,6 +40,11 @@ func TestOperatorCanReadAndRunOperationalActions(t *testing.T) {
 		t.Fatalf("operator read datasources status = %d body = %s", readResponse.Code, readResponse.Body.String())
 	}
 
+	runtimeConfigResponse := serveTestRequest(server, authRequest(http.MethodGet, "/api/runtime/config", operatorToken, ""))
+	if runtimeConfigResponse.Code != http.StatusOK {
+		t.Fatalf("operator read runtime config status = %d body = %s", runtimeConfigResponse.Code, runtimeConfigResponse.Body.String())
+	}
+
 	testResponse := serveTestRequest(server, authRequest(http.MethodPost, "/api/datasources/missing/test", operatorToken, ""))
 	if testResponse.Code != http.StatusNotFound {
 		t.Fatalf("operator datasource test should reach handler, status = %d body = %s", testResponse.Code, testResponse.Body.String())

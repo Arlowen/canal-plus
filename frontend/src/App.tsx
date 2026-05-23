@@ -52,6 +52,7 @@ import type {
   NodeOperationResult,
   NodeStatusChangeResult,
   OperationLog,
+  RuntimeConfig,
   SyncStrategy,
   SyncTask,
   TableColumn,
@@ -196,6 +197,7 @@ function App() {
   const [user, setUser] = useState<User | null>(null);
   const [page, setPage] = useState<Page>("dashboard");
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
+  const [runtimeConfig, setRuntimeConfig] = useState<RuntimeConfig | null>(null);
   const [datasources, setDatasources] = useState<Datasource[]>([]);
   const [tasks, setTasks] = useState<SyncTask[]>([]);
   const [errors, setErrors] = useState<ErrorEvent[]>([]);
@@ -226,6 +228,7 @@ function App() {
     try {
       const [
         nextSummary,
+        nextRuntimeConfig,
         nextDatasources,
         nextTasks,
         nextErrors,
@@ -237,6 +240,7 @@ function App() {
         nextAlertEvents
       ] = await Promise.all([
         api.summary(),
+        api.runtimeConfig(),
         api.datasources(),
         api.tasks(),
         api.errors(),
@@ -248,6 +252,7 @@ function App() {
         api.alertEvents()
       ]);
       setSummary(nextSummary);
+      setRuntimeConfig(nextRuntimeConfig);
       setDatasources(nextDatasources);
       setTasks(nextTasks);
       setErrors(nextErrors);
@@ -487,6 +492,7 @@ function App() {
                 user={user}
                 tasks={tasks}
                 logs={logs}
+                runtimeConfig={runtimeConfig}
                 alertRules={alertRules}
                 alertEvents={alertEvents}
                 evaluations={alertEvaluations}
@@ -2229,6 +2235,7 @@ function SettingsPage({
   user,
   tasks,
   logs,
+  runtimeConfig,
   alertRules,
   alertEvents,
   evaluations,
@@ -2239,6 +2246,7 @@ function SettingsPage({
   user: User | null;
   tasks: SyncTask[];
   logs: OperationLog[];
+  runtimeConfig: RuntimeConfig | null;
   alertRules: AlertRule[];
   alertEvents: AlertEvent[];
   evaluations: AlertRuleEvaluation[];
@@ -2321,11 +2329,24 @@ function SettingsPage({
     <div className="grid gap-5 xl:grid-cols-[0.98fr_1.02fr]">
       <div className="space-y-5">
         <section className="surface p-6">
-          <SectionHeader title="基础配置" description="保留当前运行所需配置。" />
+          <SectionHeader title="用户配置" description="当前登录用户与基础运行范围。" />
           <div className="mt-5 grid gap-3">
             <DetailCard label="当前用户" value={`${user?.name || "-"} · ${roleLabel(user?.role)}`} />
             <DetailCard label="任务数量" value={`${tasks.length} 条`} />
             <DetailCard label="默认策略" value="优先使用短文案、少步骤和蓝白灰主题。" />
+          </div>
+        </section>
+
+        <section className="surface p-6">
+          <SectionHeader title="部署配置" description="当前节点、端口和运行巡检参数。" />
+          <div className="mt-5 grid gap-3">
+            <DetailCard label="当前节点" value={runtimeConfig?.localNodeId || "-"} mono />
+            <DetailCard label="后端端口" value={runtimeConfig?.backendPort || "-"} mono />
+            <DetailCard label="前端来源" value={runtimeConfig?.frontendOrigins.join(", ") || "-"} />
+            <DetailCard label="数据文件" value={runtimeConfig?.dataFile || "-"} mono />
+            <DetailCard label="集群巡检" value={runtimeConfig ? `${runtimeConfig.clusterSupervisorEnabled ? "开启" : "关闭"} · ${runtimeConfig.clusterSupervisorIntervalSeconds}s` : "-"} />
+            <DetailCard label="节点心跳" value={runtimeConfig ? `${runtimeConfig.embeddedHeartbeatEnabled ? "开启" : "关闭"} · ${runtimeConfig.embeddedHeartbeatIntervalSeconds}s` : "-"} />
+            <DetailCard label="进程协调" value={runtimeConfig ? `${runtimeConfig.taskProcessSupervisorIntervalSeconds}s` : "-"} />
           </div>
         </section>
 

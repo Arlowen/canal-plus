@@ -22,6 +22,7 @@ import type {
   PositionResetInput,
   QualityDiff,
   QualityDiffCorrectionInput,
+  RuntimeConfig,
   SubscriptionChange,
   StructureDDL,
   StructureDDLApplyInput,
@@ -88,6 +89,9 @@ export const api = {
   },
   me() {
     return request<User>("/me");
+  },
+  runtimeConfig() {
+    return request<RuntimeConfig>("/runtime/config");
   },
   summary() {
     return request<DashboardSummary>("/dashboard/summary");

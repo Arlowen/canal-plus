@@ -731,3 +731,15 @@ type DashboardSummary struct {
 	TotalNodes          int `json:"totalNodes"`
 	FailoverCount       int `json:"failoverCount"`
 }
+
+type RuntimeConfig struct {
+	BackendPort                          string   `json:"backendPort"`
+	FrontendOrigins                      []string `json:"frontendOrigins"`
+	DataFile                             string   `json:"dataFile"`
+	LocalNodeID                          string   `json:"localNodeId"`
+	ClusterSupervisorEnabled             bool     `json:"clusterSupervisorEnabled"`
+	ClusterSupervisorIntervalSeconds     int      `json:"clusterSupervisorIntervalSeconds"`
+	EmbeddedHeartbeatEnabled             bool     `json:"embeddedHeartbeatEnabled"`
+	EmbeddedHeartbeatIntervalSeconds     int      `json:"embeddedHeartbeatIntervalSeconds"`
+	TaskProcessSupervisorIntervalSeconds int      `json:"taskProcessSupervisorIntervalSeconds"`
+}
