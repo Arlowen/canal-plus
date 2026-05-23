@@ -675,6 +675,18 @@ type ClusterRebalanceReport struct {
 	After        ClusterSnapshot     `json:"after"`
 }
 
+type NodeStatusChangeResult struct {
+	ID            string              `json:"id"`
+	Action        string              `json:"action"`
+	Node          ClusterNode         `json:"node"`
+	Success       bool                `json:"success"`
+	Message       string              `json:"message"`
+	AffectedTasks []FailoverDrillTask `json:"affectedTasks"`
+	Before        ClusterSnapshot     `json:"before"`
+	After         ClusterSnapshot     `json:"after"`
+	ChangedAt     string              `json:"changedAt"`
+}
+
 type ClusterSnapshot struct {
 	Nodes                   []ClusterNode `json:"nodes"`
 	Leases                  []TaskLease   `json:"leases"`

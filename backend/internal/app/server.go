@@ -1056,33 +1056,57 @@ func (s *Server) handleCluster(response http.ResponseWriter, request *http.Reque
 		}
 		writeJSON(response, http.StatusOK, result)
 	case len(parts) == 4 && parts[1] == "nodes" && request.Method == http.MethodPost:
-		var status NodeStatus
 		switch parts[3] {
-		case "online", "heartbeat":
-			status = NodeOnline
+		case "online":
+			result, ok, err := s.store.BringNodeOnline(parts[2])
+			if err != nil {
+				writeError(response, http.StatusInternalServerError, err.Error())
+				return
+			}
+			if !ok {
+				writeError(response, http.StatusNotFound, "节点不存在")
+				return
+			}
+			if s.processes != nil {
+				s.processes.Reconcile()
+			}
+			writeJSON(response, http.StatusOK, result)
+			return
+		case "heartbeat":
+			node, ok, err := s.store.MarkNodeStatus(parts[2], NodeOnline)
+			if err != nil {
+				writeError(response, http.StatusInternalServerError, err.Error())
+				return
+			}
+			if !ok {
+				writeError(response, http.StatusNotFound, "节点不存在")
+				return
+			}
+			writeJSON(response, http.StatusOK, node)
+			return
 		case "offline":
 			if s.isLocalControlNode(parts[2]) {
 				writeError(response, http.StatusBadRequest, "当前控制节点不能从自身控制台下线")
 				return
 			}
-			status = NodeOffline
+			result, ok, err := s.store.TakeNodeOffline(parts[2])
+			if err != nil {
+				writeError(response, http.StatusInternalServerError, err.Error())
+				return
+			}
+			if !ok {
+				writeError(response, http.StatusNotFound, "节点不存在")
+				return
+			}
+			if s.processes != nil {
+				s.processes.Reconcile()
+			}
+			writeJSON(response, http.StatusOK, result)
+			return
 		default:
 			writeError(response, http.StatusNotFound, "not found")
 			return
 		}
-		node, ok, err := s.store.MarkNodeStatus(parts[2], status)
-		if err != nil {
-			writeError(response, http.StatusInternalServerError, err.Error())
-			return
-		}
-		if !ok {
-			writeError(response, http.StatusNotFound, "节点不存在")
-			return
-		}
-		if s.processes != nil {
-			s.processes.Reconcile()
-		}
-		writeJSON(response, http.StatusOK, node)
 	default:
 		writeError(response, http.StatusNotFound, "not found")
 	}

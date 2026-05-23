@@ -169,6 +169,68 @@ func TestFailoverDrillReturnsTakeoverReport(t *testing.T) {
 	}
 }
 
+func TestTakeNodeOfflineReturnsHandoffReport(t *testing.T) {
+	store := newTestStore(t)
+	before := store.ClusterSnapshot()
+
+	var activeNode ClusterNode
+	for _, node := range before.Nodes {
+		if node.Status == NodeOnline && node.RunningTasks > 0 {
+			activeNode = node
+			break
+		}
+	}
+	if activeNode.ID == "" {
+		t.Fatalf("expected active node in snapshot: %#v", before.Nodes)
+	}
+
+	report, ok, err := store.TakeNodeOffline(activeNode.ID)
+	if err != nil || !ok {
+		t.Fatalf("TakeNodeOffline() ok %v err %v", ok, err)
+	}
+	if report.Action != "offline" || report.Node.ID != activeNode.ID {
+		t.Fatalf("unexpected offline report: %#v", report)
+	}
+	if report.Before.TotalNodes == 0 || report.After.TotalNodes == 0 {
+		t.Fatalf("expected before/after snapshots: %#v", report)
+	}
+}
+
+func TestBringNodeOnlineReturnsRecoveryReport(t *testing.T) {
+	store := newTestStore(t)
+	snapshot := store.ClusterSnapshot()
+
+	var offlineNode ClusterNode
+	for _, node := range snapshot.Nodes {
+		if node.ID != "node-shanghai-a" {
+			offlineNode = node
+			break
+		}
+	}
+	if offlineNode.ID == "" {
+		t.Fatalf("expected secondary node in snapshot: %#v", snapshot.Nodes)
+	}
+
+	store.mu.Lock()
+	for index := range store.data.Nodes {
+		if store.data.Nodes[index].ID == offlineNode.ID {
+			store.data.Nodes[index].Status = NodeOffline
+		}
+	}
+	store.mu.Unlock()
+
+	report, ok, err := store.BringNodeOnline(offlineNode.ID)
+	if err != nil || !ok {
+		t.Fatalf("BringNodeOnline() ok %v err %v", ok, err)
+	}
+	if report.Action != "online" || report.Node.ID != offlineNode.ID {
+		t.Fatalf("unexpected online report: %#v", report)
+	}
+	if report.After.OnlineNodes < report.Before.OnlineNodes {
+		t.Fatalf("expected online node count to recover: before=%#v after=%#v", report.Before, report.After)
+	}
+}
+
 func TestDrainNodeReturnsMaintenanceHandoffReport(t *testing.T) {
 	store := newTestStore(t)
 	before := store.ClusterSnapshot()

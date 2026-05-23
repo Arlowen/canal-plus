@@ -1033,6 +1033,107 @@ func (s *Store) MarkNodeStatus(id string, status NodeStatus) (ClusterNode, bool,
 	return ClusterNode{}, false, nil
 }
 
+func (s *Store) TakeNodeOffline(id string) (NodeStatusChangeResult, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.ensureClusterLocked()
+	before := s.clusterSnapshotLocked()
+	node := s.getNodeLocked(id)
+	if node == nil {
+		return NodeStatusChangeResult{}, false, nil
+	}
+	if node.Status == NodeOffline {
+		return NodeStatusChangeResult{
+			ID:            newID(),
+			Action:        "offline",
+			Node:          cloneJSON(*node),
+			Success:       true,
+			Message:       "节点已是离线状态",
+			AffectedTasks: []FailoverDrillTask{},
+			Before:        before,
+			After:         before,
+			ChangedAt:     now(),
+		}, true, nil
+	}
+
+	tasksByID := s.tasksByIDLocked()
+	affectedBefore := leasesOnNode(before.Leases, id)
+	timestamp := now()
+	node.Status = NodeOffline
+	node.UpdatedAt = timestamp
+	s.logLocked("admin", "node_offline", "cluster_node", id, "手动下线节点："+node.Name)
+	s.reconcileClusterLocked()
+	after := s.clusterSnapshotLocked()
+	handoffs, success := s.buildClusterHandoffsLocked(affectedBefore, after.Leases, tasksByID, id)
+	message := "节点已下线"
+	if len(handoffs) == 0 {
+		message = "节点已下线，该节点当前没有承载任务"
+	} else if success {
+		message = "节点已下线，承载任务已迁移到其他在线节点"
+	} else {
+		message = "节点已下线，但仍有任务待接管，请检查在线节点容量"
+	}
+	if err := s.saveLocked(); err != nil {
+		return NodeStatusChangeResult{}, true, err
+	}
+	return NodeStatusChangeResult{
+		ID:            newID(),
+		Action:        "offline",
+		Node:          cloneJSON(*node),
+		Success:       success || len(handoffs) == 0,
+		Message:       message,
+		AffectedTasks: handoffs,
+		Before:        before,
+		After:         after,
+		ChangedAt:     timestamp,
+	}, true, nil
+}
+
+func (s *Store) BringNodeOnline(id string) (NodeStatusChangeResult, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.ensureClusterLocked()
+	before := s.clusterSnapshotLocked()
+	node := s.getNodeLocked(id)
+	if node == nil {
+		return NodeStatusChangeResult{}, false, nil
+	}
+
+	tasksByID := s.tasksByIDLocked()
+	movedBefore := movedLeases(before.Leases, before.Leases)
+	timestamp := now()
+	node.Status = NodeOnline
+	node.LastHeartbeatAt = timestamp
+	node.UpdatedAt = timestamp
+	s.logLocked("admin", "node_online", "cluster_node", id, "节点恢复上线："+node.Name)
+	s.reconcileClusterLocked()
+	after := s.clusterSnapshotLocked()
+	movedBefore = movedLeases(before.Leases, after.Leases)
+	handoffs, success := s.buildClusterHandoffsLocked(movedBefore, after.Leases, tasksByID, "")
+	message := "节点已上线"
+	if len(handoffs) == 0 {
+		message = "节点已上线，当前没有待分配任务"
+	} else if success {
+		message = "节点已上线，待分配任务已恢复承载"
+	} else {
+		message = "节点已上线，但仍有任务待接管，请检查节点容量"
+	}
+	if err := s.saveLocked(); err != nil {
+		return NodeStatusChangeResult{}, true, err
+	}
+	return NodeStatusChangeResult{
+		ID:            newID(),
+		Action:        "online",
+		Node:          cloneJSON(*node),
+		Success:       success || len(handoffs) == 0,
+		Message:       message,
+		AffectedTasks: handoffs,
+		Before:        before,
+		After:         after,
+		ChangedAt:     timestamp,
+	}, true, nil
+}
+
 func (s *Store) HeartbeatNode(id string) (ClusterNode, bool, error) {
 	return s.MarkNodeStatus(id, NodeOnline)
 }

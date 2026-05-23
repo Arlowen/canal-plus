@@ -50,6 +50,7 @@ import type {
   NodeConnectionTestResult,
   NodeDrainReport,
   NodeOperationResult,
+  NodeStatusChangeResult,
   OperationLog,
   SyncStrategy,
   SyncTask,
@@ -85,7 +86,7 @@ type Notice = {
 
 type ClusterHandoffReport = {
   id: string;
-  kind: "drain" | "drill" | "rebalance";
+  kind: "drain" | "drill" | "rebalance" | "offline" | "online";
   happenedAt: string;
   node?: ClusterNode;
   success: boolean;
@@ -1390,12 +1391,16 @@ function TasksPage({
 function handoffTitle(kind: ClusterHandoffReport["kind"]) {
   if (kind === "drain") return "排空结果";
   if (kind === "drill") return "故障演练结果";
+  if (kind === "offline") return "节点下线结果";
+  if (kind === "online") return "节点上线结果";
   return "重新均衡结果";
 }
 
 function handoffTrackTitle(kind: ClusterHandoffReport["kind"]) {
   if (kind === "drill") return "故障切换路径";
   if (kind === "drain") return "排空迁移路径";
+  if (kind === "offline") return "下线迁移路径";
+  if (kind === "online") return "上线接管路径";
   return "任务重新分布";
 }
 
@@ -1435,6 +1440,20 @@ function fromRebalanceReport(report: ClusterRebalanceReport): ClusterHandoffRepo
     success: report.success,
     message: report.message,
     affectedTasks: report.movedTasks,
+    before: report.before,
+    after: report.after
+  };
+}
+
+function fromNodeStatusChangeResult(report: NodeStatusChangeResult): ClusterHandoffReport {
+  return {
+    id: report.id,
+    kind: report.action,
+    happenedAt: report.changedAt,
+    node: report.node,
+    success: report.success,
+    message: report.message,
+    affectedTasks: report.affectedTasks,
     before: report.before,
     after: report.after
   };
@@ -1526,8 +1545,13 @@ function NodesPage({
         setHandoffReport(fromFailoverDrillReport(report));
         pushNotice({ tone: report.success ? "success" : "warning", message: report.message });
       } else {
-        await api.nodeAction(node.id, action);
-        pushNotice({ tone: "success", message: action === "online" ? "节点已上线" : "节点已下线" });
+        const result = await api.nodeAction(node.id, action);
+        if ("affectedTasks" in result) {
+          setHandoffReport(fromNodeStatusChangeResult(result));
+          pushNotice({ tone: result.success ? "success" : "warning", message: result.message });
+        } else {
+          pushNotice({ tone: "success", message: action === "online" ? "节点已上线" : "节点已下线" });
+        }
       }
       await onChanged();
     } catch (requestError) {
@@ -1733,7 +1757,15 @@ function NodesPage({
               <div className="mt-3 grid gap-3 sm:grid-cols-[1fr_auto_1fr] sm:items-center">
                 <div className="rounded-2xl border border-line bg-white px-4 py-4">
                   <div className="text-xs uppercase tracking-[0.18em] text-slate-500">
-                    {handoffReport.kind === "drill" ? "故障节点" : handoffReport.kind === "drain" ? "排空节点" : "原承载节点"}
+                    {handoffReport.kind === "drill"
+                      ? "故障节点"
+                      : handoffReport.kind === "drain"
+                        ? "排空节点"
+                        : handoffReport.kind === "offline"
+                          ? "下线节点"
+                          : handoffReport.kind === "online"
+                            ? "恢复节点"
+                            : "原承载节点"}
                   </div>
                   <div className="mt-2 text-sm font-medium text-coal">
                     {handoffReport.node ? nodeName(handoffReport.node.id) : "多节点"}
@@ -1754,7 +1786,11 @@ function NodesPage({
             <div className="grid gap-3">
               {handoffReport.affectedTasks.length === 0 ? (
                 <div className="rounded-2xl border border-dashed border-line bg-slate-50/70 px-4 py-6 text-center text-sm text-slate-500">
-                  {handoffReport.kind === "rebalance" ? "当前集群已经均衡，没有任务需要迁移。" : "当前节点没有承载任务，本次操作只更新节点状态。"}
+                  {handoffReport.kind === "rebalance"
+                    ? "当前集群已经均衡，没有任务需要迁移。"
+                    : handoffReport.kind === "online"
+                      ? "节点已上线，当前没有待接管任务。"
+                      : "当前节点没有承载任务，本次操作只更新节点状态。"}
                 </div>
               ) : handoffReport.affectedTasks.map((item) => (
                 <div key={item.taskId} className="rounded-3xl border border-line bg-white p-4">

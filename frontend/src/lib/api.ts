@@ -17,6 +17,7 @@ import type {
   NodeConnectionTestResult,
   NodeDrainReport,
   NodeOperationResult,
+  NodeStatusChangeResult,
   OperationLog,
   PositionResetInput,
   QualityDiff,
@@ -314,7 +315,7 @@ export const api = {
     return request<NodeOperationResult>(`/cluster/nodes/${id}/uninstall`, { method: "POST" });
   },
   nodeAction(id: string, action: "online" | "offline" | "heartbeat") {
-    return request<ClusterSnapshot | unknown>(`/cluster/nodes/${id}/${action}`, { method: "POST" });
+    return request<NodeStatusChangeResult | ClusterNode>(`/cluster/nodes/${id}/${action}`, { method: "POST" });
   },
   drainNode(id: string) {
     return request<NodeDrainReport>(`/cluster/nodes/${id}/drain`, { method: "POST" });

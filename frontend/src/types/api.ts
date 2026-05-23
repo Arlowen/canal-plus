@@ -553,6 +553,18 @@ export interface ClusterRebalanceReport {
   after: ClusterSnapshot;
 }
 
+export interface NodeStatusChangeResult {
+  id: string;
+  action: "online" | "offline";
+  node: ClusterNode;
+  success: boolean;
+  message: string;
+  affectedTasks: FailoverDrillTask[];
+  before: ClusterSnapshot;
+  after: ClusterSnapshot;
+  changedAt: string;
+}
+
 export interface ClusterSnapshot {
   nodes: ClusterNode[];
   leases: TaskLease[];
