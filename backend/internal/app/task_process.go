@@ -261,10 +261,11 @@ func (s *TaskStatusService) markProcessEnded(taskID string, processStatus string
 }
 
 type TaskProcessManager struct {
-	store      *Store
-	logs       *TaskLogService
-	status     *TaskStatusService
-	binaryPath string
+	store       *Store
+	logs        *TaskLogService
+	status      *TaskStatusService
+	binaryPath  string
+	localNodeID string
 
 	mu        sync.Mutex
 	processes map[string]*managedTaskProcess
@@ -279,23 +280,122 @@ type managedTaskProcess struct {
 	stopMessage   string
 }
 
-func NewTaskProcessManager(store *Store, logs *TaskLogService, status *TaskStatusService, binaryPath string) *TaskProcessManager {
+func NewTaskProcessManager(store *Store, logs *TaskLogService, status *TaskStatusService, binaryPath string, localNodeID string) *TaskProcessManager {
 	return &TaskProcessManager{
-		store:      store,
-		logs:       logs,
-		status:     status,
-		binaryPath: binaryPath,
-		processes:  map[string]*managedTaskProcess{},
+		store:       store,
+		logs:        logs,
+		status:      status,
+		binaryPath:  binaryPath,
+		localNodeID: localNodeID,
+		processes:   map[string]*managedTaskProcess{},
 	}
 }
 
 func (m *TaskProcessManager) RecoverActiveTasks() {
-	tasks := m.store.Tasks()
-	for _, task := range tasks {
-		if task.Status == TaskFullSyncing || task.Status == TaskIncrementalRunning {
-			_ = m.StartTask(task.ID)
+	m.Reconcile()
+}
+
+func (m *TaskProcessManager) StartSupervisor(interval time.Duration) func() {
+	if interval <= 0 {
+		return func() {}
+	}
+	ticker := time.NewTicker(interval)
+	done := make(chan struct{})
+	var once sync.Once
+	var stopped sync.WaitGroup
+	stopped.Add(1)
+	go func() {
+		defer stopped.Done()
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				m.Reconcile()
+			case <-done:
+				return
+			}
+		}
+	}()
+	return func() {
+		once.Do(func() {
+			close(done)
+			stopped.Wait()
+		})
+	}
+}
+
+func (m *TaskProcessManager) Reconcile() {
+	snapshot := m.store.Snapshot()
+	desired := map[string]TaskRuntimeState{}
+	taskByID := map[string]SyncTask{}
+	for _, task := range snapshot.SyncTasks {
+		taskByID[task.ID] = task
+	}
+	for _, runtime := range snapshot.RuntimeStates {
+		task, ok := taskByID[runtime.TaskID]
+		if !ok {
+			continue
+		}
+		if m.shouldRunLocally(task, runtime) {
+			desired[task.ID] = runtime
 		}
 	}
+
+	m.mu.Lock()
+	current := make(map[string]*managedTaskProcess, len(m.processes))
+	for taskID, process := range m.processes {
+		current[taskID] = process
+	}
+	m.mu.Unlock()
+
+	for taskID, process := range current {
+		if _, ok := desired[taskID]; ok {
+			continue
+		}
+		reason := "任务已从当前节点迁移"
+		if task, exists := taskByID[taskID]; exists && !leaseRequired(task.Status) {
+			reason = "任务已停止，进程已回收"
+		}
+		_ = m.StopTask(process.taskID, reason)
+	}
+
+	for taskID := range desired {
+		_ = m.StartTask(taskID)
+	}
+}
+
+func (m *TaskProcessManager) shouldRunLocally(task SyncTask, runtime TaskRuntimeState) bool {
+	if !leaseRequired(task.Status) {
+		return false
+	}
+	if runtime.NodeID == "" {
+		return false
+	}
+	if m.localNodeID == "" {
+		return true
+	}
+	return runtime.NodeID == m.localNodeID
+}
+
+func (m *TaskProcessManager) LocalNodeID() string {
+	return m.localNodeID
+}
+
+func resolveLocalNodeID(store *Store, preferred string) string {
+	preferred = strings.TrimSpace(preferred)
+	if preferred != "" {
+		return preferred
+	}
+	snapshot := store.ClusterSnapshot()
+	for _, node := range snapshot.Nodes {
+		if node.Status == NodeOnline {
+			return node.ID
+		}
+	}
+	if len(snapshot.Nodes) > 0 {
+		return snapshot.Nodes[0].ID
+	}
+	return ""
 }
 
 func (m *TaskProcessManager) StartTask(taskID string) error {
@@ -315,6 +415,9 @@ func (m *TaskProcessManager) StartTask(taskID string) error {
 		return errors.New("任务运行态不存在")
 	}
 	if runtime.NodeID == "" {
+		return nil
+	}
+	if m.localNodeID != "" && runtime.NodeID != m.localNodeID {
 		return nil
 	}
 	if task.Status != TaskFullSyncing && task.Status != TaskIncrementalRunning {

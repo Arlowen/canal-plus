@@ -41,13 +41,15 @@ func NewServer() (*Server, error) {
 	}
 	taskLogs := NewTaskLogService(store)
 	taskStatus := NewTaskStatusService(store)
-	processes := NewTaskProcessManager(store, taskLogs, taskStatus, binaryPath)
+	localNodeID := resolveLocalNodeID(store, os.Getenv("CANAL_PLUS_NODE_ID"))
+	processes := NewTaskProcessManager(store, taskLogs, taskStatus, binaryPath, localNodeID)
 	if os.Getenv("CANAL_PLUS_CLUSTER_SUPERVISOR") != "false" {
 		store.StartClusterSupervisor(envDurationSeconds("CANAL_PLUS_CLUSTER_SUPERVISOR_INTERVAL_SECONDS", 5*time.Second))
 	}
 	if os.Getenv("CANAL_PLUS_EMBEDDED_NODE_HEARTBEAT") != "false" {
 		store.StartEmbeddedNodeHeartbeat(envDurationSeconds("CANAL_PLUS_EMBEDDED_NODE_HEARTBEAT_INTERVAL_SECONDS", 10*time.Second))
 	}
+	processes.StartSupervisor(envDurationSeconds("CANAL_PLUS_TASK_PROCESS_SUPERVISOR_INTERVAL_SECONDS", 2*time.Second))
 
 	frontendOrigin := os.Getenv("FRONTEND_ORIGIN")
 	if frontendOrigin == "" {
