@@ -209,6 +209,7 @@ function App() {
   const [datasourceCreateToken, setDatasourceCreateToken] = useState(0);
   const [taskCreateToken, setTaskCreateToken] = useState(0);
   const [nodeCreateToken, setNodeCreateToken] = useState(0);
+  const [focusedNodeId, setFocusedNodeId] = useState<string | null>(null);
   const canManage = canManageConfig(user);
 
   const pushNotice = useCallback((next: Notice) => {
@@ -314,6 +315,11 @@ function App() {
   const openNodeCreator = () => {
     setPage("nodes");
     setNodeCreateToken((value) => value + 1);
+  };
+
+  const openNodeDetail = (nodeID: string) => {
+    setFocusedNodeId(nodeID);
+    setPage("nodes");
   };
 
   if (!tokenState) {
@@ -453,6 +459,7 @@ function App() {
                 pushNotice={pushNotice}
                 openCreateToken={taskCreateToken}
                 onCreateDatasource={openDatasourceCreator}
+                onOpenNode={openNodeDetail}
               />
             ) : page === "nodes" ? (
               <NodesPage
@@ -462,6 +469,7 @@ function App() {
                 onChanged={refresh}
                 pushNotice={pushNotice}
                 openCreateToken={nodeCreateToken}
+                focusedNodeId={focusedNodeId}
               />
             ) : (
               <SettingsPage
@@ -1088,7 +1096,8 @@ function TasksPage({
   onChanged,
   pushNotice,
   openCreateToken,
-  onCreateDatasource
+  onCreateDatasource,
+  onOpenNode
 }: {
   datasources: Datasource[];
   tasks: SyncTask[];
@@ -1100,10 +1109,12 @@ function TasksPage({
   pushNotice: (notice: Notice) => void;
   openCreateToken: number;
   onCreateDatasource: () => void;
+  onOpenNode: (nodeID: string) => void;
 }) {
   const visibleCapabilityJobs = capabilityJobs.filter((job) => job.type !== "subscription");
   const [keyword, setKeyword] = useState("");
   const [typeFilter, setTypeFilter] = useState("all");
+  const [hostingFilter, setHostingFilter] = useState<"all" | "local" | "remote" | "unassigned">("all");
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [creatorOpen, setCreatorOpen] = useState(false);
   const [busyKey, setBusyKey] = useState<string | null>(null);
@@ -1119,7 +1130,12 @@ function TasksPage({
   const filtered = workloads.filter((item) => {
     const matchesKeyword = !keyword.trim() || `${item.title} ${item.detail} ${item.type}`.toLowerCase().includes(keyword.trim().toLowerCase());
     const matchesType = typeFilter === "all" || item.type === typeFilter;
-    return matchesKeyword && matchesType;
+    const matchesHosting = !item.rawTask
+      || hostingFilter === "all"
+      || (hostingFilter === "local" && item.rawTask.runtime?.managedByLocalNode !== false && Boolean(item.rawTask.runtime?.nodeId))
+      || (hostingFilter === "remote" && item.rawTask.runtime?.managedByLocalNode === false)
+      || (hostingFilter === "unassigned" && !item.rawTask.runtime?.nodeId);
+    return matchesKeyword && matchesType && matchesHosting;
   });
   const selected = filtered.find((item) => item.key === selectedKey) ?? filtered[0];
 
@@ -1275,6 +1291,23 @@ function TasksPage({
           </Field>
         </div>
 
+        <div className="mt-3 grid gap-3 lg:grid-cols-[220px_minmax(0,1fr)]">
+          <Field label="托管范围">
+            <select className="select" value={hostingFilter} onChange={(event) => setHostingFilter(event.target.value as "all" | "local" | "remote" | "unassigned")}>
+              <option value="all">全部任务</option>
+              <option value="local">当前节点托管</option>
+              <option value="remote">远程节点托管</option>
+              <option value="unassigned">待分配</option>
+            </select>
+          </Field>
+          <div className="flex flex-wrap items-end gap-2">
+            <FilterChip active={hostingFilter === "all"} onClick={() => setHostingFilter("all")} label="全部" />
+            <FilterChip active={hostingFilter === "local"} onClick={() => setHostingFilter("local")} label="当前节点托管" />
+            <FilterChip active={hostingFilter === "remote"} onClick={() => setHostingFilter("remote")} label="远程托管" />
+            <FilterChip active={hostingFilter === "unassigned"} onClick={() => setHostingFilter("unassigned")} label="待分配" />
+          </div>
+        </div>
+
         <div className="mt-4 flex flex-wrap gap-2">
           <FilterChip active={typeFilter === "all"} onClick={() => setTypeFilter("all")} label={`全部 ${workloads.length}`} />
           {Object.entries(typeCounts).map(([label, count]) => (
@@ -1378,7 +1411,7 @@ function TasksPage({
           {!selected ? (
             <div className="mt-5 text-sm text-slate-500">选择一条任务查看详情。</div>
           ) : selected.rawTask ? (
-            <SyncTaskDetail task={selected.rawTask} errors={errors} cluster={cluster} />
+            <SyncTaskDetail task={selected.rawTask} errors={errors} cluster={cluster} onOpenNode={onOpenNode} />
           ) : selected.rawJob ? (
             <CapabilityJobDetail job={selected.rawJob} qualityDiffs={qualityDiffs} structureItems={structureItems} tasks={tasks} />
           ) : null}
@@ -1478,7 +1511,8 @@ function NodesPage({
   canManage,
   onChanged,
   pushNotice,
-  openCreateToken
+  openCreateToken,
+  focusedNodeId
 }: {
   cluster: ClusterSnapshot | null;
   tasks: SyncTask[];
@@ -1486,6 +1520,7 @@ function NodesPage({
   onChanged: (quiet?: boolean) => Promise<void>;
   pushNotice: (notice: Notice) => void;
   openCreateToken: number;
+  focusedNodeId: string | null;
 }) {
   const nodes = cluster?.nodes ?? emptyNodes;
   const [selectedId, setSelectedId] = useState<string | null>(nodes[0]?.id ?? null);
@@ -1500,6 +1535,11 @@ function NodesPage({
     if (openCreateToken === 0) return;
     setCreatorOpen(true);
   }, [openCreateToken]);
+
+  useEffect(() => {
+    if (!focusedNodeId) return;
+    setSelectedId(focusedNodeId);
+  }, [focusedNodeId]);
 
   useEffect(() => {
     if (nodes.length === 0) {
@@ -2831,11 +2871,13 @@ function NodeCreatorModal({
 function SyncTaskDetail({
   task,
   errors,
-  cluster
+  cluster,
+  onOpenNode
 }: {
   task: SyncTask;
   errors: ErrorEvent[];
   cluster: ClusterSnapshot | null;
+  onOpenNode: (nodeID: string) => void;
 }) {
   const [runtime, setRuntime] = useState(task.runtime);
   const [checkpoints, setCheckpoints] = useState<TaskCheckpoint[]>([]);
@@ -2969,6 +3011,14 @@ function SyncTaskDetail({
         <DetailCard label="托管模式" value={runtime?.managedByLocalNode === false ? "远程节点托管" : "当前节点托管"} />
         <DetailCard label="日志访问" value={runtime?.localLogAccessible === false ? "需切换节点查看" : "当前节点可查看"} />
       </div>
+      {runtime?.nodeId && (
+        <div className="flex justify-end">
+          <button type="button" onClick={() => onOpenNode(runtime.nodeId!)} className="btn-secondary">
+            <HardDrives size={16} />
+            查看节点
+          </button>
+        </div>
+      )}
       <div className="rounded-3xl border border-line bg-slate-50/70 p-4">
         <div className="flex items-center justify-between gap-3">
           <div className="font-medium text-coal">运行状态</div>
@@ -3451,6 +3501,10 @@ function datasourceSearchText(item: Datasource) {
   ].filter(Boolean).join(" ").toLowerCase();
 }
 
+function taskActivityAt(task: SyncTask) {
+  return task.runtime?.updatedAt || task.updatedAt;
+}
+
 function buildWorkloads(tasks: SyncTask[], capabilityJobs: CapabilityJob[]): WorkloadItem[] {
   const items: WorkloadItem[] = tasks.map((task) => ({
     id: task.id,
@@ -3459,7 +3513,7 @@ function buildWorkloads(tasks: SyncTask[], capabilityJobs: CapabilityJob[]): Wor
     type: syncTaskTypeText(task),
     title: task.name,
     detail: `${task.sourceDatasource?.name || task.sourceDatasourceId} to ${task.targetDatasource?.name || task.targetDatasourceId}`,
-    updatedAt: task.updatedAt,
+    updatedAt: taskActivityAt(task),
     statusText: taskStatusText[task.status],
     rawTask: task
   }));
