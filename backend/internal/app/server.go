@@ -1268,9 +1268,7 @@ func (s *Server) decorateRuntime(runtime TaskRuntimeState) TaskRuntimeState {
 	decorated.LocalLogAccessible = decorated.ManagedByLocalNode
 	if !decorated.ManagedByLocalNode {
 		decorated.LogAccessMessage = fmt.Sprintf("当前任务由节点 %s 托管，请切换到该节点查看实时日志", nodeLabel)
-		if decorated.ProcessStatus == "" {
-			decorated.ProcessStatus = "remote"
-		}
+		decorated.ProcessStatus = "remote"
 	}
 	return decorated
 }

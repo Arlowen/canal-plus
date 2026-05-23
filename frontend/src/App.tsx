@@ -2835,6 +2835,7 @@ function SyncTaskDetail({
   const runtimeNode = runtime?.nodeId;
   const runtimeNodeLabel = runtime?.executionNodeName || cluster?.nodes.find((node) => node.id === runtimeNode)?.name || runtimeNode;
   const remoteManaged = runtime?.managedByLocalNode === false || Boolean(localNodeId && runtimeNode && runtimeNode !== localNodeId);
+  const checkpointNodeName = (nodeID?: string) => cluster?.nodes.find((node) => node.id === nodeID)?.name || nodeID || "待分配";
 
   useEffect(() => {
     setRuntime(task.runtime);
@@ -2951,7 +2952,7 @@ function SyncTaskDetail({
         <DetailCard label="负责人" value={task.owner} />
         <DetailCard label="配置版本" value={`v${task.configVersion}`} mono />
         <DetailCard label="更新时间" value={formatDateTime(task.updatedAt)} />
-        <DetailCard label="运行节点" value={runtime?.nodeId || "待分配"} mono />
+        <DetailCard label="运行节点" value={runtime?.executionNodeName || runtime?.nodeId || "待分配"} mono />
       </div>
       <div className="rounded-3xl border border-line bg-slate-50/70 p-4">
         <div className="flex items-center justify-between gap-3">
@@ -3005,12 +3006,14 @@ function SyncTaskDetail({
                     <span className="text-sm font-medium text-coal">{taskRuntimePhaseText(checkpoint.phase)}</span>
                   </div>
                   <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-500">
-                    <span className="rounded-full border border-line bg-slate-50 px-2 py-1">{checkpoint.nodeId || "待分配"}</span>
-                    {checkpoint.previousNodeId && checkpoint.previousNodeId !== checkpoint.nodeId && (
+                    {checkpoint.previousNodeId && checkpoint.previousNodeId !== checkpoint.nodeId ? (
                       <>
+                        <span className="rounded-full border border-line bg-slate-50 px-2 py-1">{checkpointNodeName(checkpoint.previousNodeId)}</span>
                         <ArrowRight size={14} className="text-slate-400" />
-                        <span className="rounded-full border border-line bg-slate-50 px-2 py-1">{checkpoint.previousNodeId}</span>
+                        <span className="rounded-full border border-line bg-slate-50 px-2 py-1">{checkpointNodeName(checkpoint.nodeId)}</span>
                       </>
+                    ) : (
+                      <span className="rounded-full border border-line bg-slate-50 px-2 py-1">{checkpointNodeName(checkpoint.nodeId)}</span>
                     )}
                     <span>{formatDateTime(checkpoint.createdAt)}</span>
                   </div>
