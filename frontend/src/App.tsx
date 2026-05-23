@@ -827,6 +827,7 @@ function DatasourcePage({
 }) {
   const [keyword, setKeyword] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | DatasourceStatus>("all");
+  const [purposeFilter, setPurposeFilter] = useState<"all" | DatasourcePurpose>("all");
   const [selectedId, setSelectedId] = useState<string | null>(datasources[0]?.id ?? null);
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -855,7 +856,8 @@ function DatasourcePage({
     .filter((item) => {
       const matchesKeyword = !keyword.trim() || datasourceSearchText(item).includes(keyword.trim().toLowerCase());
       const matchesStatus = statusFilter === "all" || item.connectionStatus === statusFilter;
-      return matchesKeyword && matchesStatus;
+      const matchesPurpose = purposeFilter === "all" || item.purpose === purposeFilter;
+      return matchesKeyword && matchesStatus && matchesPurpose;
     })
     .sort((left, right) => left.name.localeCompare(right.name, "zh-Hans-CN"));
 
@@ -937,6 +939,12 @@ function DatasourcePage({
   };
 
   const usageCount = (item: Datasource) => tasks.filter((task) => task.sourceDatasourceId === item.id || task.targetDatasourceId === item.id).length;
+  const onlineCount = datasources.filter((item) => item.connectionStatus === "online").length;
+  const offlineCount = datasources.filter((item) => item.connectionStatus === "offline").length;
+  const untestedCount = datasources.filter((item) => item.connectionStatus === "untested").length;
+  const sourceCount = datasources.filter((item) => item.purpose === "source").length;
+  const targetCount = datasources.filter((item) => item.purpose === "target").length;
+  const bothCount = datasources.filter((item) => item.purpose === "both").length;
 
   return (
     <div className="grid gap-5 xl:grid-cols-[1.08fr_0.92fr]">
@@ -951,6 +959,13 @@ function DatasourcePage({
             </button>
           ) : undefined}
         />
+
+        <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <MetricMini label="数据源总数" value={`${datasources.length}`} />
+          <MetricMini label="在线" value={`${onlineCount}`} />
+          <MetricMini label="离线" value={`${offlineCount}`} />
+          <MetricMini label="未测试" value={`${untestedCount}`} />
+        </div>
 
         <div className="mt-5 grid gap-3 lg:grid-cols-[minmax(0,1fr)_180px]">
           <label className="block">
@@ -973,6 +988,23 @@ function DatasourcePage({
               <option value="untested">未测试</option>
             </select>
           </Field>
+        </div>
+
+        <div className="mt-3 grid gap-3 lg:grid-cols-[220px_minmax(0,1fr)]">
+          <Field label="用途">
+            <select className="select" value={purposeFilter} onChange={(event) => setPurposeFilter(event.target.value as "all" | DatasourcePurpose)}>
+              <option value="all">全部用途</option>
+              <option value="source">源端</option>
+              <option value="target">目标端</option>
+              <option value="both">源端和目标端</option>
+            </select>
+          </Field>
+          <div className="flex flex-wrap items-end gap-2">
+            <FilterChip active={purposeFilter === "all"} onClick={() => setPurposeFilter("all")} label={`全部 ${datasources.length}`} />
+            <FilterChip active={purposeFilter === "source"} onClick={() => setPurposeFilter("source")} label={`源端 ${sourceCount}`} />
+            <FilterChip active={purposeFilter === "target"} onClick={() => setPurposeFilter("target")} label={`目标端 ${targetCount}`} />
+            <FilterChip active={purposeFilter === "both"} onClick={() => setPurposeFilter("both")} label={`双向 ${bothCount}`} />
+          </div>
         </div>
 
         {datasources.length === 0 ? (
