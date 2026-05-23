@@ -671,6 +671,8 @@ type ClusterRebalanceReport struct {
 type ClusterSnapshot struct {
 	Nodes                   []ClusterNode `json:"nodes"`
 	Leases                  []TaskLease   `json:"leases"`
+	LocalNodeID             string        `json:"localNodeId,omitempty"`
+	LocalNodeName           string        `json:"localNodeName,omitempty"`
 	OnlineNodes             int           `json:"onlineNodes"`
 	TotalNodes              int           `json:"totalNodes"`
 	DegradedNodes           int           `json:"degradedNodes"`

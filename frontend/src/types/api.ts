@@ -549,6 +549,8 @@ export interface ClusterRebalanceReport {
 export interface ClusterSnapshot {
   nodes: ClusterNode[];
   leases: TaskLease[];
+  localNodeId?: string;
+  localNodeName?: string;
   onlineNodes: number;
   totalNodes: number;
   degradedNodes: number;

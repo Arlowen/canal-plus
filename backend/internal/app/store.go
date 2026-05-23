@@ -1077,13 +1077,13 @@ func (s *Store) DrainNode(nodeID string) (NodeDrainReport, bool, error) {
 	return cloneJSON(report), true, nil
 }
 
-func (s *Store) RefreshOnlineNodeHeartbeats() error {
+func (s *Store) RefreshNodeHeartbeat(nodeID string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	timestamp := now()
 	changed := false
 	for index := range s.data.Nodes {
-		if s.data.Nodes[index].Status != NodeOnline {
+		if s.data.Nodes[index].ID != nodeID {
 			continue
 		}
 		s.data.Nodes[index].LastHeartbeatAt = timestamp
@@ -1097,7 +1097,7 @@ func (s *Store) RefreshOnlineNodeHeartbeats() error {
 	return s.saveLocked()
 }
 
-func (s *Store) StartEmbeddedNodeHeartbeat(interval time.Duration) func() {
+func (s *Store) StartEmbeddedNodeHeartbeat(nodeID string, interval time.Duration) func() {
 	if interval <= 0 {
 		return func() {}
 	}
@@ -1112,7 +1112,7 @@ func (s *Store) StartEmbeddedNodeHeartbeat(interval time.Duration) func() {
 		for {
 			select {
 			case <-ticker.C:
-				_ = s.RefreshOnlineNodeHeartbeats()
+				_ = s.RefreshNodeHeartbeat(nodeID)
 			case <-done:
 				return
 			}

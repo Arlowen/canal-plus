@@ -497,6 +497,7 @@ function DashboardPage({
   const onlineNodes = cluster?.onlineNodes ?? summary?.onlineNodes ?? 0;
   const totalNodes = cluster?.totalNodes ?? summary?.totalNodes ?? 0;
   const hasCreatedTasks = tasks.length > 0;
+  const localNodeLabel = cluster?.localNodeName || cluster?.localNodeId || "当前节点";
 
   return (
     <div className="space-y-5">
@@ -714,6 +715,9 @@ function DashboardPage({
                 <MetricMini label="在线节点" value={`${onlineNodes}/${totalNodes}`} />
                 <MetricMini label="运行任务" value={`${summary?.runningTasks ?? 0}`} />
                 <MetricMini label="24h 异常" value={`${summary?.failuresLast24Hours ?? 0}`} />
+              </div>
+              <div className="mt-4 rounded-2xl border border-line bg-slate-50/70 px-4 py-3 text-sm text-slate-500">
+                当前控制节点：<span className="font-medium text-coal">{localNodeLabel}</span>
               </div>
               <button onClick={onOpenNodes} className="btn-secondary mt-4 w-full">
                 查看节点
@@ -1383,6 +1387,8 @@ function NodesPage({
   const [creatorOpen, setCreatorOpen] = useState(false);
   const [operationResult, setOperationResult] = useState<NodeOperationResult | null>(null);
   const [busyKey, setBusyKey] = useState<string | null>(null);
+  const localNodeId = cluster?.localNodeId;
+  const localNodeName = cluster?.localNodeName || localNodeId;
 
   useEffect(() => {
     if (openCreateToken === 0) return;
@@ -1456,7 +1462,7 @@ function NodesPage({
       <section className="surface min-w-0 p-6">
         <SectionHeader
           title="节点列表"
-          description="部署、升级、卸载都在页面完成。"
+          description={localNodeName ? `当前控制节点：${localNodeName}` : "部署、升级、卸载都在页面完成。"}
           action={canManage ? (
             <button onClick={() => setCreatorOpen(true)} className="btn-primary">
               <Plus size={16} />
@@ -1493,6 +1499,7 @@ function NodesPage({
                     <div className="flex flex-wrap items-center gap-2">
                       <div className="font-medium text-coal">{node.name}</div>
                       <Badge tone={nodeTone(node.status)}>{nodeStatusText(node.status)}</Badge>
+                      {localNodeId === node.id && <Badge tone="blue">当前节点</Badge>}
                       <div className="chip border-slate-200 bg-slate-50 text-slate-600">{node.version}</div>
                     </div>
                     <div className="mt-1 text-sm text-slate-500">{node.endpoint} · {node.installDir}</div>
@@ -1543,6 +1550,7 @@ function NodesPage({
               <div className="flex flex-wrap items-center gap-2">
                 <span className="text-lg font-semibold text-coal">{selected.name}</span>
                 <Badge tone={nodeTone(selected.status)}>{nodeStatusText(selected.status)}</Badge>
+                {localNodeId === selected.id && <Badge tone="blue">当前节点</Badge>}
               </div>
               <div className="grid gap-3">
                 <DetailCard label="主机地址" value={selected.endpoint} mono />
@@ -1551,6 +1559,7 @@ function NodesPage({
                 <DetailCard label="版本" value={selected.version} mono />
                 <DetailCard label="最近心跳" value={`${formatDateTime(selected.lastHeartbeatAt)} · ${secondsSince(selected.lastHeartbeatAt)} 秒前`} />
                 <DetailCard label="运行任务" value={`${selected.runningTasks}/${selected.capacity}`} />
+                <DetailCard label="控制节点" value={localNodeId === selected.id ? "是" : "否"} />
               </div>
               <div className="rounded-3xl border border-line bg-slate-50/70 p-4">
                 <div className="text-sm font-medium text-coal">承载任务</div>

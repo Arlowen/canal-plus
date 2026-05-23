@@ -47,7 +47,7 @@ func NewServer() (*Server, error) {
 		store.StartClusterSupervisor(envDurationSeconds("CANAL_PLUS_CLUSTER_SUPERVISOR_INTERVAL_SECONDS", 5*time.Second))
 	}
 	if os.Getenv("CANAL_PLUS_EMBEDDED_NODE_HEARTBEAT") != "false" {
-		store.StartEmbeddedNodeHeartbeat(envDurationSeconds("CANAL_PLUS_EMBEDDED_NODE_HEARTBEAT_INTERVAL_SECONDS", 10*time.Second))
+		store.StartEmbeddedNodeHeartbeat(localNodeID, envDurationSeconds("CANAL_PLUS_EMBEDDED_NODE_HEARTBEAT_INTERVAL_SECONDS", 10*time.Second))
 	}
 	processes.StartSupervisor(envDurationSeconds("CANAL_PLUS_TASK_PROCESS_SUPERVISOR_INTERVAL_SECONDS", 2*time.Second))
 
@@ -927,9 +927,9 @@ func (s *Server) handleAlertRules(response http.ResponseWriter, request *http.Re
 func (s *Server) handleCluster(response http.ResponseWriter, request *http.Request, parts []string) {
 	switch {
 	case len(parts) == 1 && request.Method == http.MethodGet:
-		writeJSON(response, http.StatusOK, s.store.ClusterSnapshot())
+		writeJSON(response, http.StatusOK, s.clusterResponse())
 	case len(parts) == 2 && parts[1] == "nodes" && request.Method == http.MethodGet:
-		writeJSON(response, http.StatusOK, s.store.ClusterSnapshot().Nodes)
+		writeJSON(response, http.StatusOK, s.clusterResponse().Nodes)
 	case len(parts) == 3 && parts[1] == "nodes" && parts[2] == "test-connection" && request.Method == http.MethodPost:
 		var input ClusterNodeInput
 		if err := decodeJSON(request, &input); err != nil {
@@ -961,17 +961,26 @@ func (s *Server) handleCluster(response http.ResponseWriter, request *http.Reque
 			return
 		}
 		if created {
+			if s.processes != nil {
+				s.processes.Reconcile()
+			}
 			writeJSON(response, http.StatusCreated, node)
 			return
 		}
+		if s.processes != nil {
+			s.processes.Reconcile()
+		}
 		writeJSON(response, http.StatusOK, node)
 	case len(parts) == 2 && parts[1] == "leases" && request.Method == http.MethodGet:
-		writeJSON(response, http.StatusOK, s.store.ClusterSnapshot().Leases)
+		writeJSON(response, http.StatusOK, s.clusterResponse().Leases)
 	case len(parts) == 2 && parts[1] == "rebalance" && request.Method == http.MethodPost:
 		report, err := s.store.RebalanceCluster()
 		if err != nil {
 			writeError(response, http.StatusInternalServerError, err.Error())
 			return
+		}
+		if s.processes != nil {
+			s.processes.Reconcile()
 		}
 		writeJSON(response, http.StatusOK, report)
 	case len(parts) == 4 && parts[1] == "nodes" && parts[3] == "failover-drill" && request.Method == http.MethodPost:
@@ -984,6 +993,9 @@ func (s *Server) handleCluster(response http.ResponseWriter, request *http.Reque
 			writeError(response, http.StatusNotFound, "节点不存在")
 			return
 		}
+		if s.processes != nil {
+			s.processes.Reconcile()
+		}
 		writeJSON(response, http.StatusOK, report)
 	case len(parts) == 4 && parts[1] == "nodes" && parts[3] == "drain" && request.Method == http.MethodPost:
 		report, ok, err := s.store.DrainNode(parts[2])
@@ -994,6 +1006,9 @@ func (s *Server) handleCluster(response http.ResponseWriter, request *http.Reque
 		if !ok {
 			writeError(response, http.StatusNotFound, "节点不存在")
 			return
+		}
+		if s.processes != nil {
+			s.processes.Reconcile()
 		}
 		writeJSON(response, http.StatusOK, report)
 	case len(parts) == 4 && parts[1] == "nodes" && parts[3] == "upgrade" && request.Method == http.MethodPost:
@@ -1006,6 +1021,9 @@ func (s *Server) handleCluster(response http.ResponseWriter, request *http.Reque
 			writeError(response, http.StatusNotFound, "节点不存在")
 			return
 		}
+		if s.processes != nil {
+			s.processes.Reconcile()
+		}
 		writeJSON(response, http.StatusOK, result)
 	case len(parts) == 4 && parts[1] == "nodes" && parts[3] == "uninstall" && request.Method == http.MethodPost:
 		result, ok, err := s.store.UninstallNode(parts[2])
@@ -1016,6 +1034,9 @@ func (s *Server) handleCluster(response http.ResponseWriter, request *http.Reque
 		if !ok {
 			writeError(response, http.StatusNotFound, "节点不存在")
 			return
+		}
+		if s.processes != nil {
+			s.processes.Reconcile()
 		}
 		writeJSON(response, http.StatusOK, result)
 	case len(parts) == 4 && parts[1] == "nodes" && request.Method == http.MethodPost:
@@ -1037,6 +1058,9 @@ func (s *Server) handleCluster(response http.ResponseWriter, request *http.Reque
 		if !ok {
 			writeError(response, http.StatusNotFound, "节点不存在")
 			return
+		}
+		if s.processes != nil {
+			s.processes.Reconcile()
 		}
 		writeJSON(response, http.StatusOK, node)
 	default:
@@ -1157,6 +1181,21 @@ func (s *Server) taskResponse(task SyncTask) TaskResponse {
 		response.TargetDatasource = &public
 	}
 	return response
+}
+
+func (s *Server) clusterResponse() ClusterSnapshot {
+	snapshot := s.store.ClusterSnapshot()
+	if s.processes == nil {
+		return snapshot
+	}
+	snapshot.LocalNodeID = s.processes.LocalNodeID()
+	for _, node := range snapshot.Nodes {
+		if node.ID == snapshot.LocalNodeID {
+			snapshot.LocalNodeName = node.Name
+			break
+		}
+	}
+	return snapshot
 }
 
 func clusterOnline(nodes []ClusterNode) int {
