@@ -3,7 +3,6 @@ import {
   ArrowRight,
   ArrowsClockwise,
   CheckCircle,
-  Database,
   FlowArrow,
   Pulse,
   ShieldCheck,
@@ -44,7 +43,7 @@ import type {
   User
 } from "./types/api";
 
-type View = "resources" | "tasks" | "wizard" | "errors";
+type View = "tasks" | "wizard" | "errors";
 type NavView = Exclude<View, "wizard">;
 
 const defaultStrategy: SyncStrategy = {
@@ -62,13 +61,11 @@ const defaultStrategy: SyncStrategy = {
 };
 
 const navItems: Array<{ id: NavView; label: string; icon: typeof Stack }> = [
-  { id: "resources", label: "资源", icon: Database },
   { id: "tasks", label: "任务", icon: FlowArrow },
   { id: "errors", label: "问题", icon: WarningCircle }
 ];
 
 const viewTitles: Record<View, string> = {
-  resources: "资源",
   tasks: "任务",
   wizard: "新建任务",
   errors: "问题"
@@ -85,7 +82,7 @@ function App() {
   const [cluster, setCluster] = useState<ClusterSnapshot | null>(null);
   const [capabilityJobs, setCapabilityJobs] = useState<CapabilityJob[]>([]);
   const [capabilityMode, setCapabilityMode] = useState<CapabilityJobType>("structure");
-  const [taskMode, setTaskMode] = useState<"tasks" | "capabilities">("tasks");
+  const [taskMode, setTaskMode] = useState<"tasks" | "capabilities" | "resources">("tasks");
   const [resourceMode, setResourceMode] = useState<"datasources" | "cluster">("datasources");
   const [issueMode, setIssueMode] = useState<"errors" | "alerts" | "logs">("errors");
   const [alertRules, setAlertRules] = useState<AlertRule[]>([]);
@@ -235,25 +232,17 @@ function App() {
             <SkeletonPage />
           ) : (
             <>
-              {view === "resources" && (
-                <ResourceCenter
-                  mode={resourceMode}
-                  onModeChange={setResourceMode}
-                  datasources={datasources}
-                  cluster={cluster}
-                  tasks={tasks}
-                  canManage={canManage}
-                  onChanged={() => refresh(true)}
-                />
-              )}
               {view === "tasks" && (
                 <TaskWorkspace
                   mode={taskMode}
                   onModeChange={setTaskMode}
+                  resourceMode={resourceMode}
+                  onResourceModeChange={setResourceMode}
                   tasks={tasks}
                   errors={errors}
                   logs={logs}
                   cluster={cluster}
+                  datasources={datasources}
                   canManage={canManage}
                   onAction={handleTaskAction}
                   onCreate={() => setView("wizard")}
@@ -302,10 +291,13 @@ function App() {
 function TaskWorkspace({
   mode,
   onModeChange,
+  resourceMode,
+  onResourceModeChange,
   tasks,
   errors,
   logs,
   cluster,
+  datasources,
   canManage,
   onAction,
   onCreate,
@@ -314,12 +306,15 @@ function TaskWorkspace({
   capabilityJobs,
   onChanged
 }: {
-  mode: "tasks" | "capabilities";
-  onModeChange: (mode: "tasks" | "capabilities") => void;
+  mode: "tasks" | "capabilities" | "resources";
+  onModeChange: (mode: "tasks" | "capabilities" | "resources") => void;
+  resourceMode: "datasources" | "cluster";
+  onResourceModeChange: (mode: "datasources" | "cluster") => void;
   tasks: SyncTask[];
   errors: ErrorEvent[];
   logs: OperationLog[];
   cluster: ClusterSnapshot | null;
+  datasources: Datasource[];
   canManage: boolean;
   onAction: (task: SyncTask, action: "start" | "pause" | "resume" | "stop") => Promise<void>;
   onCreate: () => void;
@@ -349,6 +344,15 @@ function TaskWorkspace({
         >
           能力
         </button>
+        <button
+          onClick={() => onModeChange("resources")}
+          className={cx(
+            "inline-flex items-center justify-center rounded-full border px-3 py-1.5 text-sm transition active:scale-[0.98]",
+            mode === "resources" ? "border-coal bg-coal text-white" : "border-line bg-white text-zinc-600 hover:bg-zinc-50"
+          )}
+        >
+          资源
+        </button>
       </div>
 
       {mode === "tasks" ? (
@@ -362,12 +366,22 @@ function TaskWorkspace({
           onCreate={onCreate}
           onChanged={onChanged}
         />
-      ) : (
+      ) : mode === "capabilities" ? (
         <CapabilityView
           mode={capabilityMode}
           onModeChange={onCapabilityModeChange}
           tasks={tasks}
           jobs={capabilityJobs}
+          canManage={canManage}
+          onChanged={onChanged}
+        />
+      ) : (
+        <ResourceCenter
+          mode={resourceMode}
+          onModeChange={onResourceModeChange}
+          datasources={datasources}
+          cluster={cluster}
+          tasks={tasks}
           canManage={canManage}
           onChanged={onChanged}
         />
