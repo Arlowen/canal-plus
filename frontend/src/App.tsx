@@ -10,7 +10,6 @@ import {
   FlowArrow,
   Gauge,
   GearSix,
-  GitBranch,
   Pulse,
   ShieldCheck,
   SignOut,
@@ -35,6 +34,7 @@ import type {
   AlertRule,
   AlertEvent,
   AlertRuleEvaluation,
+  CapabilityJobType,
   CapabilityJob,
   DashboardSummary,
   ClusterSnapshot,
@@ -51,7 +51,7 @@ import type {
   User
 } from "./types/api";
 
-type View = "dashboard" | "datasources" | "tasks" | "wizard" | "structure" | "quality" | "subscription" | "cluster" | "errors" | "logs" | "settings";
+type View = "dashboard" | "datasources" | "tasks" | "wizard" | "capabilities" | "cluster" | "errors" | "logs" | "settings";
 type NavView = Exclude<View, "wizard">;
 
 const defaultStrategy: SyncStrategy = {
@@ -72,9 +72,7 @@ const navItems: Array<{ id: NavView; label: string; icon: typeof Gauge }> = [
   { id: "dashboard", label: "概览", icon: Gauge },
   { id: "datasources", label: "数据源", icon: Database },
   { id: "tasks", label: "任务", icon: FlowArrow },
-  { id: "structure", label: "结构迁移", icon: Stack },
-  { id: "quality", label: "校验订正", icon: ShieldCheck },
-  { id: "subscription", label: "订阅变更", icon: GitBranch },
+  { id: "capabilities", label: "能力", icon: Stack },
   { id: "cluster", label: "节点", icon: Cloud },
   { id: "errors", label: "错误", icon: WarningCircle },
   { id: "logs", label: "日志", icon: ClipboardText },
@@ -86,9 +84,7 @@ const viewTitles: Record<View, string> = {
   datasources: "数据源",
   tasks: "任务",
   wizard: "新建任务",
-  structure: "结构迁移",
-  quality: "校验订正",
-  subscription: "订阅变更",
+  capabilities: "能力",
   cluster: "节点",
   errors: "错误",
   logs: "日志",
@@ -106,6 +102,7 @@ function App() {
   const [logs, setLogs] = useState<OperationLog[]>([]);
   const [cluster, setCluster] = useState<ClusterSnapshot | null>(null);
   const [capabilityJobs, setCapabilityJobs] = useState<CapabilityJob[]>([]);
+  const [capabilityMode, setCapabilityMode] = useState<CapabilityJobType>("structure");
   const [alertRules, setAlertRules] = useState<AlertRule[]>([]);
   const [alertEvents, setAlertEvents] = useState<AlertEvent[]>([]);
   const [alertEvaluations, setAlertEvaluations] = useState<AlertRuleEvaluation[]>([]);
@@ -291,14 +288,15 @@ function App() {
                   />
                 )
               )}
-              {view === "structure" && (
-                <CapabilityView mode="structure" tasks={tasks} datasources={datasources} jobs={capabilityJobs} canManage={canManage} onChanged={() => refresh(true)} />
-              )}
-              {view === "quality" && (
-                <CapabilityView mode="quality" tasks={tasks} datasources={datasources} jobs={capabilityJobs} canManage={canManage} onChanged={() => refresh(true)} />
-              )}
-              {view === "subscription" && (
-                <CapabilityView mode="subscription" tasks={tasks} datasources={datasources} jobs={capabilityJobs} canManage={canManage} onChanged={() => refresh(true)} />
+              {view === "capabilities" && (
+                <CapabilityView
+                  mode={capabilityMode}
+                  onModeChange={setCapabilityMode}
+                  tasks={tasks}
+                  jobs={capabilityJobs}
+                  canManage={canManage}
+                  onChanged={() => refresh(true)}
+                />
               )}
               {view === "cluster" && (
                 <ClusterView cluster={cluster} tasks={tasks} canManage={canManage} onChanged={() => refresh(true)} />

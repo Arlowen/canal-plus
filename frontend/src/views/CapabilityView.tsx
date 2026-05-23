@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from "react";
 import {
   ArrowsClockwise,
   CheckCircle,
-  GitBranch,
   MagnifyingGlass,
   Play,
   Plus,
@@ -14,45 +13,43 @@ import { PermissionNotice } from "../components/PermissionNotice";
 import { StatusBadge } from "../components/StatusBadge";
 import { api } from "../lib/api";
 import { cx, formatDate } from "../lib/format";
-import type { CapabilityJob, CapabilityJobType, Datasource, QualityDiff, StructureDDL, SubscriptionChange, SyncTask } from "../types/api";
+import type { CapabilityJob, CapabilityJobType, QualityDiff, StructureDDL, SubscriptionChange, SyncTask } from "../types/api";
+
+const capabilityTabs: Array<{ value: CapabilityJobType; label: string }> = [
+  { value: "structure", label: "结构" },
+  { value: "quality", label: "校验" },
+  { value: "subscription", label: "订阅" }
+];
 
 const capabilityConfig: Record<CapabilityJobType, {
   title: string;
-  icon: typeof Stack;
-  accent: string;
   primary: string;
-  modes: Array<{ value: string; label: string; description: string }>;
+  modes: Array<{ value: string; label: string }>;
 }> = {
   structure: {
     title: "结构迁移与同步",
-    icon: Stack,
-    accent: "类型转换 / 方言适配 / 命名映射",
     primary: "生成结构计划",
     modes: [
-      { value: "schema_prepare", label: "结构准备", description: "检查目标端缺失库表列并生成 DDL" },
-      { value: "ddl_sync", label: "DDL 同步", description: "对运行中链路启用增量 DDL 变更" }
+      { value: "schema_prepare", label: "结构准备" },
+      { value: "ddl_sync", label: "DDL 同步" }
     ]
   },
   quality: {
     title: "数据校验与订正",
-    icon: ShieldCheck,
-    accent: "字段级对比 / 二次差异校验 / 安全订正",
     primary: "创建校验任务",
     modes: [
-      { value: "verify_only", label: "仅校验", description: "输出差异，不执行回写" },
-      { value: "verify_then_correct", label: "校验后订正", description: "二次确认差异后自动订正" },
-      { value: "periodic_verify", label: "周期校验", description: "按 cron 执行并保留历史" }
+      { value: "verify_only", label: "仅校验" },
+      { value: "verify_then_correct", label: "校验后订正" },
+      { value: "periodic_verify", label: "周期校验" }
     ]
   },
   subscription: {
     title: "修改订阅",
-    icon: GitBranch,
-    accent: "运行中加库减库 / action 过滤 / 条件过滤",
     primary: "发起订阅变更",
     modes: [
-      { value: "add_tables", label: "新增订阅表", description: "预检后把新增表合入当前版本" },
-      { value: "filter_actions", label: "Action 过滤", description: "调整 insert/update/delete 订阅动作" },
-      { value: "condition_filter", label: "条件过滤", description: "发布行级过滤条件" }
+      { value: "add_tables", label: "新增订阅表" },
+      { value: "filter_actions", label: "Action 过滤" },
+      { value: "condition_filter", label: "条件过滤" }
     ]
   }
 };
@@ -145,15 +142,15 @@ function actionList(actions?: string[]) {
 
 export function CapabilityView({
   mode,
+  onModeChange,
   tasks,
-  datasources,
   jobs,
   canManage,
   onChanged
 }: {
   mode: CapabilityJobType;
+  onModeChange: (mode: CapabilityJobType) => void;
   tasks: SyncTask[];
-  datasources: Datasource[];
   jobs: CapabilityJob[];
   canManage: boolean;
   onChanged: () => Promise<void> | void;
@@ -355,6 +352,21 @@ export function CapabilityView({
   return (
     <div className="grid gap-5 xl:grid-cols-[0.95fr_1.05fr]">
       <section className="rounded-xl border border-line bg-white p-5 shadow-panel">
+        <div className="mb-5 flex flex-wrap gap-2">
+          {capabilityTabs.map((item) => (
+            <button
+              key={item.value}
+              onClick={() => onModeChange(item.value)}
+              className={cx(
+                "inline-flex items-center justify-center rounded-full border px-3 py-1.5 text-sm transition active:scale-[0.98]",
+                mode === item.value ? "border-coal bg-coal text-white" : "border-line bg-white text-zinc-600 hover:bg-zinc-50"
+              )}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+
         <h2 className="text-xl font-semibold tracking-tight text-coal">{config.title}</h2>
 
         {error && (
