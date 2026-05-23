@@ -2,14 +2,11 @@ import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from
 import {
   ArrowRight,
   ArrowsClockwise,
-  BellRinging,
   CheckCircle,
   Cloud,
   ClipboardText,
   Database,
   FlowArrow,
-  Gauge,
-  GearSix,
   Pulse,
   ShieldCheck,
   SignOut,
@@ -18,7 +15,6 @@ import {
   WarningCircle,
   XCircle
 } from "@phosphor-icons/react";
-import { StatusBadge } from "./components/StatusBadge";
 import { PermissionNotice } from "./components/PermissionNotice";
 import { api, clearToken, getToken, setToken } from "./lib/api";
 import { cx, formatDate, formatNumber } from "./lib/format";
@@ -36,7 +32,6 @@ import type {
   AlertRuleEvaluation,
   CapabilityJobType,
   CapabilityJob,
-  DashboardSummary,
   ClusterSnapshot,
   Datasource,
   ErrorEvent,
@@ -51,7 +46,7 @@ import type {
   User
 } from "./types/api";
 
-type View = "dashboard" | "datasources" | "tasks" | "wizard" | "capabilities" | "cluster" | "errors" | "logs" | "settings";
+type View = "datasources" | "tasks" | "wizard" | "capabilities" | "cluster" | "errors" | "logs";
 type NavView = Exclude<View, "wizard">;
 
 const defaultStrategy: SyncStrategy = {
@@ -68,34 +63,29 @@ const defaultStrategy: SyncStrategy = {
   retryIntervalSeconds: 10
 };
 
-const navItems: Array<{ id: NavView; label: string; icon: typeof Gauge }> = [
-  { id: "dashboard", label: "概览", icon: Gauge },
+const navItems: Array<{ id: NavView; label: string; icon: typeof Stack }> = [
   { id: "datasources", label: "数据源", icon: Database },
   { id: "tasks", label: "任务", icon: FlowArrow },
   { id: "capabilities", label: "能力", icon: Stack },
   { id: "cluster", label: "节点", icon: Cloud },
-  { id: "errors", label: "错误", icon: WarningCircle },
-  { id: "logs", label: "日志", icon: ClipboardText },
-  { id: "settings", label: "设置", icon: GearSix }
+  { id: "errors", label: "问题", icon: WarningCircle },
+  { id: "logs", label: "日志", icon: ClipboardText }
 ];
 
 const viewTitles: Record<View, string> = {
-  dashboard: "概览",
   datasources: "数据源",
   tasks: "任务",
   wizard: "新建任务",
   capabilities: "能力",
   cluster: "节点",
-  errors: "错误",
-  logs: "日志",
-  settings: "设置"
+  errors: "问题",
+  logs: "日志"
 };
 
 function App() {
   const [tokenState, setTokenState] = useState(getToken());
   const [user, setUser] = useState<User | null>(null);
   const [view, setView] = useState<View>("tasks");
-  const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [datasources, setDatasources] = useState<Datasource[]>([]);
   const [tasks, setTasks] = useState<SyncTask[]>([]);
   const [errors, setErrors] = useState<ErrorEvent[]>([]);
@@ -103,6 +93,7 @@ function App() {
   const [cluster, setCluster] = useState<ClusterSnapshot | null>(null);
   const [capabilityJobs, setCapabilityJobs] = useState<CapabilityJob[]>([]);
   const [capabilityMode, setCapabilityMode] = useState<CapabilityJobType>("structure");
+  const [issueMode, setIssueMode] = useState<"errors" | "alerts">("errors");
   const [alertRules, setAlertRules] = useState<AlertRule[]>([]);
   const [alertEvents, setAlertEvents] = useState<AlertEvent[]>([]);
   const [alertEvaluations, setAlertEvaluations] = useState<AlertRuleEvaluation[]>([]);
@@ -116,8 +107,7 @@ function App() {
     if (!quiet) setLoading(true);
     setError(null);
     try {
-      const [nextSummary, nextDatasources, nextTasks, nextErrors, nextLogs, nextCluster, nextCapabilityJobs, nextAlertRules, nextAlertState] = await Promise.all([
-        api.summary(),
+      const [nextDatasources, nextTasks, nextErrors, nextLogs, nextCluster, nextCapabilityJobs, nextAlertRules, nextAlertState] = await Promise.all([
         api.datasources(),
         api.tasks(),
         api.errors(),
@@ -130,7 +120,6 @@ function App() {
           events: await api.alertEvents()
         }))
       ]);
-      setSummary(nextSummary);
       setDatasources(nextDatasources);
       setTasks(nextTasks);
       setErrors(nextErrors);
@@ -252,13 +241,10 @@ function App() {
             </div>
           )}
 
-          {loading && !summary ? (
+          {loading && tasks.length === 0 && datasources.length === 0 && errors.length === 0 && logs.length === 0 && !cluster ? (
             <SkeletonPage />
           ) : (
             <>
-              {view === "dashboard" && (
-                <Dashboard summary={summary} tasks={tasks} errors={errors} cluster={cluster} />
-              )}
               {view === "datasources" && (
                 <DatasourceView datasources={datasources} tasks={tasks} canManage={canManage} onChanged={() => refresh(true)} />
               )}
@@ -302,18 +288,85 @@ function App() {
                 <ClusterView cluster={cluster} tasks={tasks} canManage={canManage} onChanged={() => refresh(true)} />
               )}
               {view === "errors" && (
-                <ErrorCenterView errors={errors} tasks={tasks} onChanged={() => refresh(true)} />
+                <IssueCenter
+                  mode={issueMode}
+                  onModeChange={setIssueMode}
+                  errors={errors}
+                  tasks={tasks}
+                  alertRules={alertRules}
+                  alertEvents={alertEvents}
+                  alertEvaluations={alertEvaluations}
+                  canManage={canManage}
+                  onChanged={() => refresh(true)}
+                />
               )}
               {view === "logs" && (
                 <OperationLogsView logs={logs} />
-              )}
-              {view === "settings" && (
-                <SettingsView alertRules={alertRules} alertEvents={alertEvents} evaluations={alertEvaluations} tasks={tasks} canManage={canManage} onChanged={() => refresh(true)} />
               )}
             </>
           )}
         </main>
       </div>
+    </div>
+  );
+}
+
+function IssueCenter({
+  mode,
+  onModeChange,
+  errors,
+  tasks,
+  alertRules,
+  alertEvents,
+  alertEvaluations,
+  canManage,
+  onChanged
+}: {
+  mode: "errors" | "alerts";
+  onModeChange: (mode: "errors" | "alerts") => void;
+  errors: ErrorEvent[];
+  tasks: SyncTask[];
+  alertRules: AlertRule[];
+  alertEvents: AlertEvent[];
+  alertEvaluations: AlertRuleEvaluation[];
+  canManage: boolean;
+  onChanged: () => Promise<void> | void;
+}) {
+  return (
+    <div className="space-y-5">
+      <div className="flex flex-wrap gap-2">
+        <button
+          onClick={() => onModeChange("errors")}
+          className={cx(
+            "inline-flex items-center justify-center rounded-full border px-3 py-1.5 text-sm transition active:scale-[0.98]",
+            mode === "errors" ? "border-coal bg-coal text-white" : "border-line bg-white text-zinc-600 hover:bg-zinc-50"
+          )}
+        >
+          错误
+        </button>
+        <button
+          onClick={() => onModeChange("alerts")}
+          className={cx(
+            "inline-flex items-center justify-center rounded-full border px-3 py-1.5 text-sm transition active:scale-[0.98]",
+            mode === "alerts" ? "border-coal bg-coal text-white" : "border-line bg-white text-zinc-600 hover:bg-zinc-50"
+          )}
+        >
+          告警
+        </button>
+      </div>
+
+      {mode === "errors" ? (
+        <ErrorCenterView errors={errors} tasks={tasks} onChanged={onChanged} />
+      ) : (
+        <SettingsView
+          alertRules={alertRules}
+          alertEvents={alertEvents}
+          evaluations={alertEvaluations}
+          tasks={tasks}
+          canManage={canManage}
+          onChanged={onChanged}
+        />
+      )}
     </div>
   );
 }
@@ -415,125 +468,6 @@ function LoginScreen({ onLogin }: { onLogin: (username: string, password: string
             </button>
           </div>
         </form>
-      </div>
-    </div>
-  );
-}
-
-function Dashboard({
-  summary,
-  tasks,
-  errors,
-  cluster
-}: {
-  summary: DashboardSummary | null;
-  tasks: SyncTask[];
-  errors: ErrorEvent[];
-  cluster: ClusterSnapshot | null;
-}) {
-  const highDelayTask = [...tasks].sort((a, b) => (b.runtime?.delaySeconds ?? 0) - (a.runtime?.delaySeconds ?? 0))[0];
-  const activeTasks = [...tasks]
-    .sort((left, right) => (right.runtime?.delaySeconds ?? 0) - (left.runtime?.delaySeconds ?? 0))
-    .slice(0, 6);
-  const failedTasks = tasks.filter((task) => task.status === "failed");
-  const runningTasks = tasks.filter((task) => task.status === "incremental_running" || task.status === "full_syncing").length;
-  const metrics = [
-    { label: "任务", value: summary?.taskTotal ?? 0, detail: "总量" },
-    { label: "运行中", value: runningTasks, detail: "当前运行" },
-    { label: "异常", value: summary?.failedTasks ?? 0, detail: "待处理" },
-    { label: "在线节点", value: `${summary?.onlineNodes ?? 0}/${summary?.totalNodes ?? 0}`, detail: "集群状态" }
-  ];
-
-  return (
-    <div className="space-y-5">
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        {metrics.map((metric) => (
-          <div key={metric.label} className="rounded-lg border border-line bg-white p-4 shadow-panel">
-            <div className="text-sm text-muted">{metric.label}</div>
-            <div className="mt-3 font-mono text-3xl font-semibold text-coal">{metric.value}</div>
-            <div className="mt-2 text-xs text-zinc-500">{metric.detail}</div>
-          </div>
-        ))}
-      </div>
-
-      <div className="grid gap-5 xl:grid-cols-[1.55fr_0.9fr]">
-      <section className="space-y-5">
-        <div className="rounded-xl border border-line bg-white p-5 shadow-panel">
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <h2 className="text-lg font-semibold tracking-tight text-coal">关键任务</h2>
-            </div>
-            <div className="rounded-lg bg-zinc-100 px-3 py-2 font-mono text-sm text-zinc-700">
-              峰值延迟 {highDelayTask?.runtime?.delaySeconds ?? 0}s
-            </div>
-          </div>
-
-          <div className="mt-5 divide-y divide-line">
-            {activeTasks.map((task) => (
-              <div key={task.id} className="grid gap-3 py-4 md:grid-cols-[minmax(0,1fr)_minmax(230px,auto)] md:items-center">
-                <div>
-                  <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-2">
-                    <span className="font-medium text-coal">{task.name}</span>
-                    <StatusBadge status={task.status} />
-                  </div>
-                  <div className="mt-1 text-sm text-muted">{task.sourceDatasource?.name} 到 {task.targetDatasource?.name}</div>
-                </div>
-                <div className="grid gap-2 text-sm text-zinc-600 sm:grid-cols-[minmax(120px,1fr)_auto_auto] sm:items-center">
-                  <div className="break-all font-mono text-zinc-700">
-                    {task.runtime?.binlogFile}:{task.runtime?.binlogPosition}
-                  </div>
-                  <div className="whitespace-nowrap">
-                    延迟 <span className="font-mono text-coal">{task.runtime?.delaySeconds ?? 0}s</span>
-                  </div>
-                  <div className="whitespace-nowrap">
-                    <span className="font-mono text-coal">{task.runtime?.eventsPerSecond ?? 0}</span> /s
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      <aside className="space-y-5">
-        <div className="rounded-xl border border-line bg-[#fcfcf8] p-5 shadow-panel">
-          <div className="flex items-center gap-2 text-coal">
-            <BellRinging size={20} />
-            <h2 className="font-semibold tracking-tight">异常</h2>
-          </div>
-          <div className="mt-4 space-y-3">
-            {failedTasks.length === 0 && errors.length === 0 ? (
-              <EmptyState title="暂无异常" description="当前运行正常" />
-            ) : (
-              <>
-                {failedTasks.map((task) => (
-                  <div key={task.id} className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">
-                    {task.name} 处于异常状态
-                  </div>
-                ))}
-                {errors.slice(0, 3).map((event) => (
-                  <div key={event.id} className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
-                    {event.sourceTable} / {event.reason}
-                  </div>
-                ))}
-              </>
-            )}
-          </div>
-        </div>
-
-        <div className="rounded-xl border border-line bg-white p-5 shadow-panel">
-          <h2 className="font-semibold tracking-tight text-coal">节点</h2>
-          <div className="mt-4 space-y-3">
-            {(cluster?.nodes ?? []).slice(0, 4).map((node) => (
-              <div key={node.id} className="flex items-center justify-between gap-3 rounded-lg border border-line bg-[#fcfcf8] px-3 py-2 text-sm">
-                <span className="font-medium text-coal">{node.name}</span>
-                <span className="font-mono text-xs text-zinc-600">{node.runningTasks}/{node.capacity}</span>
-                <span className={cx("h-2.5 w-2.5 rounded-full", node.status === "online" ? "bg-emerald-400" : node.status === "draining" ? "bg-amber-400" : "bg-red-400")} />
-              </div>
-            ))}
-          </div>
-        </div>
-      </aside>
       </div>
     </div>
   );
