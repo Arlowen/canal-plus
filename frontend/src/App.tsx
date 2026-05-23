@@ -529,6 +529,7 @@ function DashboardPage({
   const recentWorkloads = buildWorkloads(tasks, visibleCapabilityJobs).slice(0, 6);
   const runningGovernance = visibleCapabilityJobs.filter((job) => job.status === "running").length;
   const failedTasks = tasks.filter((task) => task.status === "failed").length;
+  const awaitingTasks = tasks.filter(taskAwaitingNode).length;
   const pendingErrors = errors.filter((item) => item.status === "pending").length;
   const onlineNodes = cluster?.onlineNodes ?? summary?.onlineNodes ?? 0;
   const totalNodes = cluster?.totalNodes ?? summary?.totalNodes ?? 0;
@@ -724,6 +725,14 @@ function DashboardPage({
                     description="没有在线节点时，任务无法启动或接管。"
                     actionLabel="添加节点"
                     onClick={onCreateNode}
+                  />
+                )}
+                {awaitingTasks > 0 && (
+                  <NextStepCard
+                    title="处理待接管任务"
+                    description={`当前有 ${awaitingTasks} 条任务等待节点接管。`}
+                    actionLabel="查看节点"
+                    onClick={onOpenNodes}
                   />
                 )}
                 {pendingErrors > 0 && (
@@ -1261,6 +1270,7 @@ function TasksPage({
   };
 
   const pendingErrors = errors.filter((item) => item.status === "pending").length;
+  const awaitingTasks = tasks.filter(taskAwaitingNode).length;
   const typeCounts = filteredTypeCounts(workloads);
 
   return (
@@ -1283,6 +1293,12 @@ function TasksPage({
           <MetricMini label="运行中" value={`${tasks.filter((task) => task.status === "full_syncing" || task.status === "incremental_running").length + visibleCapabilityJobs.filter((job) => job.status === "running").length}`} />
           <MetricMini label="待处理错误" value={`${pendingErrors}`} />
         </div>
+
+        {awaitingTasks > 0 && (
+          <div className="mt-5 rounded-3xl border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-800">
+            当前有 {awaitingTasks} 条任务等待节点接管。优先检查节点在线状态、容量和排空中的任务迁移结果。
+          </div>
+        )}
 
         <div className="mt-5 grid gap-3 lg:grid-cols-[minmax(0,1fr)_220px]">
           <label className="block">
@@ -1369,6 +1385,7 @@ function TasksPage({
                       <span className="font-medium text-coal">{item.title}</span>
                       <TypeBadge type={item.type} />
                       {task && <StatusBadge status={task.status} />}
+                      {task && taskAwaitingNode(task) && <Badge tone="yellow">待接管</Badge>}
                       {task && <Badge tone={taskProcessTone(task.runtime?.processStatus)}>{taskProcessStatusText(task.runtime?.processStatus)}</Badge>}
                       {task && task.runtime?.managedByLocalNode === false && <Badge tone="yellow">远程托管</Badge>}
                       {job && <Badge tone={capabilityJobTone(job.status)}>{capabilityJobStatusText(job.status)}</Badge>}
@@ -1552,6 +1569,7 @@ function NodesPage({
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const localNodeId = cluster?.localNodeId;
   const localNodeName = cluster?.localNodeName || localNodeId;
+  const awaitingTasks = tasks.filter(taskAwaitingNode);
 
   useEffect(() => {
     if (openCreateToken === 0) return;
@@ -1696,7 +1714,7 @@ function NodesPage({
           <MetricMini label="节点总数" value={`${cluster?.totalNodes ?? 0}`} />
           <MetricMini label="在线节点" value={`${cluster?.onlineNodes ?? 0}`} />
           <MetricMini label="运行任务" value={`${tasks.filter((task) => task.runtime?.nodeId).length}`} />
-          <MetricMini label="Failover" value={`${cluster?.failovers ?? 0}`} />
+          <MetricMini label="待接管" value={`${awaitingTasks.length}`} />
         </div>
 
         <div className="mt-5 grid gap-3 lg:grid-cols-[minmax(0,1fr)_220px]">
@@ -1873,6 +1891,34 @@ function NodesPage({
             <div className="mt-5 text-sm text-slate-500">选择一个节点查看详情。</div>
           )}
         </section>
+        {selected && (
+          <section className="surface p-6">
+            <SectionHeader title="待接管任务" description="当前没有承载节点、需要重新接管的任务。" />
+            <div className="mt-4 grid gap-3">
+              {awaitingTasks.length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-line bg-slate-50/70 px-4 py-6 text-sm text-slate-500">
+                  当前没有待接管任务。
+                </div>
+              ) : awaitingTasks.slice(0, 6).map((task) => (
+                <div key={task.id} className="rounded-2xl border border-line bg-white px-4 py-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="font-medium text-coal">{task.name}</div>
+                    <Badge tone="yellow">待接管</Badge>
+                  </div>
+                  <div className="mt-2 text-sm text-slate-500">
+                    {(task.sourceDatasource?.name || task.sourceDatasourceId)} to {(task.targetDatasource?.name || task.targetDatasourceId)}
+                  </div>
+                  <div className="mt-3 flex justify-end">
+                    <button type="button" onClick={() => onOpenTask(task.id)} className="btn-secondary px-3 py-2 text-xs">
+                      <FlowArrow size={14} />
+                      查看任务
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
         {selected && (
           <section className="surface p-6">
             <SectionHeader title="最近运维事件" description="围绕当前节点的操作和任务迁移。" />
@@ -3615,6 +3661,15 @@ function datasourceSearchText(item: Datasource) {
     item.username,
     purposeText(item.purpose)
   ].filter(Boolean).join(" ").toLowerCase();
+}
+
+function taskAwaitingNode(task: SyncTask) {
+  return !task.runtime?.nodeId && (
+    task.status === "pending"
+    || task.status === "full_syncing"
+    || task.status === "incremental_running"
+    || task.status === "failed"
+  );
 }
 
 function taskActivityAt(task: SyncTask) {
