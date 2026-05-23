@@ -494,6 +494,7 @@ function DashboardPage({
   const pendingErrors = errors.filter((item) => item.status === "pending").length;
   const onlineNodes = cluster?.onlineNodes ?? summary?.onlineNodes ?? 0;
   const totalNodes = cluster?.totalNodes ?? summary?.totalNodes ?? 0;
+  const hasCreatedTasks = tasks.length > 0;
 
   return (
     <div className="space-y-5">
@@ -502,10 +503,12 @@ function DashboardPage({
           <div>
             <div className="chip border-blue-200 bg-blue-50 text-blue-700">工作台</div>
             <h2 className="mt-4 max-w-2xl text-3xl font-semibold tracking-tight text-coal md:text-4xl">
-              核心链路先清晰，再扩展能力。
+              {hasCreatedTasks ? "聚焦运行状态，减少无关干扰。" : "核心链路先清晰，再扩展能力。"}
             </h2>
             <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-500">
-              先添加数据源，再创建迁移或同步任务。校验、订正和结构对比会围绕已有同步链路展开，避免首次进入就面对一堆无关入口。
+              {hasCreatedTasks
+                ? "已有任务后，工作台只保留运行概览、异常和常用操作。需要扩展链路时，再进入任务或节点页面。"
+                : "先添加数据源，再创建迁移或同步任务。校验、订正和结构对比会围绕已有同步链路展开，避免首次进入就面对一堆无关入口。"}
             </p>
             <div className="mt-5 flex flex-wrap gap-3">
               <button onClick={onCreateDatasource} className="btn-primary">
@@ -523,33 +526,50 @@ function DashboardPage({
             </div>
           </div>
 
-          <div className="surface-muted p-5">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <div className="text-sm font-medium text-coal">新用户路径</div>
-                <div className="mt-1 text-sm text-slate-500">按主路径完成第一条链路。</div>
-              </div>
-              <RocketLaunch size={20} className="text-blue-600" />
-            </div>
-            <div className="mt-5 grid gap-3">
-              {[
-                "添加数据源",
-                "测试连接",
-                "创建任务",
-                "选择任务类型",
-                "配置任务",
-                "启动任务",
-                "查看运行状态"
-              ].map((label, index) => (
-                <div key={label} className="flex items-center gap-3 rounded-2xl border border-line bg-white px-4 py-3">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-50 text-sm font-semibold text-blue-700">
-                    {index + 1}
-                  </div>
-                  <div className="text-sm text-coal">{label}</div>
+          {hasCreatedTasks ? (
+            <div className="surface-muted p-5">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <div className="text-sm font-medium text-coal">当前重点</div>
+                  <div className="mt-1 text-sm text-slate-500">优先关注运行中任务、异常和节点可用性。</div>
                 </div>
-              ))}
+                <WarningCircle size={20} className="text-blue-600" />
+              </div>
+              <div className="mt-5 grid gap-3 sm:grid-cols-3 xl:grid-cols-1">
+                <DetailCard label="运行中任务" value={`${(summary?.runningTasks ?? 0) + runningGovernance} 条`} />
+                <DetailCard label="待处理异常" value={`${failedTasks + pendingErrors} 条`} />
+                <DetailCard label="在线节点" value={`${onlineNodes}/${totalNodes}`} />
+              </div>
             </div>
-          </div>
+          ) : (
+            <div className="surface-muted p-5">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <div className="text-sm font-medium text-coal">新用户路径</div>
+                  <div className="mt-1 text-sm text-slate-500">按主路径完成第一条链路。</div>
+                </div>
+                <RocketLaunch size={20} className="text-blue-600" />
+              </div>
+              <div className="mt-5 grid gap-3">
+                {[
+                  "添加数据源",
+                  "测试连接",
+                  "创建任务",
+                  "选择任务类型",
+                  "配置任务",
+                  "启动任务",
+                  "查看运行状态"
+                ].map((label, index) => (
+                  <div key={label} className="flex items-center gap-3 rounded-2xl border border-line bg-white px-4 py-3">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-50 text-sm font-semibold text-blue-700">
+                      {index + 1}
+                    </div>
+                    <div className="text-sm text-coal">{label}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </section>
 
