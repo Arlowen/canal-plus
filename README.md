@@ -1,38 +1,70 @@
 # Canal Plus
 
-Canal Plus 是一个面向 MySQL CDC 同步的前后端项目。当前版本按照 `docs/canal-plus-prd.md` 的 MVP 范围实现了控制台和 API 骨架，目标是用可视化任务流替代 Canal 多配置文件操作。
+Canal Plus 是一个轻量级数据同步、数据迁移、数据校验工具。当前版本已经收敛为 Node 节点自带控制台的架构：每个节点同时提供 Web UI、API、任务进程管理、运行日志采集和节点运维能力。
 
 ## 目录结构
 
 ```text
 canal-plus/
-  backend/   # Go API
-  frontend/  # Vite + React + Tailwind 控制台
-  docs/      # PRD 和产品文档
+  backend/   # Go API、节点管理、任务进程与运行态
+  frontend/  # Vite + React 控制台
+  docs/      # 产品文档与运行架构说明
 ```
+
+## 当前产品结构
+
+- 工作台：展示运行模型、最近任务、待接管任务、节点状态和下一步操作。
+- 数据源：新增、编辑、测试连接、删除保护、使用统计。
+- 任务：按五类任务创建，同步任务运行状态、实时日志、运行轨迹、节点托管语义。
+- 节点：部署、升级、卸载、上线、下线、排空、故障演练、重新均衡，并展示任务迁移报告。
+- 设置：告警规则、基础配置、最近操作记录。
+
+## 当前架构
+
+Canal Plus 不再假设独立 Console 服务。正确模型是：
+
+```text
+Node 节点
+  ├── Web UI
+  ├── API Server
+  ├── Node 管理模块
+  ├── TaskProcessManager
+  ├── TaskLogService
+  ├── TaskStatusService
+  ├── NodeHeartbeatService
+  └── Task Process
+        ├── Task Process 1
+        ├── Task Process 2
+        └── Task Process 3
+```
+
+关键点：
+
+- 每个同步任务由独立子进程运行。
+- 任务运行日志通过 `TaskLogService` 聚合，并通过 API 与 SSE 提供给前端。
+- 任务运行态由 `TaskStatusService` 维护，前端可看到进程状态、托管节点、待接管状态和运行轨迹。
+- 节点变更会触发 lease 重分配和任务迁移报告。
+- 当前控制节点会明确标识，且不能从本机控制台执行自身下线、卸载或故障演练。
+
+更完整的运行模型见 [docs/runtime-architecture.md](/Users/pika/codex-cli-worker/canal-plus/docs/runtime-architecture.md)。
 
 ## 已实现能力
 
-- 登录鉴权：默认管理员账号 `admin` / `admin123`，默认运维账号 `operator` / `operator123`。
-- 权限模型：所有登录用户可查看控制台；前端按角色收敛写入口并给出权限提示；运维账号可执行连接测试、任务启停、错误重试/跳过、能力任务运行；管理员账号可修改配置、删除资源、调整集群和管理告警。
-- 数据源管理：新增、编辑、删除保护、连接测试、关键词/用途/状态筛选、引用任务统计、schema/table/column 元数据读取。
-- 同步任务：列表、详情、关键词/状态/负责人筛选、延迟/吞吐/更新时间排序、创建向导、启动、暂停、恢复、停止、重跑、复制、安全删除。
-- 任务版本：配置变更自动生成版本快照，支持版本时间线查看和管理员回滚。
-- 位点检查点：运行推进、手动重置、重跑、生命周期和 node 接管都会沉淀 checkpoint，可在任务详情追踪恢复位点、lease epoch 和接管节点。
-- 发布前预检：创建任务前检查源端连接、目标结构、字段兼容性、重复订阅、同步策略和 node 承载能力，预检失败会阻止发布。
-- 任务功能列表：支持修改运行参数、停止后重置 binlog 位点、导出任务配置包。
-- 任务运行剖面：在任务详情内聚合链路拓扑、node lease、接管次数、待处理错误和最近操作。
-- 运行监控：任务数量、异常数量、延迟、吞吐、binlog 位点、全量进度。
-- 告警规则：支持配置延迟阈值、错误阈值、任务范围、Webhook，并实时评估触发状态、沉淀触发/恢复事件和通知记录。
-- 分布式部署：内置 node 节点、任务 lease、后台 supervisor、心跳超时下线、任务自动接管、任务级故障演练/维护排空/重新均衡报告和 API。
-- Node 接入：支持通过控制台或 API 注册/更新 worker node，新节点上线后会参与 lease 调度并接管等待任务。
-- 产品模块：任务中心、结构迁移、数据校验订正、订阅变更、节点集群、错误中心、操作审计。
-- 能力任务：结构迁移计划、二次差异校验与订正、运行中订阅变更计划具备 API 状态、阶段进度、发布结果和操作日志。
-- 结构迁移：结构任务会生成目标端 DDL 计划，支持 SQL 预览、风险标识和管理员单条/批量执行。
-- 数据校验：校验任务会生成字段级差异明细，支持查看源端/目标端值、风险等级、订正 SQL 和管理员单条/批量订正。
-- 错误中心：错误事件搜索、任务/状态/事件类型筛选、详情追踪、单条重试、批量重试、跳过并记录原因。
-- 操作日志：关键操作审计、关键词/操作者/对象/时间筛选、详情追踪和可见日志导出。
-- 持久化：Go 后端默认使用 `backend/data/store.json` 保存演示数据和运行态。
+- 登录与权限：内置 `admin` / `admin123`、`operator` / `operator123`。
+- 数据源管理：新增、编辑、连接测试、删除保护、默认库、用途分类。
+- 任务创建：统一收敛为五类任务。
+  - 全量迁移
+  - 增量同步
+  - 数据校验
+  - 数据订正
+  - 结构对比
+- 同步任务运行：启动、暂停、恢复、停止、重跑、删除、位点重置。
+- 运行状态：进程状态、托管模式、执行节点、待接管、远程托管、本地日志可见性。
+- 实时日志：任务进程日志支持实时流式查看。
+- 运行轨迹：checkpoint 时间线展示位点、lease epoch、节点切换和生命周期原因。
+- 节点运维：部署、升级、卸载、手动上下线、排空、故障演练、重新均衡。
+- 迁移报告：节点生命周期操作会返回受影响任务、迁移方向、恢复位点、接管次数。
+- 告警与审计：告警规则、最近操作、节点运维事件。
 
 ## 本地启动
 
@@ -43,14 +75,12 @@ npm run dev
 
 启动后访问：
 
-- Frontend: http://localhost:5173
-- Backend: http://localhost:4100/api/health
-
-如果 `5173` 已被占用，Vite 会自动切到下一个可用端口，例如 http://localhost:5174。
+- Frontend: [http://localhost:5173](http://localhost:5173)
+- Backend health: [http://localhost:4100/api/health](http://localhost:4100/api/health)
 
 ## 环境变量
 
-Go 后端可复制 `backend/.env.example` 为 `backend/.env`：
+复制 `backend/.env.example`：
 
 ```bash
 cp backend/.env.example backend/.env
@@ -58,77 +88,63 @@ cp backend/.env.example backend/.env
 
 常用变量：
 
-- `PORT`: 后端端口，默认 `4100`。
-- `FRONTEND_ORIGIN`: 前端跨域来源，默认 `http://localhost:5173`。
-- `CANAL_PLUS_SECRET`: 数据源密码加密密钥。
-- `CANAL_PLUS_DATA_FILE`: 后端数据文件路径，默认 `./data/store.json`。
-- `CANAL_PLUS_CLUSTER_SUPERVISOR`: 后台 lease supervisor，默认开启；设为 `false` 可关闭。
-- `CANAL_PLUS_CLUSTER_SUPERVISOR_INTERVAL_SECONDS`: 后台 supervisor 巡检间隔秒，默认 `5`。
-- `CANAL_PLUS_EMBEDDED_NODE_HEARTBEAT`: 本地演示内置 node 心跳，默认开启；真实多节点部署可设为 `false`，由各 worker 调用 heartbeat API。
-- `CANAL_PLUS_EMBEDDED_NODE_HEARTBEAT_INTERVAL_SECONDS`: 本地演示心跳间隔秒，默认 `10`。
+- `PORT`: 后端端口，默认 `4100`
+- `FRONTEND_ORIGIN`: 允许跨域的前端地址，默认 `http://localhost:5173`
+- `CANAL_PLUS_SECRET`: 数据源密码加密密钥
+- `CANAL_PLUS_DATA_FILE`: 元数据与运行态文件路径
+- `CANAL_PLUS_NODE_ID`: 当前控制节点 ID。未设置时会自动选择一个在线节点作为当前节点
+- `CANAL_PLUS_CLUSTER_SUPERVISOR`: 集群巡检开关，默认开启
+- `CANAL_PLUS_CLUSTER_SUPERVISOR_INTERVAL_SECONDS`: 集群巡检间隔秒
+- `CANAL_PLUS_EMBEDDED_NODE_HEARTBEAT`: 当前节点心跳开关，默认开启
+- `CANAL_PLUS_EMBEDDED_NODE_HEARTBEAT_INTERVAL_SECONDS`: 当前节点心跳间隔秒
+- `CANAL_PLUS_TASK_PROCESS_SUPERVISOR_INTERVAL_SECONDS`: 本地任务进程协调与重分配检查间隔秒
 
-前端可设置：
+前端变量：
 
-- `VITE_API_BASE_URL`: API 地址，默认 `http://localhost:4100/api`。
+- `VITE_API_BASE_URL`: API 地址，默认 `http://localhost:4100/api`
+
+## 关键接口
+
+任务相关：
+
+- `GET /api/sync-tasks`
+- `POST /api/sync-tasks`
+- `POST /api/sync-tasks/{id}/start|pause|resume|stop`
+- `POST /api/sync-tasks/{id}/rerun`
+- `POST /api/sync-tasks/{id}/params`
+- `POST /api/sync-tasks/{id}/reset-position`
+- `GET /api/sync-tasks/{id}/runtime`
+- `GET /api/sync-tasks/{id}/logs`
+- `GET /api/sync-tasks/{id}/logs/stream`
+- `GET /api/sync-tasks/{id}/checkpoints`
+
+节点相关：
+
+- `GET /api/cluster`
+- `POST /api/cluster/nodes`
+- `POST /api/cluster/nodes/test-connection`
+- `POST /api/cluster/nodes/{id}/online|offline`
+- `POST /api/cluster/nodes/{id}/drain`
+- `POST /api/cluster/nodes/{id}/failover-drill`
+- `POST /api/cluster/nodes/{id}/upgrade`
+- `POST /api/cluster/nodes/{id}/uninstall`
+- `POST /api/cluster/rebalance`
 
 ## 当前边界
 
-当前实现是产品控制台和 API MVP，任务运行态使用模拟推进逻辑，已经预留全量、增量、checkpoint、错误队列、目标端适配器、node lease 和故障接管所需的数据模型。后续要接真实同步链路时，可以在 `backend/internal/app/store.go` 的任务状态机之外增加独立 worker，并将 checkpoint 与目标写入结果绑定。
+当前版本已经具备：
 
-## 分布式接管 API
+- 独立任务进程模型
+- 任务实时日志流
+- 节点级 lease 调度与迁移报告
+- 节点恢复上线后的重分配
+- 控制节点与远程托管语义区分
 
-- `GET /api/cluster`: 查看节点、租约和接管次数。
-- `GET /api/cluster/nodes`: 查看 node 状态、心跳时间和运行任务数。
-- `POST /api/cluster/nodes`: 注册或更新 worker node，支持 `id`、`name`、`endpoint`、`zone`、`role`、`capacity`。
-- `GET /api/cluster/leases`: 查看任务租约、epoch 和接管次数。
-- `POST /api/cluster/nodes/{id}/heartbeat`: 上报 node 心跳，超时未上报会自动下线并触发接管。
-- `POST /api/cluster/nodes/{id}/offline`: 模拟节点故障，任务会迁移到其他在线节点。
-- `POST /api/cluster/nodes/{id}/online`: 恢复节点心跳。
-- `POST /api/cluster/nodes/{id}/drain`: 维护排空节点，返回受影响任务、接管节点、lease epoch 变化和恢复 binlog 位点。
-- `POST /api/cluster/nodes/{id}/failover-drill`: 触发节点故障演练，返回受影响任务、接管节点、lease epoch 变化和恢复 binlog 位点。
-- `POST /api/cluster/rebalance`: 按当前节点负载重新均衡任务，返回迁移任务、新旧 node、lease epoch 变化和恢复 binlog 位点。
-
-## 能力任务 API
-
-- `GET /api/capability-jobs`: 查看结构迁移、校验订正、订阅变更任务。
-- `GET /api/capability-jobs?type=quality`: 按能力类型过滤。
-- `POST /api/capability-jobs`: 创建能力任务，请求体包含 `type`、`taskId`、`mode`、`autoStart`。
-- `POST /api/capability-jobs/{id}/run`: 重跑能力任务。
-- `GET /api/capability-jobs/{id}/structure-ddl`: 查看结构迁移任务的 DDL 执行计划。
-- `POST /api/capability-jobs/{id}/structure-ddl/apply`: 执行结构 DDL，请求体可包含 `ids` 和 `reason`；`ids` 为空时执行全部待处理 DDL。
-- `GET /api/capability-jobs/{id}/quality-diffs`: 查看数据校验任务的字段级差异。
-- `POST /api/capability-jobs/{id}/quality-diffs/correct`: 订正数据校验差异，请求体可包含 `ids` 和 `reason`；`ids` 为空时订正全部待处理差异。
-- `GET /api/capability-jobs/{id}/subscription-changes`: 查看运行中订阅变更计划，包含新增表、action 过滤、条件过滤、风险和发布状态。
-
-## 任务功能列表 API
-
-- `POST /api/sync-tasks/{id}/params`: 修改任务运行参数并递增配置版本。
-- `POST /api/sync-tasks/{id}/reset-position`: 在任务停止后重置 binlog 文件和 position。
-- `POST /api/sync-tasks/{id}/rerun`: 停止或异常任务按原配置重跑，并重新分配 node lease。
-- `GET /api/sync-tasks/{id}/export`: 导出任务配置、运行位点和 checksum。
-- `GET /api/sync-tasks/{id}/checkpoints`: 查看任务位点 checkpoint、node handoff、lease epoch、延迟和吞吐历史。
-- `DELETE /api/sync-tasks/{id}`: 删除草稿或已停止任务，并清理运行态与 lease。
-
-## 错误事件 API
-
-- `GET /api/error-events`: 查看错误事件，可按 `status` 过滤。
-- `GET /api/error-events/{id}`: 查看单条错误事件详情。
-- `POST /api/error-events/{id}/retry`: 重新投递单条错误事件。
-- `POST /api/error-events/batch-retry`: 批量重试错误事件，请求体包含 `ids`。
-- `POST /api/error-events/{id}/skip`: 跳过错误事件，请求体包含 `reason`。
-
-## 告警规则 API
-
-- `GET /api/alert-rules`: 查看告警规则。
-- `POST /api/alert-rules`: 创建告警规则，请求体包含 `name`、`enabled`、`taskId`、`delayThresholdSeconds`、`errorThreshold`、`webhookUrl`。
-- `PUT /api/alert-rules/{id}`: 更新告警规则。
-- `DELETE /api/alert-rules/{id}`: 删除告警规则。
-- `GET /api/alert-rules/evaluations`: 查看每条规则当前是否触发。
-- `GET /api/alert-rules/events`: 查看告警触发、恢复和通知记录，可通过 `ruleId` 查询单条规则历史。
+仍然是演示型运行时，未接入真实 CDC 执行引擎。当前任务进程会按模拟数据推进位点、吞吐、延迟和日志，以便验证控制台、节点管理和运行模型。后续如接入真实 MySQL binlog consumer，可以直接复用现有的任务进程、日志、状态和节点调度框架。
 
 ## 下一步建议
 
-- 接入真实 MySQL binlog consumer，优先评估 Canal 封装或 Debezium Embedded。
-- 将 JSON 文件存储替换为 MySQL 元数据库。
-- 完善用户权限和任务授权。
-- 增加 API 自动化测试和同步 worker 集成测试。
+- 接入真实 MySQL CDC 执行引擎，替换当前模拟任务进程。
+- 将 `store.json` 元数据存储迁移到 MySQL 或独立元数据库。
+- 完善节点回归后的更细粒度任务重分配策略。
+- 为节点操作和任务运行补充更完整的集成测试。
