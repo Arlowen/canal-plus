@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import {
   ArrowsClockwise,
   ArrowRight,
@@ -25,7 +25,15 @@ import {
 } from "@phosphor-icons/react";
 import { PermissionNotice } from "./components/PermissionNotice";
 import { StatusBadge } from "./components/StatusBadge";
-import { api, clearToken, getToken, setToken } from "./lib/api";
+import {
+  api,
+  checkBackendHealth,
+  clearToken,
+  getToken,
+  isServiceUnavailableError,
+  setToken,
+  subscribeBackendAvailability
+} from "./lib/api";
 import { cx, formatDate, formatDateTime, formatNumber, secondsSince } from "./lib/format";
 import { canManageConfig, roleLabel } from "./lib/permissions";
 import { taskStatusText } from "./lib/taskStatus";
@@ -210,11 +218,14 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [notice, setNotice] = useState<Notice | null>(null);
   const [globalError, setGlobalError] = useState<string | null>(null);
+  const [serviceUnavailable, setServiceUnavailable] = useState(false);
+  const [serviceRecoveryPending, setServiceRecoveryPending] = useState(false);
   const [datasourceCreateToken, setDatasourceCreateToken] = useState(0);
   const [taskCreateToken, setTaskCreateToken] = useState(0);
   const [nodeCreateToken, setNodeCreateToken] = useState(0);
   const [focusedNodeId, setFocusedNodeId] = useState<string | null>(null);
   const [focusedTaskId, setFocusedTaskId] = useState<string | null>(null);
+  const previousServiceUnavailable = useRef(false);
   const canManage = canManageConfig(user);
 
   const pushNotice = useCallback((next: Notice) => {
@@ -263,30 +274,89 @@ function App() {
       setAlertEvaluations(nextAlertEvaluations);
       setAlertEvents(nextAlertEvents);
     } catch (requestError) {
+      if (isServiceUnavailableError(requestError)) {
+        return;
+      }
       setGlobalError(requestError instanceof Error ? requestError.message : "加载失败");
     } finally {
       setLoading(false);
     }
   }, []);
 
+  const restoreAuthenticatedState = useCallback(async () => {
+    if (!getToken()) {
+      return;
+    }
+    try {
+      const nextUser = await api.me();
+      setUser(nextUser);
+      await refresh(true);
+    } catch (requestError) {
+      if (isServiceUnavailableError(requestError)) {
+        return;
+      }
+      clearToken();
+      setTokenState(null);
+      setUser(null);
+    }
+  }, [refresh]);
+
+  const retryServiceConnection = useCallback(async () => {
+    setServiceRecoveryPending(true);
+    try {
+      await checkBackendHealth();
+      if (getToken()) {
+        await restoreAuthenticatedState();
+      }
+    } finally {
+      setServiceRecoveryPending(false);
+    }
+  }, [restoreAuthenticatedState]);
+
+  useEffect(() => subscribeBackendAvailability((available) => {
+    setServiceUnavailable(!available);
+    if (available) {
+      setGlobalError(null);
+    }
+  }), []);
+
   useEffect(() => {
     if (!tokenState) return;
     api.me()
       .then(setUser)
-      .catch(() => {
+      .catch((requestError) => {
+        if (isServiceUnavailableError(requestError)) {
+          return;
+        }
         clearToken();
         setTokenState(null);
+        setUser(null);
       });
     void refresh();
   }, [refresh, tokenState]);
 
   useEffect(() => {
-    if (!tokenState) return;
+    if (!tokenState || serviceUnavailable) return;
     const timer = window.setInterval(() => {
       void refresh(true);
     }, 8000);
     return () => window.clearInterval(timer);
-  }, [refresh, tokenState]);
+  }, [refresh, serviceUnavailable, tokenState]);
+
+  useEffect(() => {
+    void checkBackendHealth().catch(() => undefined);
+    const timer = window.setInterval(() => {
+      void checkBackendHealth().catch(() => undefined);
+    }, 5000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    if (previousServiceUnavailable.current && !serviceUnavailable && tokenState) {
+      void restoreAuthenticatedState();
+    }
+    previousServiceUnavailable.current = serviceUnavailable;
+  }, [restoreAuthenticatedState, serviceUnavailable, tokenState]);
 
   useEffect(() => {
     if (!notice) return;
@@ -334,6 +404,10 @@ function App() {
     setFocusedNodeId(nodeID);
     setPage("nodes");
   };
+
+  if (serviceUnavailable) {
+    return <BackendUnavailableScreen retrying={serviceRecoveryPending} onRetry={retryServiceConnection} />;
+  }
 
   if (!tokenState) {
     return <LoginScreen onLogin={handleLogin} />;
@@ -2485,6 +2559,9 @@ function LoginScreen({ onLogin }: { onLogin: (username: string, password: string
     try {
       await onLogin(username, password);
     } catch (requestError) {
+      if (isServiceUnavailableError(requestError)) {
+        return;
+      }
       setError(requestError instanceof Error ? requestError.message : "登录失败");
     } finally {
       setLoading(false);
@@ -3851,6 +3928,38 @@ function NoticeBanner({ tone, children }: { tone: NoticeTone; children: ReactNod
     <div className={cx("mb-5 flex items-start gap-2 rounded-2xl border px-4 py-3 text-sm", className)}>
       {tone === "success" ? <CheckCircle size={18} /> : tone === "warning" ? <WarningCircle size={18} /> : <XCircle size={18} />}
       <div>{children}</div>
+    </div>
+  );
+}
+
+function BackendUnavailableScreen({
+  retrying,
+  onRetry
+}: {
+  retrying: boolean;
+  onRetry: () => Promise<void>;
+}) {
+  return (
+    <div className="min-h-[100dvh] bg-mist px-4 py-8 text-ink">
+      <div className="mx-auto flex min-h-[calc(100dvh-4rem)] max-w-3xl items-center justify-center">
+        <section className="surface w-full p-8 text-center md:p-12">
+          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-3xl border border-red-100 bg-red-50 text-red-600">
+            <WarningCircle size={28} />
+          </div>
+          <div className="mt-6 text-xs font-medium uppercase tracking-[0.28em] text-slate-500">Canal Plus</div>
+          <div className="mt-4 text-6xl font-semibold tracking-tight text-coal md:text-7xl">500</div>
+          <h1 className="mt-4 text-2xl font-semibold tracking-tight text-coal md:text-3xl">后端服务暂时不可用</h1>
+          <p className="mx-auto mt-4 max-w-2xl text-sm leading-7 text-slate-500 md:text-base">
+            当前无法连接 Canal Plus API。请确认后端服务已经启动，或等待服务恢复后重试。
+          </p>
+          <div className="mt-8 flex justify-center">
+            <button onClick={() => void onRetry()} disabled={retrying} className="btn-primary min-w-40 justify-center">
+              <ArrowsClockwise size={16} />
+              {retrying ? "重新连接中" : "重试连接"}
+            </button>
+          </div>
+        </section>
+      </div>
     </div>
   );
 }
