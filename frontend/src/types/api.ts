@@ -95,6 +95,25 @@ export interface TaskRuntimeState {
   startedAt?: string;
   updatedAt: string;
   lastErrorId?: string;
+  processStatus?: "idle" | "starting" | "running" | "stopping" | "stopped" | "failed";
+  processId?: number;
+  processStartedAt?: string;
+  processStoppedAt?: string;
+  lastHeartbeatAt?: string;
+  lastLogAt?: string;
+  lastLogMessage?: string;
+  exitCode?: number;
+}
+
+export interface TaskLogEntry {
+  id: string;
+  taskId: string;
+  nodeId?: string;
+  processId?: number;
+  level: "info" | "warn" | "error" | string;
+  phase?: string;
+  message: string;
+  createdAt: string;
 }
 
 export interface TaskOperationResult {

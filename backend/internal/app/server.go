@@ -1,7 +1,9 @@
 package app
 
 import (
+	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"regexp"
@@ -12,6 +14,9 @@ import (
 
 type Server struct {
 	store          *Store
+	taskLogs       *TaskLogService
+	taskStatus     *TaskStatusService
+	processes      *TaskProcessManager
 	port           string
 	allowedOrigins map[string]struct{}
 }
@@ -30,6 +35,13 @@ func NewServer() (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
+	binaryPath, err := os.Executable()
+	if err != nil {
+		return nil, err
+	}
+	taskLogs := NewTaskLogService(store)
+	taskStatus := NewTaskStatusService(store)
+	processes := NewTaskProcessManager(store, taskLogs, taskStatus, binaryPath)
 	if os.Getenv("CANAL_PLUS_CLUSTER_SUPERVISOR") != "false" {
 		store.StartClusterSupervisor(envDurationSeconds("CANAL_PLUS_CLUSTER_SUPERVISOR_INTERVAL_SECONDS", 5*time.Second))
 	}
@@ -49,11 +61,16 @@ func NewServer() (*Server, error) {
 		}
 	}
 
-	return &Server{
+	server := &Server{
 		store:          store,
+		taskLogs:       taskLogs,
+		taskStatus:     taskStatus,
+		processes:      processes,
 		port:           port,
 		allowedOrigins: allowedOrigins,
-	}, nil
+	}
+	server.processes.RecoverActiveTasks()
+	return server, nil
 }
 
 func envDurationSeconds(name string, fallback time.Duration) time.Duration {
@@ -451,6 +468,9 @@ func (s *Server) handleSyncTasks(response http.ResponseWriter, request *http.Req
 	case len(parts) == 2 && request.Method == http.MethodPut:
 		s.updateTask(response, request, parts[1])
 	case len(parts) == 2 && request.Method == http.MethodDelete:
+		if s.processes != nil {
+			s.processes.EnsureTaskStopped(parts[1], "任务删除，进程已回收")
+		}
 		deleted, err := s.store.DeleteTask(parts[1])
 		if err != nil {
 			writeError(response, http.StatusBadRequest, err.Error())
@@ -496,14 +516,23 @@ func (s *Server) handleSyncTasks(response http.ResponseWriter, request *http.Req
 		}
 		writeJSON(response, http.StatusOK, runtime)
 	case len(parts) == 3 && parts[2] == "logs" && request.Method == http.MethodGet:
-		logs := s.store.Logs()
-		filtered := make([]OperationLog, 0)
-		for _, log := range logs {
-			if log.TargetID == parts[1] {
-				filtered = append(filtered, log)
+		limit := 120
+		if value := strings.TrimSpace(request.URL.Query().Get("limit")); value != "" {
+			if parsed, err := strconv.Atoi(value); err == nil && parsed > 0 {
+				limit = parsed
 			}
 		}
-		writeJSON(response, http.StatusOK, filtered)
+		if s.taskLogs == nil {
+			writeJSON(response, http.StatusOK, []TaskLogEntry{})
+			return
+		}
+		writeJSON(response, http.StatusOK, s.taskLogs.List(parts[1], limit))
+	case len(parts) == 4 && parts[2] == "logs" && parts[3] == "stream" && request.Method == http.MethodGet:
+		if s.taskLogs == nil {
+			writeError(response, http.StatusServiceUnavailable, "日志流未启用")
+			return
+		}
+		s.streamTaskLogs(response, request, parts[1])
 	default:
 		writeError(response, http.StatusNotFound, "not found")
 	}
@@ -573,6 +602,21 @@ func (s *Server) transitionTask(response http.ResponseWriter, id string, action 
 		writeError(response, http.StatusNotFound, "同步任务不存在")
 		return
 	}
+	if (action == "start" || action == "resume") && s.processes != nil {
+		if err := s.processes.StartTask(id); err != nil {
+			writeError(response, http.StatusBadRequest, err.Error())
+			return
+		}
+	}
+	if action == "pause" && s.processes != nil {
+		_ = s.processes.StopTask(id, "任务已暂停")
+	}
+	if action == "stop" && s.processes != nil {
+		_ = s.processes.StopTask(id, "任务已停止")
+	}
+	if refreshed, exists := s.store.GetTask(id); exists {
+		task = refreshed
+	}
 	writeJSON(response, http.StatusOK, s.taskResponse(task))
 }
 
@@ -635,6 +679,15 @@ func (s *Server) rerunTask(response http.ResponseWriter, id string) {
 		writeError(response, http.StatusNotFound, "同步任务不存在")
 		return
 	}
+	if s.processes != nil && (task.Status == TaskFullSyncing || task.Status == TaskIncrementalRunning) {
+		if err := s.processes.StartTask(id); err != nil {
+			writeError(response, http.StatusBadRequest, err.Error())
+			return
+		}
+	}
+	if refreshed, exists := s.store.GetTask(id); exists {
+		task = refreshed
+	}
 	writeJSON(response, http.StatusOK, TaskOperationResult{
 		Task:    s.taskResponse(task),
 		Message: "任务已按原配置重跑",
@@ -642,6 +695,43 @@ func (s *Server) rerunTask(response http.ResponseWriter, id string) {
 			"status": string(task.Status),
 		},
 	})
+}
+
+func (s *Server) streamTaskLogs(response http.ResponseWriter, request *http.Request, taskID string) {
+	response.Header().Set("Content-Type", "text/event-stream")
+	response.Header().Set("Cache-Control", "no-cache")
+	response.Header().Set("Connection", "keep-alive")
+	response.Header().Set("X-Accel-Buffering", "no")
+	flusher, ok := response.(http.Flusher)
+	if !ok {
+		writeError(response, http.StatusInternalServerError, "stream not supported")
+		return
+	}
+
+	channel, unsubscribe := s.taskLogs.Subscribe(taskID)
+	defer unsubscribe()
+
+	fmt.Fprintf(response, ": connected\n\n")
+	flusher.Flush()
+
+	keepalive := time.NewTicker(15 * time.Second)
+	defer keepalive.Stop()
+	for {
+		select {
+		case <-request.Context().Done():
+			return
+		case entry, ok := <-channel:
+			if !ok {
+				return
+			}
+			payload, _ := json.Marshal(entry)
+			fmt.Fprintf(response, "data: %s\n\n", string(payload))
+			flusher.Flush()
+		case <-keepalive.C:
+			fmt.Fprintf(response, ": keepalive\n\n")
+			flusher.Flush()
+		}
+	}
 }
 
 func (s *Server) exportTask(response http.ResponseWriter, id string) {
@@ -1088,6 +1178,9 @@ func failoverCount(leases []TaskLease) int {
 func (s *Server) currentUser(request *http.Request) (User, bool) {
 	header := request.Header.Get("Authorization")
 	token := strings.TrimSpace(strings.TrimPrefix(header, "Bearer "))
+	if token == "" {
+		token = strings.TrimSpace(request.URL.Query().Get("access_token"))
+	}
 	if !strings.HasPrefix(token, "dev-token:") {
 		return User{}, false
 	}

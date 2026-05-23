@@ -30,9 +30,11 @@ import type {
   TableInfo,
   TaskExport,
   TaskCheckpoint,
+  TaskLogEntry,
   TaskOperationResult,
   TaskParameterPatch,
   TaskPreflightReport,
+  TaskRuntimeState,
   TaskRevision,
   User
 } from "../types/api";
@@ -179,6 +181,17 @@ export const api = {
   },
   taskCheckpoints(id: string) {
     return request<TaskCheckpoint[]>(`/sync-tasks/${id}/checkpoints`);
+  },
+  taskRuntime(id: string) {
+    return request<TaskRuntimeState>(`/sync-tasks/${id}/runtime`);
+  },
+  taskLogs(id: string, limit = 120) {
+    return request<TaskLogEntry[]>(`/sync-tasks/${id}/logs?limit=${limit}`);
+  },
+  taskLogsStreamUrl(id: string) {
+    const token = getToken();
+    const search = token ? `?access_token=${encodeURIComponent(token)}` : "";
+    return `${API_BASE}/sync-tasks/${id}/logs/stream${search}`;
   },
   rollbackTaskRevision(id: string, version: number) {
     return request<TaskOperationResult>(`/sync-tasks/${id}/revisions/${version}/rollback`, { method: "POST" });

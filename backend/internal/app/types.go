@@ -160,21 +160,40 @@ type TaskResponse struct {
 }
 
 type TaskRuntimeState struct {
-	TaskID          string `json:"taskId"`
-	Phase           string `json:"phase"`
-	FullTotalRows   int64  `json:"fullTotalRows"`
-	FullSyncedRows  int64  `json:"fullSyncedRows"`
-	DelaySeconds    int    `json:"delaySeconds"`
-	EventsPerSecond int    `json:"eventsPerSecond"`
-	BinlogFile      string `json:"binlogFile"`
-	BinlogPosition  int64  `json:"binlogPosition"`
-	NodeID          string `json:"nodeId,omitempty"`
-	LeaseExpiresAt  string `json:"leaseExpiresAt,omitempty"`
-	FailoverCount   int    `json:"failoverCount"`
-	LastTakeoverAt  string `json:"lastTakeoverAt,omitempty"`
-	StartedAt       string `json:"startedAt,omitempty"`
-	UpdatedAt       string `json:"updatedAt"`
-	LastErrorID     string `json:"lastErrorId,omitempty"`
+	TaskID           string `json:"taskId"`
+	Phase            string `json:"phase"`
+	FullTotalRows    int64  `json:"fullTotalRows"`
+	FullSyncedRows   int64  `json:"fullSyncedRows"`
+	DelaySeconds     int    `json:"delaySeconds"`
+	EventsPerSecond  int    `json:"eventsPerSecond"`
+	BinlogFile       string `json:"binlogFile"`
+	BinlogPosition   int64  `json:"binlogPosition"`
+	NodeID           string `json:"nodeId,omitempty"`
+	LeaseExpiresAt   string `json:"leaseExpiresAt,omitempty"`
+	FailoverCount    int    `json:"failoverCount"`
+	LastTakeoverAt   string `json:"lastTakeoverAt,omitempty"`
+	StartedAt        string `json:"startedAt,omitempty"`
+	UpdatedAt        string `json:"updatedAt"`
+	LastErrorID      string `json:"lastErrorId,omitempty"`
+	ProcessStatus    string `json:"processStatus,omitempty"`
+	ProcessID        int    `json:"processId,omitempty"`
+	ProcessStartedAt string `json:"processStartedAt,omitempty"`
+	ProcessStoppedAt string `json:"processStoppedAt,omitempty"`
+	LastHeartbeatAt  string `json:"lastHeartbeatAt,omitempty"`
+	LastLogAt        string `json:"lastLogAt,omitempty"`
+	LastLogMessage   string `json:"lastLogMessage,omitempty"`
+	ExitCode         *int   `json:"exitCode,omitempty"`
+}
+
+type TaskLogEntry struct {
+	ID        string `json:"id"`
+	TaskID    string `json:"taskId"`
+	NodeID    string `json:"nodeId,omitempty"`
+	ProcessID int    `json:"processId,omitempty"`
+	Level     string `json:"level"`
+	Phase     string `json:"phase,omitempty"`
+	Message   string `json:"message"`
+	CreatedAt string `json:"createdAt"`
 }
 
 type TaskOperationResult struct {
@@ -664,6 +683,7 @@ type DatabaseShape struct {
 	Datasources         []Datasource         `json:"datasources"`
 	SyncTasks           []SyncTask           `json:"syncTasks"`
 	RuntimeStates       []TaskRuntimeState   `json:"runtimeStates"`
+	TaskLogs            []TaskLogEntry       `json:"taskLogs"`
 	ErrorEvents         []ErrorEvent         `json:"errorEvents"`
 	OperationLogs       []OperationLog       `json:"operationLogs"`
 	AlertRules          []AlertRule          `json:"alertRules"`

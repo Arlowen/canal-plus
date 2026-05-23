@@ -502,6 +502,14 @@ func (s *Store) RerunTask(id string) (SyncTask, bool, error) {
 		runtime.LeaseExpiresAt = ""
 		runtime.StartedAt = timestamp
 		runtime.LastErrorID = ""
+		runtime.ProcessStatus = "idle"
+		runtime.ProcessID = 0
+		runtime.ProcessStartedAt = ""
+		runtime.ProcessStoppedAt = ""
+		runtime.LastHeartbeatAt = ""
+		runtime.LastLogAt = ""
+		runtime.LastLogMessage = ""
+		runtime.ExitCode = nil
 		runtime.UpdatedAt = timestamp
 		s.removeLeaseLocked(id)
 
@@ -573,6 +581,11 @@ func (s *Store) TransitionTask(id string, action string) (SyncTask, bool, error)
 			if node := s.selectNodeLocked(""); node != nil {
 				s.assignTaskToNodeLocked(runtime, node.ID, "任务状态恢复分配", false)
 			}
+		}
+		if (action == "start" || action == "resume") && runtime.NodeID == "" {
+			task.Status = TaskPending
+			runtime.Phase = "idle"
+			runtime.EventsPerSecond = 0
 		}
 		runtime.UpdatedAt = timestamp
 		task.UpdatedAt = timestamp
@@ -1790,6 +1803,7 @@ func (s *Store) defaultRuntimeLocked(taskID string) TaskRuntimeState {
 		EventsPerSecond: 0,
 		BinlogFile:      "mysql-bin.000001",
 		BinlogPosition:  4,
+		ProcessStatus:   "idle",
 		UpdatedAt:       now(),
 	}
 }
@@ -2364,59 +2378,7 @@ func sortTaskCheckpointsDesc(checkpoints []TaskCheckpoint) {
 }
 
 func (s *Store) refreshRuntimeStatesLocked() {
-	timestamp := now()
-	changed := false
-	for index := range s.data.SyncTasks {
-		task := &s.data.SyncTasks[index]
-		runtime := s.ensureRuntimeLocked(task.ID)
-		if runtime.NodeID != "" && leaseRequired(task.Status) {
-			runtime.LeaseExpiresAt = leaseExpiry()
-			s.upsertLeaseLocked(task.ID, runtime.NodeID, false)
-		}
-		switch task.Status {
-		case TaskFullSyncing:
-			next := runtime.FullSyncedRows + int64(2500+rand.Intn(2500))
-			if next > runtime.FullTotalRows {
-				next = runtime.FullTotalRows
-			}
-			runtime.FullSyncedRows = next
-			runtime.EventsPerSecond = 220 + rand.Intn(90)
-			runtime.DelaySeconds = 0
-			runtime.Phase = "full"
-			runtime.UpdatedAt = timestamp
-			changed = true
-			if runtime.FullSyncedRows >= runtime.FullTotalRows {
-				task.UpdatedAt = timestamp
-				if task.Strategy.InitMode == "full_only" {
-					task.Status = TaskStopped
-					runtime.Phase = "stopped"
-					runtime.EventsPerSecond = 0
-					runtime.NodeID = ""
-					runtime.LeaseExpiresAt = ""
-					s.removeLeaseLocked(task.ID)
-					s.recordTaskCheckpointLocked(*runtime, "full_completed", "")
-				} else {
-					task.Status = TaskIncrementalRunning
-					runtime.Phase = "incremental"
-					runtime.EventsPerSecond = 90 + rand.Intn(80)
-				}
-			}
-			s.recordTaskCheckpointLocked(*runtime, "runtime_tick", "")
-		case TaskIncrementalRunning:
-			runtime.Phase = "incremental"
-			runtime.FullSyncedRows = runtime.FullTotalRows
-			runtime.DelaySeconds = 2 + rand.Intn(12)
-			runtime.EventsPerSecond = 60 + rand.Intn(120)
-			runtime.BinlogPosition += int64(1200 + rand.Intn(4200))
-			runtime.UpdatedAt = timestamp
-			changed = true
-			s.recordTaskCheckpointLocked(*runtime, "runtime_tick", "")
-		}
-	}
-	if changed {
-		s.recountNodeTasksLocked()
-		_ = s.saveLocked()
-	}
+	s.recountNodeTasksLocked()
 }
 
 func (s *Store) refreshCapabilityJobsLocked() {

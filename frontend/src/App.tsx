@@ -51,7 +51,9 @@ import type {
   SyncTask,
   TableColumn,
   TableInfo,
+  TaskLogEntry,
   TaskPreflightReport,
+  TaskRuntimeState,
   User
 } from "./types/api";
 
@@ -2531,14 +2533,90 @@ function NodeCreatorModal({
 }
 
 function SyncTaskDetail({ task, errors }: { task: SyncTask; errors: ErrorEvent[] }) {
-  const runtime = task.runtime;
+  const [runtime, setRuntime] = useState(task.runtime);
+  const [taskLogs, setTaskLogs] = useState<TaskLogEntry[]>([]);
+  const [logConnected, setLogConnected] = useState(false);
   const progress = runtime && runtime.fullTotalRows > 0 ? Math.min(100, Math.round((runtime.fullSyncedRows / runtime.fullTotalRows) * 100)) : 0;
   const taskErrors = errors.filter((item) => item.taskId === task.id).slice(0, 4);
+
+  useEffect(() => {
+    setRuntime(task.runtime);
+  }, [task.id, task.runtime]);
+
+  useEffect(() => {
+    let cancelled = false;
+    api.taskLogs(task.id, 120)
+      .then((items) => {
+        if (!cancelled) {
+          setTaskLogs(items);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setTaskLogs([]);
+        }
+      });
+
+    const stream = new EventSource(api.taskLogsStreamUrl(task.id));
+    stream.onopen = () => {
+      if (!cancelled) {
+        setLogConnected(true);
+      }
+    };
+    stream.onmessage = (event) => {
+      if (cancelled) return;
+      try {
+        const entry = JSON.parse(event.data) as TaskLogEntry;
+        setTaskLogs((current) => [...current.slice(-119), entry]);
+      } catch {
+        return;
+      }
+    };
+    stream.onerror = () => {
+      if (!cancelled) {
+        setLogConnected(false);
+      }
+    };
+
+    return () => {
+      cancelled = true;
+      setLogConnected(false);
+      stream.close();
+    };
+  }, [task.id]);
+
+  useEffect(() => {
+    const active = task.status === "full_syncing" || task.status === "incremental_running" || runtime?.processStatus === "starting" || runtime?.processStatus === "running";
+    if (!active) {
+      return;
+    }
+    let cancelled = false;
+    const syncRuntime = async () => {
+      try {
+        const latest = await api.taskRuntime(task.id);
+        if (!cancelled) {
+          setRuntime(latest);
+        }
+      } catch {
+        return;
+      }
+    };
+    void syncRuntime();
+    const timer = window.setInterval(() => {
+      void syncRuntime();
+    }, 1500);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [runtime?.processStatus, task.id, task.status]);
+
   return (
     <div className="mt-5 space-y-4">
       <div className="flex flex-wrap items-center gap-2">
         <TypeBadge type={syncTaskTypeText(task)} />
         <StatusBadge status={task.status} />
+        <Badge tone={taskProcessTone(runtime?.processStatus)}>{taskProcessStatusText(runtime?.processStatus)}</Badge>
       </div>
       <div className="text-lg font-semibold text-coal">{task.name}</div>
       <div className="text-sm text-slate-500">
@@ -2563,6 +2641,14 @@ function SyncTaskDetail({ task, errors }: { task: SyncTask; errors: ErrorEvent[]
           <DetailCard label="吞吐" value={`${runtime?.eventsPerSecond ?? 0} eps`} />
           <DetailCard label="位点" value={`${runtime?.binlogFile || "-"}:${runtime?.binlogPosition || 0}`} mono />
         </div>
+        <div className="mt-3 grid gap-3 sm:grid-cols-3">
+          <DetailCard label="进程 PID" value={runtime?.processId ? `${runtime.processId}` : "-"} mono />
+          <DetailCard label="最近心跳" value={runtime?.lastHeartbeatAt ? formatDateTime(runtime.lastHeartbeatAt) : "-"} />
+          <DetailCard label="最近日志" value={runtime?.lastLogAt ? formatDateTime(runtime.lastLogAt) : "-"} />
+        </div>
+        <div className="mt-3 rounded-2xl border border-line bg-white px-4 py-3 text-sm text-slate-500">
+          {runtime?.lastLogMessage || "暂无运行日志摘要。"}
+        </div>
       </div>
       <div className="rounded-3xl border border-line bg-slate-50/70 p-4">
         <div className="font-medium text-coal">表映射</div>
@@ -2578,6 +2664,32 @@ function SyncTaskDetail({ task, errors }: { task: SyncTask; errors: ErrorEvent[]
               <div className="mt-2 text-xs text-slate-500">{mapping.fields.filter((item) => !item.ignored).length} 个字段</div>
             </div>
           ))}
+        </div>
+      </div>
+      <div className="rounded-3xl border border-line bg-slate-50/70 p-4">
+        <div className="flex items-center justify-between gap-3">
+          <div className="font-medium text-coal">实时日志</div>
+          <Badge tone={logConnected ? "green" : "yellow"}>{logConnected ? "实时连接" : "等待连接"}</Badge>
+        </div>
+        <div className="mt-3 rounded-2xl border border-line bg-white">
+          <div className="max-h-[320px] overflow-auto px-4 py-3">
+            {taskLogs.length === 0 ? (
+              <div className="text-sm text-slate-500">当前还没有任务进程日志。</div>
+            ) : (
+              <div className="grid gap-2">
+                {taskLogs.map((entry) => (
+                  <div key={entry.id} className="rounded-2xl border border-line bg-slate-50/70 px-3 py-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge tone={taskLogTone(entry.level)}>{entry.level}</Badge>
+                      {entry.phase && <span className="mono text-slate-500">{entry.phase}</span>}
+                      <span className="mono text-slate-400">{formatDateTime(entry.createdAt)}</span>
+                    </div>
+                    <div className="mt-2 break-words text-sm text-coal">{entry.message}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       </div>
       <div className="rounded-3xl border border-line bg-slate-50/70 p-4">
@@ -3061,6 +3173,28 @@ function nodeTone(status: ClusterNode["status"]) {
   if (status === "online") return "green";
   if (status === "draining") return "yellow";
   return "neutral";
+}
+
+function taskProcessStatusText(status?: TaskRuntimeState["processStatus"]) {
+  if (status === "starting") return "启动中";
+  if (status === "running") return "运行中";
+  if (status === "stopping") return "停止中";
+  if (status === "stopped") return "已停止";
+  if (status === "failed") return "异常退出";
+  return "未启动";
+}
+
+function taskProcessTone(status?: TaskRuntimeState["processStatus"]) {
+  if (status === "running") return "blue";
+  if (status === "starting" || status === "stopping") return "yellow";
+  if (status === "failed") return "red";
+  return "neutral";
+}
+
+function taskLogTone(level: string) {
+  if (level === "error") return "red";
+  if (level === "warn") return "yellow";
+  return "blue";
 }
 
 function taskPrimaryAction(task: SyncTask): "start" | "pause" | "resume" | "stop" | null {
