@@ -365,20 +365,9 @@ function LoginScreen({ onLogin }: { onLogin: (username: string, password: string
     <div className="min-h-[100dvh] bg-mist px-4 py-8 text-ink">
       <div className="mx-auto grid min-h-[calc(100dvh-4rem)] max-w-6xl items-center gap-8 lg:grid-cols-[1.2fr_0.8fr]">
         <section>
-          <div className="inline-flex items-center gap-2 rounded-full border border-line bg-white px-3 py-1 text-sm text-accent">
-            <Pulse size={16} />
-            MySQL CDC 控制台
-          </div>
           <h1 className="mt-5 max-w-3xl text-4xl font-semibold leading-tight tracking-tight text-coal md:text-6xl">
-            用任务向导管理 binlog 同步
+            canal-plus
           </h1>
-          <div className="mt-8 grid gap-3 sm:grid-cols-2">
-            {["无配置文件创建任务", "全量与增量运行态", "错误重试与跳过", "数据源连接探测"].map((item) => (
-              <div key={item} className="rounded-lg border border-line bg-white px-4 py-3 text-sm text-zinc-700 shadow-panel">
-                {item}
-              </div>
-            ))}
-          </div>
         </section>
 
         <form onSubmit={submit} className="rounded-xl border border-line bg-white p-5 shadow-panel">
@@ -408,31 +397,6 @@ function LoginScreen({ onLogin }: { onLogin: (username: string, password: string
               <ArrowRight size={16} />
               {loading ? "登录中" : "进入控制台"}
             </button>
-            <div className="rounded-lg border border-line bg-[#fcfcf8] p-3">
-              <div className="text-xs font-medium text-zinc-700">演示账号</div>
-              <div className="mt-3 grid gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setUsername("admin");
-                    setPassword("admin123");
-                  }}
-                  className="rounded-lg border border-line bg-white px-3 py-2 text-left text-xs text-zinc-700 transition hover:bg-zinc-50 active:scale-[0.98]"
-                >
-                  管理员：admin / admin123
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setUsername("operator");
-                    setPassword("operator123");
-                  }}
-                  className="rounded-lg border border-line bg-white px-3 py-2 text-left text-xs text-zinc-700 transition hover:bg-zinc-50 active:scale-[0.98]"
-                >
-                  运维操作员：operator / operator123
-                </button>
-              </div>
-            </div>
           </div>
         </form>
       </div>
