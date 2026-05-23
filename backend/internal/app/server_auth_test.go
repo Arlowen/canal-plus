@@ -121,6 +121,27 @@ func TestOperatorCannotMutateConfigurationOrCluster(t *testing.T) {
 	}
 }
 
+func TestAdminCannotOperateLocalControlNodeWithUnsafeActions(t *testing.T) {
+	server := newTestServer(t)
+	server.processes = &TaskProcessManager{localNodeID: "node-shanghai-a"}
+	adminToken := tokenFor("user-admin")
+
+	offlineResponse := serveTestRequest(server, authRequest(http.MethodPost, "/api/cluster/nodes/node-shanghai-a/offline", adminToken, ""))
+	if offlineResponse.Code != http.StatusBadRequest {
+		t.Fatalf("admin offline local node status = %d body = %s", offlineResponse.Code, offlineResponse.Body.String())
+	}
+
+	drillResponse := serveTestRequest(server, authRequest(http.MethodPost, "/api/cluster/nodes/node-shanghai-a/failover-drill", adminToken, ""))
+	if drillResponse.Code != http.StatusBadRequest {
+		t.Fatalf("admin failover drill local node status = %d body = %s", drillResponse.Code, drillResponse.Body.String())
+	}
+
+	uninstallResponse := serveTestRequest(server, authRequest(http.MethodPost, "/api/cluster/nodes/node-shanghai-a/uninstall", adminToken, ""))
+	if uninstallResponse.Code != http.StatusBadRequest {
+		t.Fatalf("admin uninstall local node status = %d body = %s", uninstallResponse.Code, uninstallResponse.Body.String())
+	}
+}
+
 func TestAdminCanMutateConfiguration(t *testing.T) {
 	server := newTestServer(t)
 	adminToken := tokenFor("user-admin")

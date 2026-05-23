@@ -1492,52 +1492,60 @@ function NodesPage({
           />
         ) : (
           <div className="mt-5 grid gap-4">
-            {nodes.map((node) => (
-              <div key={node.id} className="rounded-3xl border border-line bg-white p-4">
-                <div className="grid gap-4 xl:grid-cols-[1fr_auto] xl:items-start">
-                  <button onClick={() => setSelectedId(node.id)} className="min-w-0 text-left">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <div className="font-medium text-coal">{node.name}</div>
-                      <Badge tone={nodeTone(node.status)}>{nodeStatusText(node.status)}</Badge>
-                      {localNodeId === node.id && <Badge tone="blue">当前节点</Badge>}
-                      <div className="chip border-slate-200 bg-slate-50 text-slate-600">{node.version}</div>
-                    </div>
-                    <div className="mt-1 text-sm text-slate-500">{node.endpoint} · {node.installDir}</div>
-                    <div className="mt-3 grid gap-2 text-xs text-slate-500 sm:grid-cols-4">
-                      <span>SSH {node.sshUser}@{node.sshPort}</span>
-                      <span>任务 {node.runningTasks}/{node.capacity}</span>
-                      <span>CPU {node.cpuPercent}%</span>
-                      <span>内存 {node.memoryPercent}%</span>
-                    </div>
-                  </button>
-                  <div className="flex flex-wrap justify-end gap-2">
-                    <button
-                      onClick={() => void runQuickAction(node, "upgrade")}
-                      disabled={!canManage || busyKey === `${node.id}:upgrade`}
-                      className="btn-secondary px-3 py-2 text-xs"
-                    >
-                      <ArrowsClockwise size={14} />
-                      升级
+            {nodes.map((node) => {
+              const isCurrentNode = localNodeId === node.id;
+              return (
+                <div key={node.id} className="rounded-3xl border border-line bg-white p-4">
+                  <div className="grid gap-4 xl:grid-cols-[1fr_auto] xl:items-start">
+                    <button onClick={() => setSelectedId(node.id)} className="min-w-0 text-left">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <div className="font-medium text-coal">{node.name}</div>
+                        <Badge tone={nodeTone(node.status)}>{nodeStatusText(node.status)}</Badge>
+                        {isCurrentNode && <Badge tone="blue">当前节点</Badge>}
+                        <div className="chip border-slate-200 bg-slate-50 text-slate-600">{node.version}</div>
+                      </div>
+                      <div className="mt-1 text-sm text-slate-500">{node.endpoint} · {node.installDir}</div>
+                      <div className="mt-3 grid gap-2 text-xs text-slate-500 sm:grid-cols-4">
+                        <span>SSH {node.sshUser}@{node.sshPort}</span>
+                        <span>任务 {node.runningTasks}/{node.capacity}</span>
+                        <span>CPU {node.cpuPercent}%</span>
+                        <span>内存 {node.memoryPercent}%</span>
+                      </div>
+                      {isCurrentNode && (
+                        <div className="mt-3 text-xs text-slate-500">
+                          当前控制节点支持查看、升级和排空，不支持从本机控制台执行下线、卸载或故障演练。
+                        </div>
+                      )}
                     </button>
-                    <button
-                      onClick={() => void runQuickAction(node, "uninstall")}
-                      disabled={!canManage || busyKey === `${node.id}:uninstall`}
-                      className="btn-danger px-3 py-2 text-xs"
-                    >
-                      <Trash size={14} />
-                      卸载
-                    </button>
-                    <ActionMenu
-                      items={[
-                        { label: "维护排空", onSelect: () => void runMoreAction(node, "drain"), disabled: !canManage || node.status === "offline" },
-                        { label: node.status === "online" ? "手动下线" : "恢复上线", onSelect: () => void runMoreAction(node, node.status === "online" ? "offline" : "online"), disabled: !canManage },
-                        { label: "故障演练", onSelect: () => void runMoreAction(node, "drill"), disabled: !canManage || node.status !== "online" }
-                      ]}
-                    />
+                    <div className="flex flex-wrap justify-end gap-2">
+                      <button
+                        onClick={() => void runQuickAction(node, "upgrade")}
+                        disabled={!canManage || busyKey === `${node.id}:upgrade`}
+                        className="btn-secondary px-3 py-2 text-xs"
+                      >
+                        <ArrowsClockwise size={14} />
+                        升级
+                      </button>
+                      <button
+                        onClick={() => void runQuickAction(node, "uninstall")}
+                        disabled={!canManage || isCurrentNode || busyKey === `${node.id}:uninstall`}
+                        className="btn-danger px-3 py-2 text-xs"
+                      >
+                        <Trash size={14} />
+                        卸载
+                      </button>
+                      <ActionMenu
+                        items={[
+                          { label: "维护排空", onSelect: () => void runMoreAction(node, "drain"), disabled: !canManage || node.status === "offline" },
+                          { label: node.status === "online" ? "手动下线" : "恢复上线", onSelect: () => void runMoreAction(node, node.status === "online" ? "offline" : "online"), disabled: !canManage || (isCurrentNode && node.status === "online") },
+                          { label: "故障演练", onSelect: () => void runMoreAction(node, "drill"), disabled: !canManage || node.status !== "online" || isCurrentNode }
+                        ]}
+                      />
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </section>
@@ -1561,6 +1569,11 @@ function NodesPage({
                 <DetailCard label="运行任务" value={`${selected.runningTasks}/${selected.capacity}`} />
                 <DetailCard label="控制节点" value={localNodeId === selected.id ? "是" : "否"} />
               </div>
+              {localNodeId === selected.id && (
+                <div className="rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-700">
+                  当前控制节点负责提供 Web UI、API 和本地任务进程管理。请在其他节点控制台执行本节点卸载、下线或故障演练。
+                </div>
+              )}
               <div className="rounded-3xl border border-line bg-slate-50/70 p-4">
                 <div className="text-sm font-medium text-coal">承载任务</div>
                 <div className="mt-3 grid gap-2">

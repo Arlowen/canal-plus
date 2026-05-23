@@ -984,6 +984,10 @@ func (s *Server) handleCluster(response http.ResponseWriter, request *http.Reque
 		}
 		writeJSON(response, http.StatusOK, report)
 	case len(parts) == 4 && parts[1] == "nodes" && parts[3] == "failover-drill" && request.Method == http.MethodPost:
+		if s.isLocalControlNode(parts[2]) {
+			writeError(response, http.StatusBadRequest, "当前控制节点不支持在本机控制台发起故障演练")
+			return
+		}
 		report, ok, err := s.store.FailoverDrill(parts[2])
 		if err != nil {
 			writeError(response, http.StatusBadRequest, err.Error())
@@ -1026,6 +1030,10 @@ func (s *Server) handleCluster(response http.ResponseWriter, request *http.Reque
 		}
 		writeJSON(response, http.StatusOK, result)
 	case len(parts) == 4 && parts[1] == "nodes" && parts[3] == "uninstall" && request.Method == http.MethodPost:
+		if s.isLocalControlNode(parts[2]) {
+			writeError(response, http.StatusBadRequest, "当前控制节点不能从自身控制台卸载，请切换到其他节点执行")
+			return
+		}
 		result, ok, err := s.store.UninstallNode(parts[2])
 		if err != nil {
 			writeError(response, http.StatusBadRequest, err.Error())
@@ -1045,6 +1053,10 @@ func (s *Server) handleCluster(response http.ResponseWriter, request *http.Reque
 		case "online", "heartbeat":
 			status = NodeOnline
 		case "offline":
+			if s.isLocalControlNode(parts[2]) {
+				writeError(response, http.StatusBadRequest, "当前控制节点不能从自身控制台下线")
+				return
+			}
 			status = NodeOffline
 		default:
 			writeError(response, http.StatusNotFound, "not found")
@@ -1196,6 +1208,13 @@ func (s *Server) clusterResponse() ClusterSnapshot {
 		}
 	}
 	return snapshot
+}
+
+func (s *Server) isLocalControlNode(nodeID string) bool {
+	if s.processes == nil {
+		return false
+	}
+	return nodeID != "" && nodeID == s.processes.LocalNodeID()
 }
 
 func clusterOnline(nodes []ClusterNode) int {
