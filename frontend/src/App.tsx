@@ -44,7 +44,7 @@ import type {
   User
 } from "./types/api";
 
-type View = "resources" | "tasks" | "wizard" | "capabilities" | "errors";
+type View = "resources" | "tasks" | "wizard" | "errors";
 type NavView = Exclude<View, "wizard">;
 
 const defaultStrategy: SyncStrategy = {
@@ -64,7 +64,6 @@ const defaultStrategy: SyncStrategy = {
 const navItems: Array<{ id: NavView; label: string; icon: typeof Stack }> = [
   { id: "resources", label: "资源", icon: Database },
   { id: "tasks", label: "任务", icon: FlowArrow },
-  { id: "capabilities", label: "能力", icon: Stack },
   { id: "errors", label: "问题", icon: WarningCircle }
 ];
 
@@ -72,7 +71,6 @@ const viewTitles: Record<View, string> = {
   resources: "资源",
   tasks: "任务",
   wizard: "新建任务",
-  capabilities: "能力",
   errors: "问题"
 };
 
@@ -87,6 +85,7 @@ function App() {
   const [cluster, setCluster] = useState<ClusterSnapshot | null>(null);
   const [capabilityJobs, setCapabilityJobs] = useState<CapabilityJob[]>([]);
   const [capabilityMode, setCapabilityMode] = useState<CapabilityJobType>("structure");
+  const [taskMode, setTaskMode] = useState<"tasks" | "capabilities">("tasks");
   const [resourceMode, setResourceMode] = useState<"datasources" | "cluster">("datasources");
   const [issueMode, setIssueMode] = useState<"errors" | "alerts" | "logs">("errors");
   const [alertRules, setAlertRules] = useState<AlertRule[]>([]);
@@ -248,7 +247,9 @@ function App() {
                 />
               )}
               {view === "tasks" && (
-                <TaskView
+                <TaskWorkspace
+                  mode={taskMode}
+                  onModeChange={setTaskMode}
                   tasks={tasks}
                   errors={errors}
                   logs={logs}
@@ -256,6 +257,9 @@ function App() {
                   canManage={canManage}
                   onAction={handleTaskAction}
                   onCreate={() => setView("wizard")}
+                  capabilityMode={capabilityMode}
+                  onCapabilityModeChange={setCapabilityMode}
+                  capabilityJobs={capabilityJobs}
                   onChanged={() => refresh(true)}
                 />
               )}
@@ -272,16 +276,6 @@ function App() {
                     description="运维操作员可以启停任务、处理错误和查看运行态；新增同步链路会改变配置版本，需要管理员执行。"
                   />
                 )
-              )}
-              {view === "capabilities" && (
-                <CapabilityView
-                  mode={capabilityMode}
-                  onModeChange={setCapabilityMode}
-                  tasks={tasks}
-                  jobs={capabilityJobs}
-                  canManage={canManage}
-                  onChanged={() => refresh(true)}
-                />
               )}
               {view === "errors" && (
                 <IssueCenter
@@ -301,6 +295,83 @@ function App() {
           )}
         </main>
       </div>
+    </div>
+  );
+}
+
+function TaskWorkspace({
+  mode,
+  onModeChange,
+  tasks,
+  errors,
+  logs,
+  cluster,
+  canManage,
+  onAction,
+  onCreate,
+  capabilityMode,
+  onCapabilityModeChange,
+  capabilityJobs,
+  onChanged
+}: {
+  mode: "tasks" | "capabilities";
+  onModeChange: (mode: "tasks" | "capabilities") => void;
+  tasks: SyncTask[];
+  errors: ErrorEvent[];
+  logs: OperationLog[];
+  cluster: ClusterSnapshot | null;
+  canManage: boolean;
+  onAction: (task: SyncTask, action: "start" | "pause" | "resume" | "stop") => Promise<void>;
+  onCreate: () => void;
+  capabilityMode: CapabilityJobType;
+  onCapabilityModeChange: (mode: CapabilityJobType) => void;
+  capabilityJobs: CapabilityJob[];
+  onChanged: () => Promise<void> | void;
+}) {
+  return (
+    <div className="space-y-5">
+      <div className="flex flex-wrap gap-2">
+        <button
+          onClick={() => onModeChange("tasks")}
+          className={cx(
+            "inline-flex items-center justify-center rounded-full border px-3 py-1.5 text-sm transition active:scale-[0.98]",
+            mode === "tasks" ? "border-coal bg-coal text-white" : "border-line bg-white text-zinc-600 hover:bg-zinc-50"
+          )}
+        >
+          任务
+        </button>
+        <button
+          onClick={() => onModeChange("capabilities")}
+          className={cx(
+            "inline-flex items-center justify-center rounded-full border px-3 py-1.5 text-sm transition active:scale-[0.98]",
+            mode === "capabilities" ? "border-coal bg-coal text-white" : "border-line bg-white text-zinc-600 hover:bg-zinc-50"
+          )}
+        >
+          能力
+        </button>
+      </div>
+
+      {mode === "tasks" ? (
+        <TaskView
+          tasks={tasks}
+          errors={errors}
+          logs={logs}
+          cluster={cluster}
+          canManage={canManage}
+          onAction={onAction}
+          onCreate={onCreate}
+          onChanged={onChanged}
+        />
+      ) : (
+        <CapabilityView
+          mode={capabilityMode}
+          onModeChange={onCapabilityModeChange}
+          tasks={tasks}
+          jobs={capabilityJobs}
+          canManage={canManage}
+          onChanged={onChanged}
+        />
+      )}
     </div>
   );
 }
