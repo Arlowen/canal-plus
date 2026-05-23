@@ -172,15 +172,11 @@ function App() {
     setNotice(null);
   };
 
-  const handleTaskAction = async (task: SyncTask, action: "start" | "pause" | "resume" | "stop" | "copy") => {
-    if (action === "copy" && !canManage) {
-      setError("复制任务会创建新配置，需要管理员权限");
-      return;
-    }
+  const handleTaskAction = async (task: SyncTask, action: "start" | "pause" | "resume" | "stop") => {
     setError(null);
     try {
       await api.taskAction(task.id, action);
-      setNotice(action === "copy" ? "任务已复制为草稿" : "任务状态已更新");
+      setNotice("任务状态已更新");
       await refresh(true);
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "任务操作失败");
