@@ -855,15 +855,49 @@ func (s *Store) UpgradeNode(id string) (NodeOperationResult, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.ensureClusterLocked()
+	backup := cloneJSON(s.data)
 	node := s.getNodeLocked(id)
 	if node == nil {
 		return NodeOperationResult{}, false, nil
 	}
 	steps := []NodeOperationStep{
 		{Key: "connect", Label: "连接机器", Status: "done", Detail: "已连接到目标节点"},
+		{Key: "drain", Label: "迁移任务", Status: "done", Detail: "节点当前没有承载运行中任务"},
 		{Key: "backup", Label: "备份当前版本", Status: "done", Detail: "现有版本已完成备份"},
 		{Key: "replace", Label: "替换程序包", Status: "done", Detail: "新版本程序包已覆盖"},
 		{Key: "restart", Label: "重启节点", Status: "done", Detail: "节点已重启并恢复心跳"},
+	}
+	before := s.clusterSnapshotLocked()
+	affectedBefore := leasesOnNode(before.Leases, id)
+	handoffs := []FailoverDrillTask{}
+	if len(affectedBefore) > 0 {
+		tasksByID := s.tasksByIDLocked()
+		node.Status = NodeDraining
+		node.UpdatedAt = now()
+		s.reconcileClusterLocked()
+		afterDrain := s.clusterSnapshotLocked()
+		var success bool
+		handoffs, success = s.buildClusterHandoffsLocked(affectedBefore, afterDrain.Leases, tasksByID, id)
+		if !success {
+			steps[1].Status = "failed"
+			steps[1].Detail = "仍有任务无法迁移，请先增加在线节点容量"
+			s.data = backup
+			failedNode := cloneNodePointer(s.getNodeLocked(id))
+			return NodeOperationResult{
+				Action:        "upgrade",
+				Success:       false,
+				Message:       "升级前仍有任务未迁移，请先扩容或停止相关任务",
+				FinishedAt:    now(),
+				Node:          failedNode,
+				AffectedTasks: handoffs,
+				Before:        &before,
+				After:         &afterDrain,
+				Steps:         steps[:2],
+			}, true, nil
+		}
+		if len(handoffs) > 0 {
+			steps[1].Detail = "已迁移 " + intToString(len(handoffs)) + " 个任务到其他在线节点"
+		}
 	}
 	node.Version = nextNodeVersion(node.Version)
 	node.Status = NodeOnline
@@ -872,16 +906,21 @@ func (s *Store) UpgradeNode(id string) (NodeOperationResult, bool, error) {
 	s.logLocked("admin", "node_upgrade", "cluster_node", id, "升级节点："+node.Name+" 到 "+node.Version)
 	s.reconcileClusterLocked()
 	if err := s.saveLocked(); err != nil {
+		s.data = backup
 		return NodeOperationResult{}, true, err
 	}
 	updated := cloneJSON(*node)
+	after := s.clusterSnapshotLocked()
 	return NodeOperationResult{
-		Action:     "upgrade",
-		Success:    true,
-		Message:    updated.Name + " 已升级到 " + updated.Version,
-		FinishedAt: now(),
-		Node:       &updated,
-		Steps:      steps,
+		Action:        "upgrade",
+		Success:       true,
+		Message:       updated.Name + " 已升级到 " + updated.Version,
+		FinishedAt:    now(),
+		Node:          &updated,
+		AffectedTasks: handoffs,
+		Before:        &before,
+		After:         &after,
+		Steps:         steps,
 	}, true, nil
 }
 
@@ -889,6 +928,7 @@ func (s *Store) UninstallNode(id string) (NodeOperationResult, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.ensureClusterLocked()
+	backup := cloneJSON(s.data)
 	node := s.getNodeLocked(id)
 	if node == nil {
 		return NodeOperationResult{}, false, nil
@@ -904,23 +944,30 @@ func (s *Store) UninstallNode(id string) (NodeOperationResult, bool, error) {
 
 	before := s.clusterSnapshotLocked()
 	affectedBefore := leasesOnNode(before.Leases, id)
+	handoffs := []FailoverDrillTask{}
 	if len(affectedBefore) > 0 {
 		tasksByID := s.tasksByIDLocked()
 		node.Status = NodeDraining
 		node.UpdatedAt = now()
 		s.reconcileClusterLocked()
 		afterDrain := s.clusterSnapshotLocked()
-		handoffs, success := s.buildClusterHandoffsLocked(affectedBefore, afterDrain.Leases, tasksByID, id)
+		var success bool
+		handoffs, success = s.buildClusterHandoffsLocked(affectedBefore, afterDrain.Leases, tasksByID, id)
 		if !success {
 			steps[1].Status = "failed"
 			steps[1].Detail = "仍有任务无法迁移，请先增加在线节点容量"
+			s.data = backup
+			failedNode := cloneNodePointer(s.getNodeLocked(id))
 			return NodeOperationResult{
-				Action:     "uninstall",
-				Success:    false,
-				Message:    "卸载前仍有任务未迁移，请先扩容或停止相关任务",
-				FinishedAt: now(),
-				Node:       cloneNodePointer(node),
-				Steps:      steps[:2],
+				Action:        "uninstall",
+				Success:       false,
+				Message:       "卸载前仍有任务未迁移，请先扩容或停止相关任务",
+				FinishedAt:    now(),
+				Node:          failedNode,
+				AffectedTasks: handoffs,
+				Before:        &before,
+				After:         &afterDrain,
+				Steps:         steps[:2],
 			}, true, nil
 		}
 		if len(handoffs) > 0 {
@@ -945,14 +992,19 @@ func (s *Store) UninstallNode(id string) (NodeOperationResult, bool, error) {
 	s.reconcileClusterLocked()
 	s.logLocked("admin", "node_uninstall", "cluster_node", id, "卸载节点："+node.Name)
 	if err := s.saveLocked(); err != nil {
+		s.data = backup
 		return NodeOperationResult{}, true, err
 	}
+	after := s.clusterSnapshotLocked()
 	return NodeOperationResult{
 		Action:        "uninstall",
 		Success:       true,
 		Message:       node.Name + " 已卸载",
 		FinishedAt:    now(),
 		RemovedNodeID: id,
+		AffectedTasks: handoffs,
+		Before:        &before,
+		After:         &after,
 		Steps:         steps,
 	}, true, nil
 }

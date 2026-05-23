@@ -489,6 +489,9 @@ export interface NodeOperationResult {
   finishedAt: string;
   node?: ClusterNode;
   removedNodeId?: string;
+  affectedTasks?: FailoverDrillTask[];
+  before?: ClusterSnapshot;
+  after?: ClusterSnapshot;
   steps: NodeOperationStep[];
 }
 

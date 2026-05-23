@@ -611,6 +611,9 @@ type NodeOperationResult struct {
 	FinishedAt    string              `json:"finishedAt"`
 	Node          *ClusterNode        `json:"node,omitempty"`
 	RemovedNodeID string              `json:"removedNodeId,omitempty"`
+	AffectedTasks []FailoverDrillTask `json:"affectedTasks,omitempty"`
+	Before        *ClusterSnapshot    `json:"before,omitempty"`
+	After         *ClusterSnapshot    `json:"after,omitempty"`
 	Steps         []NodeOperationStep `json:"steps"`
 }
 

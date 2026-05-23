@@ -1090,6 +1090,83 @@ func TestDeleteTaskRequiresDraftOrStoppedTask(t *testing.T) {
 	}
 }
 
+func TestUpgradeNodeReturnsTaskHandoffs(t *testing.T) {
+	store := newTestStore(t)
+	before := store.ClusterSnapshot()
+
+	var activeNode ClusterNode
+	for _, node := range before.Nodes {
+		if node.Status == NodeOnline && node.RunningTasks > 0 {
+			activeNode = node
+			break
+		}
+	}
+	if activeNode.ID == "" {
+		t.Fatalf("expected active node in snapshot: %#v", before.Nodes)
+	}
+
+	result, ok, err := store.UpgradeNode(activeNode.ID)
+	if err != nil || !ok {
+		t.Fatalf("UpgradeNode() ok %v err %v", ok, err)
+	}
+	if !result.Success {
+		t.Fatalf("expected upgrade success: %#v", result)
+	}
+	if result.Node == nil || result.Node.Version == activeNode.Version {
+		t.Fatalf("expected version update: before=%#v result=%#v", activeNode, result)
+	}
+	if result.Before == nil || result.After == nil {
+		t.Fatalf("expected before/after snapshots in result: %#v", result)
+	}
+	if len(result.AffectedTasks) == 0 {
+		t.Fatalf("expected upgrade to report migrated tasks: %#v", result)
+	}
+}
+
+func TestUninstallNodeRollbackOnMigrationFailure(t *testing.T) {
+	store := newTestStore(t)
+	initial := store.ClusterSnapshot()
+
+	var activeNode ClusterNode
+	for _, node := range initial.Nodes {
+		if node.Status == NodeOnline && node.RunningTasks > 0 {
+			activeNode = node
+			break
+		}
+	}
+	if activeNode.ID == "" {
+		t.Fatalf("expected active node in snapshot: %#v", initial.Nodes)
+	}
+
+	store.mu.Lock()
+	for index := range store.data.Nodes {
+		if store.data.Nodes[index].ID != activeNode.ID {
+			store.data.Nodes[index].Status = NodeOffline
+		}
+	}
+	store.mu.Unlock()
+
+	result, ok, err := store.UninstallNode(activeNode.ID)
+	if err != nil || !ok {
+		t.Fatalf("UninstallNode() ok %v err %v", ok, err)
+	}
+	if result.Success {
+		t.Fatalf("expected uninstall to fail without available target nodes: %#v", result)
+	}
+
+	after := store.ClusterSnapshot()
+	var restored ClusterNode
+	for _, node := range after.Nodes {
+		if node.ID == activeNode.ID {
+			restored = node
+			break
+		}
+	}
+	if restored.ID == "" || restored.Status != NodeOnline {
+		t.Fatalf("expected node state rollback after uninstall failure: %#v", after.Nodes)
+	}
+}
+
 func TestAlertRuleCrudAndEvaluation(t *testing.T) {
 	store := newTestStore(t)
 	snapshot := store.Snapshot()

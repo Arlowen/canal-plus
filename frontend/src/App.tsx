@@ -1794,16 +1794,63 @@ function NodesPage({
         onClose={() => setOperationResult(null)}
       >
         {operationResult && (
-          <div className="grid gap-3">
-            {operationResult.steps.map((step) => (
-              <div key={step.key} className="rounded-2xl border border-line bg-slate-50/70 p-4">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="font-medium text-coal">{step.label}</div>
-                  <Badge tone={step.status === "done" ? "green" : "red"}>{step.status === "done" ? "完成" : "失败"}</Badge>
-                </div>
-                <div className="mt-2 text-sm text-slate-500">{step.detail}</div>
+          <div className="grid gap-4">
+            {operationResult.before && operationResult.after && (
+              <div className="grid gap-3 sm:grid-cols-3">
+                <DetailCard label="发生时间" value={formatDateTime(operationResult.finishedAt)} />
+                <DetailCard label="在线节点" value={`${operationResult.after.onlineNodes}/${operationResult.after.totalNodes}`} />
+                <DetailCard label="影响任务" value={`${operationResult.affectedTasks?.length || 0} 条`} />
               </div>
-            ))}
+            )}
+
+            {operationResult.affectedTasks && operationResult.affectedTasks.length > 0 && (
+              <div className="rounded-3xl border border-line bg-slate-50/70 p-4">
+                <div className="text-sm font-medium text-coal">
+                  {operationResult.action === "upgrade" ? "升级前任务迁移" : "卸载前任务迁移"}
+                </div>
+                <div className="mt-3 grid gap-3">
+                  {operationResult.affectedTasks.map((task) => (
+                    <div key={task.taskId} className="rounded-2xl border border-line bg-white p-4">
+                      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <div className="font-medium text-coal">{task.taskName}</div>
+                            <Badge tone={task.newNodeId ? "green" : "red"}>{task.newNodeId ? "已接管" : "待处理"}</Badge>
+                          </div>
+                          <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                            <span className="rounded-full border border-line bg-slate-50 px-2 py-1">{nodeName(task.previousNodeId)}</span>
+                            <ArrowRight size={14} className="text-slate-400" />
+                            <span className="rounded-full border border-line bg-slate-50 px-2 py-1">{nodeName(task.newNodeId)}</span>
+                          </div>
+                        </div>
+                        <div className="rounded-2xl border border-line bg-slate-50/70 px-4 py-3">
+                          <div className="text-xs uppercase tracking-[0.18em] text-slate-500">恢复位点</div>
+                          <div className="mt-2 mono text-coal">{task.recoveryBinlogFile}:{formatNumber(task.recoveryBinlogPosition)}</div>
+                        </div>
+                      </div>
+                      <div className="mt-3 grid gap-3 sm:grid-cols-4">
+                        <DetailCard label="运行阶段" value={taskRuntimePhaseText(task.runtimePhase)} />
+                        <DetailCard label="Lease" value={`${task.previousLeaseEpoch} -> ${task.leaseEpoch}`} mono />
+                        <DetailCard label="延迟" value={`${task.recoveryDelaySeconds}s`} />
+                        <DetailCard label="接管次数" value={`${task.takeoverCount}`} />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="grid gap-3">
+              {operationResult.steps.map((step) => (
+                <div key={step.key} className="rounded-2xl border border-line bg-slate-50/70 p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="font-medium text-coal">{step.label}</div>
+                    <Badge tone={step.status === "done" ? "green" : "red"}>{step.status === "done" ? "完成" : "失败"}</Badge>
+                  </div>
+                  <div className="mt-2 text-sm text-slate-500">{step.detail}</div>
+                </div>
+              ))}
+            </div>
           </div>
         )}
       </Modal>
