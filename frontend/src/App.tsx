@@ -108,10 +108,10 @@ type ClusterHandoffReport = {
 };
 
 const navItems: Array<{ id: Page; label: string; icon: typeof SquaresFour }> = [
-  { id: "dashboard", label: "工作台", icon: SquaresFour },
+  { id: "tasks", label: "任务中心", icon: FlowArrow },
   { id: "datasources", label: "数据源", icon: Database },
-  { id: "tasks", label: "任务", icon: FlowArrow },
   { id: "nodes", label: "节点", icon: HardDrives },
+  { id: "dashboard", label: "总览", icon: SquaresFour },
   { id: "settings", label: "设置", icon: GearSix }
 ];
 
@@ -203,7 +203,7 @@ const emptyNodes: ClusterNode[] = [];
 function App() {
   const [tokenState, setTokenState] = useState(getToken());
   const [user, setUser] = useState<User | null>(null);
-  const [page, setPage] = useState<Page>("dashboard");
+  const [page, setPage] = useState<Page>("tasks");
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [runtimeConfig, setRuntimeConfig] = useState<RuntimeConfig | null>(null);
   const [datasources, setDatasources] = useState<Datasource[]>([]);
@@ -369,8 +369,8 @@ function App() {
     setToken(response.token);
     setTokenState(response.token);
     setUser(response.user);
-    setPage("dashboard");
-    pushNotice({ tone: "success", message: "已进入控制台" });
+    setPage("tasks");
+    pushNotice({ tone: "success", message: "已进入任务中心" });
   };
 
   const handleLogout = () => {
@@ -428,7 +428,7 @@ function App() {
               </div>
             </div>
 
-            <nav className="mt-4 grid gap-2">
+            <nav className="mt-4 grid grid-cols-2 gap-2 lg:grid-cols-1">
               {navItems.map((item) => {
                 const Icon = item.icon;
                 return (
@@ -449,7 +449,18 @@ function App() {
               })}
             </nav>
 
-            <div className="mt-5 rounded-3xl border border-line bg-slate-50/80 p-4">
+            <div className="mt-4 flex items-center justify-between gap-3 rounded-3xl border border-line bg-slate-50/80 p-4 lg:hidden">
+              <div>
+                <div className="text-sm font-medium text-coal">{user?.name || "admin"}</div>
+                <div className="mt-1 text-sm text-slate-500">{roleLabel(user?.role)}</div>
+              </div>
+              <button onClick={handleLogout} className="btn-secondary">
+                <SignOut size={16} />
+                退出
+              </button>
+            </div>
+
+            <div className="mt-5 hidden rounded-3xl border border-line bg-slate-50/80 p-4 lg:block">
               <div className="text-xs font-medium uppercase tracking-[0.18em] text-slate-500">当前账号</div>
               <div className="mt-3 text-sm font-medium text-coal">{user?.name || "admin"}</div>
               <div className="mt-1 text-sm text-slate-500">{roleLabel(user?.role)}</div>
@@ -463,7 +474,7 @@ function App() {
           <main className="min-w-0">
             <div className="mb-5 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
               <div>
-                <div className="text-xs font-medium uppercase tracking-[0.22em] text-slate-500">Workspace</div>
+                <div className="text-xs font-medium uppercase tracking-[0.22em] text-slate-500">当前页面</div>
                 <h1 className="mt-2 text-3xl font-semibold tracking-tight text-coal md:text-4xl">
                   {pageTitle(page)}
                 </h1>
@@ -523,6 +534,7 @@ function App() {
                 onCreateTask={openTaskCreator}
                 onCreateNode={openNodeCreator}
                 onOpenTasks={() => setPage("tasks")}
+                onOpenTask={openTaskDetail}
                 onOpenNodes={() => setPage("nodes")}
               />
             ) : page === "datasources" ? (
@@ -593,6 +605,7 @@ function DashboardPage({
   onCreateTask,
   onCreateNode,
   onOpenTasks,
+  onOpenTask,
   onOpenNodes
 }: {
   summary: DashboardSummary | null;
@@ -605,10 +618,10 @@ function DashboardPage({
   onCreateTask: () => void;
   onCreateNode: () => void;
   onOpenTasks: () => void;
+  onOpenTask: (taskID: string) => void;
   onOpenNodes: () => void;
 }) {
   const visibleCapabilityJobs = capabilityJobs.filter((job) => job.type !== "subscription");
-  const recentWorkloads = buildWorkloads(tasks, visibleCapabilityJobs).slice(0, 6);
   const runtimeTasks = tasks.filter((task) => task.runtime);
   const runningGovernance = visibleCapabilityJobs.filter((job) => job.status === "running").length;
   const failedTasks = tasks.filter((task) => task.status === "failed").length;
@@ -620,273 +633,200 @@ function DashboardPage({
   const totalNodes = cluster?.totalNodes ?? summary?.totalNodes ?? 0;
   const hasCreatedTasks = tasks.length > 0;
   const localNodeLabel = cluster?.localNodeName || cluster?.localNodeId || "当前节点";
-  const recentRuntimeTasks = [...tasks]
-    .filter((task) => task.runtime?.lastLogAt || task.runtime?.updatedAt)
+  const readyDatasources = datasources.filter((item) => item.connectionStatus === "online").length;
+  const attentionTasks = [...tasks]
+    .filter((task) => task.status === "failed" || taskAwaitingNode(task) || (task.runtime?.delaySeconds ?? 0) >= 180)
     .sort((left, right) => new Date(taskActivityAt(right)).getTime() - new Date(taskActivityAt(left)).getTime())
-    .slice(0, 5);
+    .slice(0, 4);
+
+  const overviewActions: Array<{ title: string; description: string; actionLabel: string; onClick: () => void }> = [];
+  if (datasources.length < 2) {
+    overviewActions.push({
+      title: "先补齐数据源",
+      description: "至少保留一个源端和一个目标端，并完成连接测试后再建链路。",
+      actionLabel: "管理数据源",
+      onClick: onCreateDatasource
+    });
+  }
+  if (onlineNodes === 0) {
+    overviewActions.push({
+      title: "当前没有在线节点",
+      description: "任务无法启动或接管时，先恢复节点在线状态和容量。",
+      actionLabel: "查看节点",
+      onClick: onOpenNodes
+    });
+  }
+  if (awaitingTasks > 0) {
+    overviewActions.push({
+      title: "存在待接管任务",
+      description: `当前有 ${awaitingTasks} 条任务没有执行节点，应该先消掉这类阻塞。`,
+      actionLabel: "进入任务中心",
+      onClick: onOpenTasks
+    });
+  }
+  if (failedTasks + pendingErrors > 0) {
+    overviewActions.push({
+      title: "异常需要处理",
+      description: `${failedTasks} 条任务异常，${pendingErrors} 条错误事件待处理。`,
+      actionLabel: "查看任务",
+      onClick: onOpenTasks
+    });
+  }
+  if (overviewActions.length === 0) {
+    overviewActions.push({
+      title: hasCreatedTasks ? "主链路稳定" : "可以开始建第一条链路",
+      description: hasCreatedTasks
+        ? "总览不再重复展示任务列表，后续操作直接进入任务中心处理。"
+        : "先补齐数据源和节点，再创建第一条同步任务。",
+      actionLabel: hasCreatedTasks ? "进入任务中心" : "创建任务",
+      onClick: hasCreatedTasks ? onOpenTasks : onCreateTask
+    });
+  }
 
   return (
     <div className="space-y-5">
       <section className="surface overflow-hidden p-6">
-        <div className="grid gap-5 xl:grid-cols-[1.15fr_0.85fr]">
+        <div className="grid gap-5 xl:grid-cols-[1.12fr_0.88fr]">
           <div>
-            <div className="chip border-blue-200 bg-blue-50 text-blue-700">工作台</div>
+            <div className="chip border-blue-200 bg-blue-50 text-blue-700">总览</div>
             <h2 className="mt-4 max-w-2xl text-3xl font-semibold tracking-tight text-coal md:text-4xl">
-              {hasCreatedTasks ? "聚焦运行状态，减少无关干扰。" : "核心链路先清晰，再扩展能力。"}
+              任务是主入口，总览只保留全局状态。
             </h2>
             <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-500">
-              {hasCreatedTasks
-                ? "已有任务后，工作台只保留运行概览、异常和常用操作。需要扩展链路时，再进入任务或节点页面。"
-                : "先添加数据源，再创建迁移或同步任务。校验、订正和结构对比会围绕已有同步链路展开，避免首次进入就面对一堆无关入口。"}
+              总览不再重复承载任务列表和配置入口，只回答三个问题：链路能不能跑、现在卡在哪里、下一步该去哪个页面处理。
             </p>
             <div className="mt-5 flex flex-wrap gap-3">
-              <button onClick={onCreateDatasource} className="btn-primary">
-                <Database size={16} />
-                添加数据源
-              </button>
-              <button onClick={onCreateTask} className="btn-secondary">
+              <button onClick={onOpenTasks} className="btn-primary">
                 <FlowArrow size={16} />
-                创建任务
+                进入任务中心
               </button>
-              <button onClick={onCreateNode} className="btn-secondary">
+              <button onClick={onOpenNodes} className="btn-secondary">
                 <HardDrives size={16} />
-                添加节点
+                查看节点
               </button>
+              {!hasCreatedTasks && (
+                <button onClick={onCreateTask} className="btn-secondary">
+                  <Plus size={16} />
+                  创建任务
+                </button>
+              )}
+              {datasources.length < 2 && (
+                <button onClick={onCreateDatasource} className="btn-secondary">
+                  <Database size={16} />
+                  添加数据源
+                </button>
+              )}
+              {onlineNodes === 0 && (
+                <button onClick={onCreateNode} className="btn-secondary">
+                  <Plus size={16} />
+                  添加节点
+                </button>
+              )}
             </div>
           </div>
-
-          {hasCreatedTasks ? (
-            <div className="surface-muted p-5">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <div className="text-sm font-medium text-coal">当前重点</div>
-                  <div className="mt-1 text-sm text-slate-500">优先关注运行中任务、异常和节点可用性。</div>
-                </div>
-                <WarningCircle size={20} className="text-blue-600" />
+          <div className="surface-muted p-5">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <div className="text-sm font-medium text-coal">当前重点</div>
+                <div className="mt-1 text-sm text-slate-500">把真正会阻塞主链路的事项单独拎出来。</div>
               </div>
-              <div className="mt-5 grid gap-3 sm:grid-cols-3 xl:grid-cols-1">
-                <DetailCard label="运行中任务" value={`${(summary?.runningTasks ?? 0) + runningGovernance} 条`} />
-                <DetailCard label="待处理异常" value={`${failedTasks + pendingErrors} 条`} />
-                <DetailCard label="在线节点" value={`${onlineNodes}/${totalNodes}`} />
-              </div>
+              {hasCreatedTasks ? <WarningCircle size={20} className="text-blue-600" /> : <RocketLaunch size={20} className="text-blue-600" />}
             </div>
-          ) : (
-            <div className="surface-muted p-5">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <div className="text-sm font-medium text-coal">新用户路径</div>
-                  <div className="mt-1 text-sm text-slate-500">按主路径完成第一条链路。</div>
-                </div>
-                <RocketLaunch size={20} className="text-blue-600" />
-              </div>
-              <div className="mt-5 grid gap-3">
-                {[
-                  "添加数据源",
-                  "测试连接",
-                  "创建任务",
-                  "选择任务类型",
-                  "配置任务",
-                  "启动任务",
-                  "查看运行状态"
-                ].map((label, index) => (
-                  <div key={label} className="flex items-center gap-3 rounded-2xl border border-line bg-white px-4 py-3">
-                    <div className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-50 text-sm font-semibold text-blue-700">
-                      {index + 1}
-                    </div>
-                    <div className="text-sm text-coal">{label}</div>
-                  </div>
-                ))}
-              </div>
+            <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
+              <DetailCard label="运行中任务" value={`${(summary?.runningTasks ?? 0) + runningGovernance} 条`} />
+              <DetailCard label="待处理异常" value={`${failedTasks + pendingErrors} 条`} />
+              <DetailCard label="在线节点" value={`${onlineNodes}/${totalNodes}`} />
+              <DetailCard label="可用数据源" value={`${readyDatasources}/${datasources.length || 0}`} />
             </div>
-          )}
+          </div>
         </div>
       </section>
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <MetricCard label="数据源" value={summary?.taskTotal !== undefined ? datasources.length : datasources.length} detail="可用连接资产" tone="neutral" icon={Database} />
-        <MetricCard label="任务" value={(summary?.taskTotal ?? tasks.length) + visibleCapabilityJobs.length} detail={`${tasks.length} 条同步任务，${visibleCapabilityJobs.length} 条治理任务`} tone="blue" icon={FlowArrow} />
+        <MetricCard label="同步任务" value={tasks.length} detail="只保留主链路，不再把派生能力拆成独立列表项" tone="neutral" icon={FlowArrow} />
+        <MetricCard label="扩展任务" value={visibleCapabilityJobs.length} detail="校验、订正、结构对比会挂到对应同步任务下" tone="blue" icon={ClipboardText} />
         <MetricCard label="运行中" value={(summary?.runningTasks ?? 0) + runningGovernance} detail="同步与治理任务合计" tone="blue" icon={Play} />
         <MetricCard label="异常" value={failedTasks + pendingErrors} detail={`${failedTasks} 条任务异常，${pendingErrors} 条待处理错误`} tone={failedTasks + pendingErrors > 0 ? "red" : "green"} icon={WarningCircle} />
       </div>
 
-      {datasources.length === 0 ? (
-        <EmptyPanel
-          icon={Database}
-          title="先添加第一个数据源"
-          description="添加数据源后，即可创建迁移、同步、校验、订正和结构对比任务。"
-          action={
-            <button onClick={onCreateDatasource} className="btn-primary">
-              <Plus size={16} />
-              添加数据源
-            </button>
-          }
-        />
-      ) : tasks.length === 0 ? (
-        <section className="grid gap-5 xl:grid-cols-[1fr_0.95fr]">
-          <div className="surface p-6">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <h3 className="text-xl font-semibold tracking-tight text-coal">创建第一条任务</h3>
-                <p className="mt-2 text-sm text-slate-500">先确定任务目标，再按类型进入对应配置。</p>
-              </div>
-              <button onClick={onCreateTask} className="btn-primary">
-                <Plus size={16} />
-                创建任务
+      <div className="grid gap-5 xl:grid-cols-[1.08fr_0.92fr]">
+        <section className="surface p-6">
+          <SectionHeader
+            title="当前阻塞"
+            description="这里只保留会影响主链路推进的事项。"
+            action={hasCreatedTasks ? (
+              <button onClick={onOpenTasks} className="btn-secondary">
+                进入任务中心
               </button>
-            </div>
-            <div className="mt-5 grid gap-3 md:grid-cols-2">
-              {taskBlueprints.map((item) => (
-                <div key={item.type} className="rounded-3xl border border-line bg-slate-50/70 p-4">
-                  <div className="chip border-blue-100 bg-white text-blue-700">{item.tag}</div>
-                  <div className="mt-4 text-lg font-semibold text-coal">{item.name}</div>
-                  <div className="mt-2 text-sm text-slate-500">{item.description}</div>
-                  <div className="mt-2 text-sm text-slate-500">{item.scenario}</div>
-                </div>
-              ))}
-            </div>
-          </div>
-          <div className="surface p-6">
-            <h3 className="text-xl font-semibold tracking-tight text-coal">下一步建议</h3>
-            <div className="mt-5 grid gap-3">
+            ) : undefined}
+          />
+          <div className="mt-5 grid gap-3">
+            {overviewActions.map((item) => (
               <NextStepCard
-                title="先验证连接"
-                description="至少保留一个源端和一个目标端数据源，并完成连接测试。"
-                actionLabel="查看数据源"
-                onClick={onCreateDatasource}
+                key={item.title}
+                title={item.title}
+                description={item.description}
+                actionLabel={item.actionLabel}
+                onClick={item.onClick}
               />
-              <NextStepCard
-                title="优先跑全量迁移"
-                description="新链路建议先完成存量导入，再决定是否追加增量同步。"
-                actionLabel="创建任务"
-                onClick={onCreateTask}
-              />
-            </div>
+            ))}
           </div>
         </section>
-      ) : (
-        <div className="grid gap-5 xl:grid-cols-[1.1fr_0.9fr]">
-          <section className="surface p-6">
-            <SectionHeader
-              title="最近任务"
-              description="按最近更新时间排序。"
-              action={
-                <button onClick={onOpenTasks} className="btn-secondary">
-                  查看全部
-                </button>
-              }
-            />
-            <div className="mt-5 divide-y divide-line overflow-hidden rounded-3xl border border-line">
-              {recentWorkloads.length === 0 ? (
-                <div className="p-6 text-sm text-slate-500">暂无任务</div>
-              ) : recentWorkloads.map((item) => (
-                <div key={item.key} className="grid gap-3 p-4 md:grid-cols-[1fr_auto] md:items-center">
-                  <div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="font-medium text-coal">{item.title}</span>
-                      <TypeBadge type={item.type} />
-                    </div>
-                    <div className="mt-1 text-sm text-slate-500">{item.detail}</div>
-                  </div>
-                  <div className="text-right">
-                    <div className="text-sm font-medium text-coal">{item.statusText}</div>
-                    <div className="mt-1 text-xs text-slate-500">{formatDate(item.updatedAt)}</div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </section>
 
-          <div className="space-y-5">
-            <section className="surface p-6">
-              <SectionHeader title="运行模型" description="先看任务当前由谁托管，再决定下一步操作。" />
-              <div className="mt-5 grid gap-3 sm:grid-cols-3">
-                <MetricMini label="当前节点托管" value={`${localHostedTasks}`} />
-                <MetricMini label="远程托管" value={`${remoteHostedTasks}`} />
-                <MetricMini label="待接管" value={`${awaitingTasks}`} />
-              </div>
-              <div className="mt-4 rounded-2xl border border-line bg-slate-50/70 px-4 py-3 text-sm text-slate-500">
-                当前控制节点：<span className="font-medium text-coal">{localNodeLabel}</span>
-              </div>
-              <div className="mt-4 grid gap-3">
-                {recentRuntimeTasks.length === 0 ? (
-                  <div className="rounded-2xl border border-dashed border-line bg-white px-4 py-6 text-sm text-slate-500">
-                    当前没有可展示的运行态事件。
-                  </div>
-                ) : recentRuntimeTasks.map((task) => (
-                  <button key={task.id} onClick={onOpenTasks} className="rounded-2xl border border-line bg-white px-4 py-4 text-left">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <div className="font-medium text-coal">{task.name}</div>
-                      <StatusBadge status={task.status} />
-                      <Badge tone={taskProcessTone(task.runtime?.processStatus)}>{taskProcessStatusText(task.runtime?.processStatus)}</Badge>
-                    </div>
-                    <div className="mt-2 text-sm text-slate-500">
-                      {task.runtime?.executionNodeName || task.runtime?.nodeId || "待分配"} · {task.runtime?.lastLogMessage || "暂无运行日志摘要"}
-                    </div>
-                    <div className="mt-2 text-xs text-slate-500">{formatDateTime(task.runtime?.lastLogAt || task.runtime?.updatedAt)}</div>
-                  </button>
-                ))}
-              </div>
-            </section>
-            <section className="surface p-6">
-              <SectionHeader title="下一步" description="把高频操作留在主路径。" />
-              <div className="mt-5 grid gap-3">
-                {datasources.length < 2 && (
-                  <NextStepCard
-                    title="补齐源端和目标端"
-                    description="至少准备两个可用数据源，才能建立稳定链路。"
-                    actionLabel="添加数据源"
-                    onClick={onCreateDatasource}
-                  />
-                )}
-                {onlineNodes === 0 && (
-                  <NextStepCard
-                    title="部署节点"
-                    description="没有在线节点时，任务无法启动或接管。"
-                    actionLabel="添加节点"
-                    onClick={onCreateNode}
-                  />
-                )}
-                {awaitingTasks > 0 && (
-                  <NextStepCard
-                    title="处理待接管任务"
-                    description={`当前有 ${awaitingTasks} 条任务等待节点接管。`}
-                    actionLabel="查看节点"
-                    onClick={onOpenNodes}
-                  />
-                )}
-                {pendingErrors > 0 && (
-                  <NextStepCard
-                    title="处理异常"
-                    description={`当前有 ${pendingErrors} 条待处理错误事件。`}
-                    actionLabel="查看任务"
-                    onClick={onOpenTasks}
-                  />
-                )}
-                {failedTasks === 0 && pendingErrors === 0 && onlineNodes > 0 && (
-                  <NextStepCard
-                    title="链路状态稳定"
-                    description="可以继续补充校验、订正或结构对比任务。"
-                    actionLabel="创建任务"
-                    onClick={onCreateTask}
-                  />
-                )}
-              </div>
-            </section>
-
-            <section className="surface p-6">
-              <SectionHeader title="节点状态" description="关注在线节点和承载能力。" />
-              <div className="mt-5 grid gap-3 sm:grid-cols-3">
-                <MetricMini label="在线节点" value={`${onlineNodes}/${totalNodes}`} />
-                <MetricMini label="运行任务" value={`${summary?.runningTasks ?? 0}`} />
-                <MetricMini label="24h 异常" value={`${summary?.failuresLast24Hours ?? 0}`} />
-              </div>
-              <button onClick={onOpenNodes} className="btn-secondary mt-4 w-full">
-                查看节点
-              </button>
-            </section>
+        <section className="surface p-6">
+          <SectionHeader title="资源准备度" description="总览只看链路是否具备开工条件。" />
+          <div className="mt-5 grid gap-3 sm:grid-cols-2">
+            <MetricMini label="数据源就绪" value={`${readyDatasources}/${datasources.length || 0}`} />
+            <MetricMini label="在线节点" value={`${onlineNodes}/${totalNodes}`} />
+            <MetricMini label="当前节点托管" value={`${localHostedTasks}`} />
+            <MetricMini label="待接管" value={`${awaitingTasks}`} />
           </div>
-        </div>
-      )}
+          <div className="mt-4 rounded-2xl border border-line bg-slate-50/70 px-4 py-4 text-sm text-slate-500">
+            当前控制节点：<span className="font-medium text-coal">{localNodeLabel}</span>
+          </div>
+          <div className="mt-3 rounded-2xl border border-line bg-white px-4 py-4 text-sm text-slate-500">
+            {remoteHostedTasks > 0
+              ? `当前有 ${remoteHostedTasks} 条任务由远程节点托管，任务详情中会明确标出日志是否能在当前节点直接查看。`
+              : "当前没有远程托管任务，任务日志默认在任务详情顶部直接查看。"}
+          </div>
+        </section>
+      </div>
+
+      <section className="surface p-6">
+        <SectionHeader title="需要关注的任务" description="总览不展开列表，只点出异常、待接管和高延迟任务。" />
+        {attentionTasks.length === 0 ? (
+          <EmptyPanel
+            icon={ShieldCheck}
+            title="当前没有高优先级风险任务"
+            description="后续操作直接进入任务中心处理即可。"
+            action={
+              <button onClick={onOpenTasks} className="btn-primary">
+                <FlowArrow size={16} />
+                进入任务中心
+              </button>
+            }
+          />
+        ) : (
+          <div className="mt-5 grid gap-3">
+            {attentionTasks.map((task) => (
+              <button key={task.id} onClick={() => onOpenTask(task.id)} className="rounded-3xl border border-line bg-white px-5 py-4 text-left transition hover:border-blue-200 hover:bg-blue-50/40">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="font-medium text-coal">{task.name}</span>
+                  <StatusBadge status={task.status} />
+                  <Badge tone={taskProcessTone(task.runtime?.processStatus)}>{taskProcessStatusText(task.runtime?.processStatus)}</Badge>
+                  {taskAwaitingNode(task) && <Badge tone="yellow">待接管</Badge>}
+                </div>
+                <div className="mt-2 text-sm text-slate-500">
+                  {task.runtime?.executionNodeName || task.runtime?.nodeId || "待分配"} · {task.runtime?.lastLogMessage || "暂无运行日志摘要"}
+                </div>
+                <div className="mt-2 text-xs text-slate-500">
+                  {formatDateTime(task.runtime?.lastLogAt || task.runtime?.updatedAt || task.updatedAt)}
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
+      </section>
     </div>
   );
 }
@@ -1284,6 +1224,7 @@ function TasksPage({
   const [typeFilter, setTypeFilter] = useState("all");
   const [stateFilter, setStateFilter] = useState<TaskStateFilter>("all");
   const [hostingFilter, setHostingFilter] = useState<"all" | "local" | "remote" | "unassigned">("all");
+  const [showCapabilityJobs, setShowCapabilityJobs] = useState(false);
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [creatorOpen, setCreatorOpen] = useState(false);
   const [busyKey, setBusyKey] = useState<string | null>(null);
@@ -1295,22 +1236,24 @@ function TasksPage({
     setCreatorOpen(true);
   }, [openCreateToken]);
 
-  const workloads = buildWorkloads(tasks, visibleCapabilityJobs);
+  const workloads = showCapabilityJobs ? buildWorkloads(tasks, visibleCapabilityJobs) : buildTaskItems(tasks);
   const filtered = workloads.filter((item) => {
     const matchesKeyword = !keyword.trim() || `${item.title} ${item.detail} ${item.type}`.toLowerCase().includes(keyword.trim().toLowerCase());
     const matchesType = typeFilter === "all" || item.type === typeFilter;
-    const matchesState = !item.rawTask
-      || stateFilter === "all"
-      || (stateFilter === "running" && (item.rawTask.status === "full_syncing" || item.rawTask.status === "incremental_running"))
-      || (stateFilter === "awaiting" && taskAwaitingNode(item.rawTask))
-      || (stateFilter === "remote" && item.rawTask.runtime?.managedByLocalNode === false)
-      || (stateFilter === "failed" && item.rawTask.status === "failed")
-      || (stateFilter === "stopped" && item.rawTask.status === "stopped");
-    const matchesHosting = !item.rawTask
-      || hostingFilter === "all"
-      || (hostingFilter === "local" && item.rawTask.runtime?.managedByLocalNode !== false && Boolean(item.rawTask.runtime?.nodeId))
-      || (hostingFilter === "remote" && item.rawTask.runtime?.managedByLocalNode === false)
-      || (hostingFilter === "unassigned" && !item.rawTask.runtime?.nodeId);
+    const matchesState = item.rawTask
+      ? stateFilter === "all"
+        || (stateFilter === "running" && (item.rawTask.status === "full_syncing" || item.rawTask.status === "incremental_running"))
+        || (stateFilter === "awaiting" && taskAwaitingNode(item.rawTask))
+        || (stateFilter === "remote" && item.rawTask.runtime?.managedByLocalNode === false)
+        || (stateFilter === "failed" && item.rawTask.status === "failed")
+        || (stateFilter === "stopped" && item.rawTask.status === "stopped")
+      : stateFilter === "all";
+    const matchesHosting = item.rawTask
+      ? hostingFilter === "all"
+        || (hostingFilter === "local" && item.rawTask.runtime?.managedByLocalNode !== false && Boolean(item.rawTask.runtime?.nodeId))
+        || (hostingFilter === "remote" && item.rawTask.runtime?.managedByLocalNode === false)
+        || (hostingFilter === "unassigned" && !item.rawTask.runtime?.nodeId)
+      : hostingFilter === "all";
     return matchesKeyword && matchesType && matchesState && matchesHosting;
   });
   const selected = filtered.find((item) => item.key === selectedKey) ?? filtered[0];
@@ -1440,11 +1383,11 @@ function TasksPage({
   };
 
   return (
-    <div className="grid gap-5 xl:grid-cols-[1.08fr_0.92fr]">
+    <div className="grid gap-5 xl:grid-cols-[0.88fr_1.12fr]">
       <section className="surface min-w-0 p-6">
         <SectionHeader
-          title="任务列表"
-          description="创建入口收敛为五类任务。"
+          title="同步任务"
+          description="同步任务是主线，校验、订正和结构对比默认挂在对应同步任务下。"
           action={canManage ? (
             <button onClick={() => setCreatorOpen(true)} className="btn-primary">
               <Plus size={16} />
@@ -1460,13 +1403,32 @@ function TasksPage({
           <MetricMini label="待处理错误" value={`${pendingErrors}`} />
         </div>
 
+        <div className="mt-5 flex flex-col gap-3 rounded-3xl border border-line bg-slate-50/70 p-4 xl:flex-row xl:items-center xl:justify-between">
+          <div>
+            <div className="text-sm font-medium text-coal">列表视角</div>
+            <div className="mt-1 text-sm text-slate-500">
+              默认只展示同步任务，避免一条链路拆成多条重复列表项。
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <FilterChip active={!showCapabilityJobs} onClick={() => setShowCapabilityJobs(false)} label="只看同步任务" />
+            <FilterChip active={showCapabilityJobs} onClick={() => setShowCapabilityJobs(true)} label={`显示扩展任务 ${visibleCapabilityJobs.length}`} />
+          </div>
+        </div>
+
         {awaitingTasks > 0 && (
           <div className="mt-5 rounded-3xl border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-800">
             当前有 {awaitingTasks} 条任务等待节点接管。优先检查节点在线状态、容量和排空中的任务迁移结果。
           </div>
         )}
 
-        <div className="mt-5 grid gap-3 lg:grid-cols-[minmax(0,1fr)_220px]">
+        {!showCapabilityJobs && visibleCapabilityJobs.length > 0 && (
+          <div className="mt-5 rounded-3xl border border-blue-200 bg-blue-50 px-4 py-4 text-sm text-blue-800">
+            已将 {visibleCapabilityJobs.length} 条扩展任务收进对应同步任务详情，主列表只保留真正需要操作的同步链路。
+          </div>
+        )}
+
+        <div className="mt-5 grid gap-3 xl:grid-cols-[minmax(0,1.2fr)_180px_180px_180px]">
           <label className="block">
             <span className="mb-2 block text-xs font-medium uppercase tracking-[0.18em] text-slate-500">搜索</span>
             <span className="relative block">
@@ -1487,26 +1449,6 @@ function TasksPage({
               ))}
             </select>
           </Field>
-        </div>
-
-        <div className="mt-3 grid gap-3 lg:grid-cols-[220px_minmax(0,1fr)]">
-          <Field label="托管范围">
-            <select className="select" value={hostingFilter} onChange={(event) => setHostingFilter(event.target.value as "all" | "local" | "remote" | "unassigned")}>
-              <option value="all">全部任务</option>
-              <option value="local">当前节点托管</option>
-              <option value="remote">远程节点托管</option>
-              <option value="unassigned">待分配</option>
-            </select>
-          </Field>
-          <div className="flex flex-wrap items-end gap-2">
-            <FilterChip active={hostingFilter === "all"} onClick={() => setHostingFilter("all")} label="全部" />
-            <FilterChip active={hostingFilter === "local"} onClick={() => setHostingFilter("local")} label="当前节点托管" />
-            <FilterChip active={hostingFilter === "remote"} onClick={() => setHostingFilter("remote")} label="远程托管" />
-            <FilterChip active={hostingFilter === "unassigned"} onClick={() => setHostingFilter("unassigned")} label="待分配" />
-          </div>
-        </div>
-
-        <div className="mt-3 grid gap-3 lg:grid-cols-[220px_minmax(0,1fr)]">
           <Field label="运行视角">
             <select className="select" value={stateFilter} onChange={(event) => setStateFilter(event.target.value as TaskStateFilter)}>
               <option value="all">全部状态</option>
@@ -1517,21 +1459,22 @@ function TasksPage({
               <option value="stopped">已停止</option>
             </select>
           </Field>
-          <div className="flex flex-wrap items-end gap-2">
-            <FilterChip active={stateFilter === "all"} onClick={() => setStateFilter("all")} label="全部" />
-            <FilterChip active={stateFilter === "running"} onClick={() => setStateFilter("running")} label={`运行中 ${stateCounts.running}`} />
-            <FilterChip active={stateFilter === "awaiting"} onClick={() => setStateFilter("awaiting")} label={`待接管 ${stateCounts.awaiting}`} />
-            <FilterChip active={stateFilter === "remote"} onClick={() => setStateFilter("remote")} label={`远程托管 ${stateCounts.remote}`} />
-            <FilterChip active={stateFilter === "failed"} onClick={() => setStateFilter("failed")} label={`异常 ${stateCounts.failed}`} />
-            <FilterChip active={stateFilter === "stopped"} onClick={() => setStateFilter("stopped")} label={`已停止 ${stateCounts.stopped}`} />
-          </div>
+          <Field label="托管范围">
+            <select className="select" value={hostingFilter} onChange={(event) => setHostingFilter(event.target.value as "all" | "local" | "remote" | "unassigned")}>
+              <option value="all">全部任务</option>
+              <option value="local">当前节点托管</option>
+              <option value="remote">远程节点托管</option>
+              <option value="unassigned">待分配</option>
+            </select>
+          </Field>
         </div>
 
-        <div className="mt-4 flex flex-wrap gap-2">
-          <FilterChip active={typeFilter === "all"} onClick={() => setTypeFilter("all")} label={`全部 ${workloads.length}`} />
-          {Object.entries(typeCounts).map(([label, count]) => (
-            <FilterChip key={label} active={typeFilter === label} onClick={() => setTypeFilter(label)} label={`${label} ${count}`} />
-          ))}
+        <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-500">
+          <span className="rounded-full border border-line bg-slate-50 px-3 py-1.5">运行中 {stateCounts.running}</span>
+          <span className="rounded-full border border-line bg-slate-50 px-3 py-1.5">待接管 {stateCounts.awaiting}</span>
+          <span className="rounded-full border border-line bg-slate-50 px-3 py-1.5">远程托管 {stateCounts.remote}</span>
+          <span className="rounded-full border border-line bg-slate-50 px-3 py-1.5">异常 {stateCounts.failed}</span>
+          <span className="rounded-full border border-line bg-slate-50 px-3 py-1.5">已停止 {stateCounts.stopped}</span>
         </div>
 
         {datasources.length === 0 ? (
@@ -1588,6 +1531,11 @@ function TasksPage({
                         </span>
                       </div>
                     )}
+                    {task && (
+                      <div className="mt-2 rounded-2xl border border-line bg-slate-50/80 px-3 py-2 text-xs text-slate-600">
+                        {task.runtime?.lastLogMessage || "暂无运行日志摘要，右侧详情已把实时日志置顶。"}
+                      </div>
+                    )}
                     <div className="mt-2 text-xs text-slate-500">{formatDate(item.updatedAt)}</div>
                   </button>
                   <div className="flex flex-wrap justify-end gap-2">
@@ -1627,16 +1575,19 @@ function TasksPage({
 
       <div className="space-y-5">
         <section className="surface p-6">
-          <SectionHeader title="任务详情" description="配置、运行状态和关键结果。" />
+          <SectionHeader title={selected?.rawJob ? "扩展任务详情" : "任务详情"} description="运行日志默认置顶，配置和轨迹放到后面。" />
           {!selected ? (
             <div className="mt-5 text-sm text-slate-500">选择一条任务查看详情。</div>
           ) : selected.rawTask ? (
             <SyncTaskDetail
               task={selected.rawTask}
+              relatedJobs={visibleCapabilityJobs.filter((job) => job.taskId === selected.rawTask!.id)}
               errors={errors}
               cluster={cluster}
               canManage={canManage}
               onOpenNode={onOpenNode}
+              onRunJob={(job) => void rerunJob(job)}
+              busyActionKey={busyKey}
               onChanged={onChanged}
               pushNotice={pushNotice}
             />
@@ -3245,18 +3196,24 @@ function NodeCreatorModal({
 
 function SyncTaskDetail({
   task,
+  relatedJobs,
   errors,
   cluster,
   canManage,
   onOpenNode,
+  onRunJob,
+  busyActionKey,
   onChanged,
   pushNotice
 }: {
   task: SyncTask;
+  relatedJobs: CapabilityJob[];
   errors: ErrorEvent[];
   cluster: ClusterSnapshot | null;
   canManage: boolean;
   onOpenNode: (nodeID: string) => void;
+  onRunJob: (job: CapabilityJob) => void;
+  busyActionKey: string | null;
   onChanged: (quiet?: boolean) => Promise<void>;
   pushNotice: (notice: Notice) => void;
 }) {
@@ -3287,6 +3244,12 @@ function SyncTaskDetail({
   const runtimeNodeLabel = runtime?.executionNodeName || cluster?.nodes.find((node) => node.id === runtimeNode)?.name || runtimeNode;
   const remoteManaged = runtime?.managedByLocalNode === false || Boolean(localNodeId && runtimeNode && runtimeNode !== localNodeId);
   const checkpointNodeName = (nodeID?: string) => cluster?.nodes.find((node) => node.id === nodeID)?.name || nodeID || "待分配";
+  const hostingModeText = runtime?.managedByLocalNode === false ? "远程节点托管" : runtime?.nodeId ? "当前节点托管" : "待分配";
+  const logAccessText = runtime?.localLogAccessible === false
+    ? runtime?.logAccessMessage || "需切换到执行节点查看"
+    : remoteManaged
+      ? runtime?.logAccessMessage || "执行节点可查看"
+      : "当前节点可查看";
 
   useEffect(() => {
     setRuntime(task.runtime);
@@ -3485,137 +3448,230 @@ function SyncTaskDetail({
   }, [runtime?.processStatus, task.id, task.status]);
 
   return (
-    <div className="mt-5 space-y-4">
+    <div className="mt-5 space-y-5">
       <div className="flex flex-wrap items-center gap-2">
         <TypeBadge type={syncTaskTypeText(task)} />
         <StatusBadge status={task.status} />
         <Badge tone={taskProcessTone(runtime?.processStatus)}>{taskProcessStatusText(runtime?.processStatus)}</Badge>
         {remoteManaged && <Badge tone="yellow">远程托管</Badge>}
       </div>
-      <div className="text-lg font-semibold text-coal">{task.name}</div>
-      <div className="text-sm text-slate-500">
-        {(task.sourceDatasource?.name || task.sourceDatasourceId)} to {(task.targetDatasource?.name || task.targetDatasourceId)}
-      </div>
-      <div className="grid gap-3">
-        <DetailCard label="负责人" value={task.owner} />
-        <DetailCard label="配置版本" value={`v${task.configVersion}`} mono />
-        <DetailCard label="更新时间" value={formatDateTime(task.updatedAt)} />
-        <DetailCard label="运行节点" value={runtime?.executionNodeName || runtime?.nodeId || "待分配"} mono />
-        <DetailCard label="托管模式" value={runtime?.managedByLocalNode === false ? "远程节点托管" : "当前节点托管"} />
-        <DetailCard label="日志访问" value={runtime?.localLogAccessible === false ? "需切换节点查看" : "当前节点可查看"} />
-      </div>
-      {runtime?.nodeId && (
-        <div className="flex justify-end">
-          <button type="button" onClick={() => onOpenNode(runtime.nodeId!)} className="btn-secondary">
-            <HardDrives size={16} />
-            查看节点
-          </button>
+      <section className="rounded-[2rem] border border-line bg-white p-5 shadow-panel">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div className="min-w-0">
+            <div className="text-2xl font-semibold tracking-tight text-coal">{task.name}</div>
+            <div className="mt-2 text-sm text-slate-500">
+              {(task.sourceDatasource?.name || task.sourceDatasourceId)} to {(task.targetDatasource?.name || task.targetDatasourceId)}
+            </div>
+          </div>
+          {runtime?.nodeId && (
+            <button type="button" onClick={() => onOpenNode(runtime.nodeId!)} className="btn-secondary">
+              <HardDrives size={16} />
+              查看节点
+            </button>
+          )}
         </div>
-      )}
-      <div className="rounded-3xl border border-line bg-slate-50/70 p-4">
-        <div className="flex items-center justify-between gap-3">
-          <div className="font-medium text-coal">运行状态</div>
-          <div className="text-sm text-slate-500">{progress}%</div>
-        </div>
-        <div className="mt-3 h-2 overflow-hidden rounded-full bg-white">
-          <div className="h-full rounded-full bg-blue-600 transition-all" style={{ width: `${progress}%` }} />
-        </div>
-        <div className="mt-4 grid gap-3 sm:grid-cols-3">
-          <DetailCard label="延迟" value={`${runtime?.delaySeconds ?? 0}s`} />
-          <DetailCard label="吞吐" value={`${runtime?.eventsPerSecond ?? 0} eps`} />
-          <DetailCard label="位点" value={`${runtime?.binlogFile || "-"}:${runtime?.binlogPosition || 0}`} mono />
-        </div>
-        <div className="mt-3 grid gap-3 sm:grid-cols-3">
-          <DetailCard label="进程 PID" value={runtime?.processId ? `${runtime.processId}` : "-"} mono />
+      </section>
+
+      <div className="grid gap-5 2xl:grid-cols-[minmax(0,1fr)_360px]">
+        <div className="order-2 space-y-5 2xl:order-1">
+          <section className="rounded-[2rem] border border-line bg-white p-5 shadow-panel">
+            <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              <DetailCard label="负责人" value={task.owner} />
+              <DetailCard label="配置版本" value={`v${task.configVersion}`} mono />
+              <DetailCard label="更新时间" value={formatDateTime(task.updatedAt)} />
+              <DetailCard label="运行节点" value={runtimeNodeLabel || "待分配"} mono />
+              <DetailCard label="托管模式" value={hostingModeText} />
+              <DetailCard label="日志访问" value={logAccessText} />
+            </div>
+
+            <div className="mt-5 rounded-3xl border border-line bg-slate-50/70 p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div className="font-medium text-coal">运行状态</div>
+                <div className="text-sm text-slate-500">{progress}%</div>
+              </div>
+              <div className="mt-3 h-2 overflow-hidden rounded-full bg-white">
+                <div className="h-full rounded-full bg-blue-600 transition-all" style={{ width: `${progress}%` }} />
+              </div>
+              <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                <DetailCard label="延迟" value={`${runtime?.delaySeconds ?? 0}s`} />
+                <DetailCard label="吞吐" value={`${runtime?.eventsPerSecond ?? 0} eps`} />
+                <DetailCard label="位点" value={`${runtime?.binlogFile || "-"}:${runtime?.binlogPosition || 0}`} mono />
+              </div>
+              <div className="mt-3 grid gap-3 sm:grid-cols-3">
+                <DetailCard label="进程 PID" value={runtime?.processId ? `${runtime.processId}` : "-"} mono />
                 <DetailCard label="最近心跳" value={runtime?.lastHeartbeatAt ? formatDateTime(runtime.lastHeartbeatAt) : "-"} />
                 <DetailCard label="最近日志" value={runtime?.lastLogAt ? formatDateTime(runtime.lastLogAt) : "-"} />
-        </div>
-        <div className="mt-3 rounded-2xl border border-line bg-white px-4 py-3 text-sm text-slate-500">
-          {runtime?.lastLogMessage || "暂无运行日志摘要。"}
-        </div>
-      </div>
-      <div className="rounded-3xl border border-line bg-slate-50/70 p-4">
-        <div className="font-medium text-coal">表映射</div>
-        <div className="mt-3 grid gap-3">
-          {task.tableMappings.map((mapping) => (
-            <div key={`${mapping.sourceSchema}.${mapping.sourceTable}.${mapping.targetTable}`} className="rounded-2xl border border-line bg-white px-4 py-3">
-              <div className="font-medium text-coal">
-                {mapping.sourceSchema}.{mapping.sourceTable}
               </div>
-              <div className="mt-1 text-sm text-slate-500">
-                to {mapping.targetSchema}.{mapping.targetTable}
+              <div className="mt-3 rounded-2xl border border-line bg-white px-4 py-3 text-sm text-slate-500">
+                {runtime?.lastLogMessage || "暂无运行日志摘要。"}
               </div>
-              <div className="mt-2 text-xs text-slate-500">{mapping.fields.filter((item) => !item.ignored).length} 个字段</div>
             </div>
-          ))}
+          </section>
+
+          {relatedJobs.length > 0 && (
+            <section className="rounded-3xl border border-line bg-slate-50/70 p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <div className="font-medium text-coal">扩展任务</div>
+                  <div className="mt-1 text-sm text-slate-500">校验、订正和结构对比挂在当前同步任务下面，避免主列表重复。</div>
+                </div>
+                <Badge tone="blue">{`${relatedJobs.length} 条`}</Badge>
+              </div>
+              <div className="mt-3 grid gap-3">
+                {relatedJobs
+                  .slice()
+                  .sort((left, right) => new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime())
+                  .map((job) => (
+                    <div key={job.id} className="rounded-2xl border border-line bg-white p-4">
+                      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <TypeBadge type={capabilityJobTypeText(job)} />
+                            <Badge tone={capabilityJobTone(job.status)}>{capabilityJobStatusText(job.status)}</Badge>
+                          </div>
+                          <div className="mt-3 font-medium text-coal">{job.name}</div>
+                          <div className="mt-2 text-sm text-slate-500">{capabilityJobSummaryText(job)}</div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <div className="rounded-2xl border border-line bg-slate-50 px-3 py-2 text-xs text-slate-500">
+                            {job.progressPercent}%
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => onRunJob(job)}
+                            disabled={job.status === "running" || busyActionKey === `${job.id}:job`}
+                            className="btn-secondary px-3 py-2 text-xs"
+                          >
+                            <Play size={14} />
+                            {job.status === "running" ? "运行中" : "重跑"}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+              </div>
+            </section>
+          )}
         </div>
+
+        <TaskLiveLogPanel
+          className="order-1 2xl:order-2"
+          remoteManaged={remoteManaged}
+          logConnected={logConnected}
+          logNotice={logNotice}
+          taskLogs={taskLogs}
+          lastLogAt={runtime?.lastLogAt}
+        />
       </div>
+
+      <div className="grid gap-5 2xl:grid-cols-2">
+        <section className="rounded-3xl border border-line bg-slate-50/70 p-4">
+          <div className="font-medium text-coal">表映射</div>
+          <div className="mt-3 grid gap-3">
+            {task.tableMappings.map((mapping) => (
+              <div key={`${mapping.sourceSchema}.${mapping.sourceTable}.${mapping.targetTable}`} className="rounded-2xl border border-line bg-white px-4 py-3">
+                <div className="font-medium text-coal">
+                  {mapping.sourceSchema}.{mapping.sourceTable}
+                </div>
+                <div className="mt-1 text-sm text-slate-500">
+                  to {mapping.targetSchema}.{mapping.targetTable}
+                </div>
+                <div className="mt-2 text-xs text-slate-500">{mapping.fields.filter((item) => !item.ignored).length} 个字段</div>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <section className="rounded-3xl border border-line bg-slate-50/70 p-4">
+          <div className="font-medium text-coal">最近异常</div>
+          <div className="mt-3 grid gap-3">
+            {taskErrors.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-line bg-white px-4 py-6 text-sm text-slate-500">
+                当前没有待展示的错误事件。
+              </div>
+            ) : taskErrors.map((item) => (
+              <div key={item.id} className="rounded-2xl border border-line bg-white px-4 py-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge tone="red">{item.eventType.toUpperCase()}</Badge>
+                  <span className="font-medium text-coal">{item.sourceTable}</span>
+                </div>
+                <div className="mt-2 text-sm text-slate-500">{item.reason}</div>
+              </div>
+            ))}
+          </div>
+        </section>
+      </div>
+
       {canManage && (
-        <div className="rounded-3xl border border-line bg-slate-50/70 p-4">
-          <div className="font-medium text-coal">运行参数</div>
-          <div className="mt-4 grid gap-4 sm:grid-cols-2">
-            <Field label="批量写入">
-              <input className="input" type="number" value={paramsDraft.batchSize} onChange={(event) => setParamsDraft({ ...paramsDraft, batchSize: Number(event.target.value) })} />
-            </Field>
-            <Field label="重试次数">
-              <input className="input" type="number" value={paramsDraft.retryTimes} onChange={(event) => setParamsDraft({ ...paramsDraft, retryTimes: Number(event.target.value) })} />
-            </Field>
-            <Field label="重试间隔秒">
-              <input className="input" type="number" value={paramsDraft.retryIntervalSeconds} onChange={(event) => setParamsDraft({ ...paramsDraft, retryIntervalSeconds: Number(event.target.value) })} />
-            </Field>
-            <Field label="冲突策略">
-              <select className="select" value={paramsDraft.conflictStrategy} onChange={(event) => setParamsDraft({ ...paramsDraft, conflictStrategy: event.target.value as SyncStrategy["conflictStrategy"] })}>
-                <option value="overwrite">覆盖</option>
-                <option value="ignore">忽略</option>
-                <option value="fail">失败停止</option>
-              </select>
-            </Field>
-            <Field label="删除策略">
-              <select className="select" value={paramsDraft.deleteStrategy} onChange={(event) => setParamsDraft({ ...paramsDraft, deleteStrategy: event.target.value as SyncStrategy["deleteStrategy"] })}>
-                <option value="physical">物理删除</option>
-                <option value="soft_delete">软删除字段更新</option>
-                <option value="ignore">忽略删除</option>
-              </select>
-            </Field>
-          </div>
-          <div className="mt-4 flex justify-end">
-            <button type="button" onClick={() => void saveRuntimeParams()} disabled={savingParams} className="btn-secondary">
-              {savingParams ? <ArrowsClockwise size={16} /> : <CheckCircle size={16} />}
-              {savingParams ? "保存中" : "保存参数"}
-            </button>
-          </div>
+        <div className="grid gap-5 2xl:grid-cols-2">
+          <section className="rounded-3xl border border-line bg-slate-50/70 p-4">
+            <div className="font-medium text-coal">运行参数</div>
+            <div className="mt-4 grid gap-4 sm:grid-cols-2">
+              <Field label="批量写入">
+                <input className="input" type="number" value={paramsDraft.batchSize} onChange={(event) => setParamsDraft({ ...paramsDraft, batchSize: Number(event.target.value) })} />
+              </Field>
+              <Field label="重试次数">
+                <input className="input" type="number" value={paramsDraft.retryTimes} onChange={(event) => setParamsDraft({ ...paramsDraft, retryTimes: Number(event.target.value) })} />
+              </Field>
+              <Field label="重试间隔秒">
+                <input className="input" type="number" value={paramsDraft.retryIntervalSeconds} onChange={(event) => setParamsDraft({ ...paramsDraft, retryIntervalSeconds: Number(event.target.value) })} />
+              </Field>
+              <Field label="冲突策略">
+                <select className="select" value={paramsDraft.conflictStrategy} onChange={(event) => setParamsDraft({ ...paramsDraft, conflictStrategy: event.target.value as SyncStrategy["conflictStrategy"] })}>
+                  <option value="overwrite">覆盖</option>
+                  <option value="ignore">忽略</option>
+                  <option value="fail">失败停止</option>
+                </select>
+              </Field>
+              <Field label="删除策略">
+                <select className="select" value={paramsDraft.deleteStrategy} onChange={(event) => setParamsDraft({ ...paramsDraft, deleteStrategy: event.target.value as SyncStrategy["deleteStrategy"] })}>
+                  <option value="physical">物理删除</option>
+                  <option value="soft_delete">软删除字段更新</option>
+                  <option value="ignore">忽略删除</option>
+                </select>
+              </Field>
+            </div>
+            <div className="mt-4 flex justify-end">
+              <button type="button" onClick={() => void saveRuntimeParams()} disabled={savingParams} className="btn-secondary">
+                {savingParams ? <ArrowsClockwise size={16} /> : <CheckCircle size={16} />}
+                {savingParams ? "保存中" : "保存参数"}
+              </button>
+            </div>
+          </section>
+
+          <section className="rounded-3xl border border-line bg-slate-50/70 p-4">
+            <div className="font-medium text-coal">位点控制</div>
+            <div className="mt-2 text-sm text-slate-500">仅已停止任务允许重置位点。</div>
+            <div className="mt-4 grid gap-4 sm:grid-cols-2">
+              <Field label="Binlog 文件">
+                <input className="input mono" value={positionDraft.binlogFile} onChange={(event) => setPositionDraft({ ...positionDraft, binlogFile: event.target.value })} />
+              </Field>
+              <Field label="Binlog Position">
+                <input className="input mono" type="number" value={positionDraft.binlogPosition} onChange={(event) => setPositionDraft({ ...positionDraft, binlogPosition: Number(event.target.value) })} />
+              </Field>
+            </div>
+            <div className="mt-4 flex justify-end">
+              <button
+                type="button"
+                onClick={() => void resetPosition()}
+                disabled={resettingPosition || task.status !== "stopped"}
+                className="btn-secondary"
+              >
+                {resettingPosition ? <ArrowsClockwise size={16} /> : <ArrowRight size={16} />}
+                {resettingPosition ? "重置中" : "重置位点"}
+              </button>
+            </div>
+          </section>
         </div>
       )}
-      {canManage && (
-        <div className="rounded-3xl border border-line bg-slate-50/70 p-4">
-          <div className="font-medium text-coal">位点控制</div>
-          <div className="mt-2 text-sm text-slate-500">仅已停止任务允许重置位点。</div>
-          <div className="mt-4 grid gap-4 sm:grid-cols-2">
-            <Field label="Binlog 文件">
-              <input className="input mono" value={positionDraft.binlogFile} onChange={(event) => setPositionDraft({ ...positionDraft, binlogFile: event.target.value })} />
-            </Field>
-            <Field label="Binlog Position">
-              <input className="input mono" type="number" value={positionDraft.binlogPosition} onChange={(event) => setPositionDraft({ ...positionDraft, binlogPosition: Number(event.target.value) })} />
-            </Field>
-          </div>
-          <div className="mt-4 flex justify-end">
-            <button
-              type="button"
-              onClick={() => void resetPosition()}
-              disabled={resettingPosition || task.status !== "stopped"}
-              className="btn-secondary"
-            >
-              {resettingPosition ? <ArrowsClockwise size={16} /> : <ArrowRight size={16} />}
-              {resettingPosition ? "重置中" : "重置位点"}
-            </button>
-          </div>
-        </div>
-      )}
-      <div className="rounded-3xl border border-line bg-slate-50/70 p-4">
+
+      <section className="rounded-3xl border border-line bg-slate-50/70 p-4">
         <div className="font-medium text-coal">配置版本</div>
         <div className="mt-3 grid gap-3">
           {revisions.length === 0 ? (
-            <div className="text-sm text-slate-500">当前没有可展示的版本历史。</div>
+            <div className="rounded-2xl border border-dashed border-line bg-white px-4 py-6 text-sm text-slate-500">
+              当前没有可展示的版本历史。
+            </div>
           ) : revisions.map((revision) => (
             <div key={revision.id} className="rounded-2xl border border-line bg-white p-4">
               <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
@@ -3645,12 +3701,15 @@ function SyncTaskDetail({
             </div>
           ))}
         </div>
-      </div>
-      <div className="rounded-3xl border border-line bg-slate-50/70 p-4">
+      </section>
+
+      <section className="rounded-3xl border border-line bg-slate-50/70 p-4">
         <div className="font-medium text-coal">运行轨迹</div>
         <div className="mt-3 grid gap-3">
           {checkpoints.length === 0 ? (
-            <div className="text-sm text-slate-500">当前没有可展示的运行轨迹。</div>
+            <div className="rounded-2xl border border-dashed border-line bg-white px-4 py-6 text-sm text-slate-500">
+              当前没有可展示的运行轨迹。
+            </div>
           ) : checkpoints.map((checkpoint) => (
             <div key={checkpoint.id} className="rounded-2xl border border-line bg-white p-4">
               <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
@@ -3685,54 +3744,62 @@ function SyncTaskDetail({
             </div>
           ))}
         </div>
-      </div>
-      <div className="rounded-3xl border border-line bg-slate-50/70 p-4">
-        <div className="flex items-center justify-between gap-3">
-          <div className="font-medium text-coal">实时日志</div>
-          <Badge tone={remoteManaged ? "yellow" : logConnected ? "green" : "yellow"}>
-            {remoteManaged ? "远程节点" : logConnected ? "实时连接" : "等待连接"}
-          </Badge>
-        </div>
-        <div className="mt-3 rounded-2xl border border-line bg-white">
-          <div className="max-h-[320px] overflow-auto px-4 py-3">
-            {logNotice ? (
-              <div className="text-sm text-slate-500">{logNotice}</div>
-            ) : taskLogs.length === 0 ? (
-              <div className="text-sm text-slate-500">当前还没有任务进程日志。</div>
-            ) : (
-              <div className="grid gap-2">
-                {taskLogs.map((entry) => (
-                  <div key={entry.id} className="rounded-2xl border border-line bg-slate-50/70 px-3 py-3">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Badge tone={taskLogTone(entry.level)}>{entry.level}</Badge>
-                      {entry.phase && <span className="mono text-slate-500">{entry.phase}</span>}
-                      <span className="mono text-slate-400">{formatDateTime(entry.createdAt)}</span>
-                    </div>
-                    <div className="mt-2 break-words text-sm text-coal">{entry.message}</div>
-                  </div>
-                ))}
-              </div>
-            )}
+      </section>
+    </div>
+  );
+}
+
+function TaskLiveLogPanel({
+  className,
+  remoteManaged,
+  logConnected,
+  logNotice,
+  taskLogs,
+  lastLogAt
+}: {
+  className?: string;
+  remoteManaged: boolean;
+  logConnected: boolean;
+  logNotice: string | null;
+  taskLogs: TaskLogEntry[];
+  lastLogAt?: string;
+}) {
+  return (
+    <section className={cx("rounded-[2rem] border border-slate-800 bg-slate-950 p-4 text-slate-100 shadow-panel", className)}>
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <div className="text-sm font-medium text-white">实时日志</div>
+          <div className="mt-1 text-xs text-slate-400">
+            {lastLogAt ? `最近更新 ${formatDateTime(lastLogAt)}` : "任务一旦启动，这里直接滚动显示进程日志。"}
           </div>
         </div>
+        <Badge tone={remoteManaged ? "yellow" : logConnected ? "green" : "neutral"}>
+          {remoteManaged ? "远程节点" : logConnected ? "实时连接" : "等待连接"}
+        </Badge>
       </div>
-      <div className="rounded-3xl border border-line bg-slate-50/70 p-4">
-        <div className="font-medium text-coal">最近异常</div>
-        <div className="mt-3 grid gap-3">
-          {taskErrors.length === 0 ? (
-            <div className="text-sm text-slate-500">当前没有待展示的错误事件。</div>
-          ) : taskErrors.map((item) => (
-            <div key={item.id} className="rounded-2xl border border-line bg-white px-4 py-3">
-              <div className="flex flex-wrap items-center gap-2">
-                <Badge tone="red">{item.eventType.toUpperCase()}</Badge>
-                <span className="font-medium text-coal">{item.sourceTable}</span>
-              </div>
-              <div className="mt-2 text-sm text-slate-500">{item.reason}</div>
+      <div className="mt-4 rounded-[1.5rem] border border-slate-800 bg-slate-900/80">
+        <div className="max-h-[560px] overflow-auto px-4 py-4">
+          {logNotice ? (
+            <div className="text-sm leading-6 text-slate-300">{logNotice}</div>
+          ) : taskLogs.length === 0 ? (
+            <div className="text-sm leading-6 text-slate-300">当前还没有任务进程日志。</div>
+          ) : (
+            <div className="grid gap-3">
+              {taskLogs.map((entry) => (
+                <div key={entry.id} className="rounded-2xl border border-slate-800 bg-slate-950/80 px-3 py-3">
+                  <div className="flex flex-wrap items-center gap-2 text-xs">
+                    <Badge tone={taskLogTone(entry.level)}>{entry.level}</Badge>
+                    {entry.phase && <span className="mono text-slate-400">{entry.phase}</span>}
+                    <span className="mono text-slate-500">{formatDateTime(entry.createdAt)}</span>
+                  </div>
+                  <div className="mt-2 break-words text-sm leading-6 text-slate-100">{entry.message}</div>
+                </div>
+              ))}
             </div>
-          ))}
+          )}
         </div>
       </div>
-    </div>
+    </section>
   );
 }
 
@@ -4135,18 +4202,24 @@ function taskActivityAt(task: SyncTask) {
   return task.runtime?.updatedAt || task.updatedAt;
 }
 
+function buildTaskItems(tasks: SyncTask[]): WorkloadItem[] {
+  return tasks
+    .map((task) => ({
+      id: task.id,
+      key: `sync:${task.id}`,
+      kind: "sync" as const,
+      type: syncTaskTypeText(task),
+      title: task.name,
+      detail: `${task.sourceDatasource?.name || task.sourceDatasourceId} to ${task.targetDatasource?.name || task.targetDatasourceId}`,
+      updatedAt: taskActivityAt(task),
+      statusText: taskStatusText[task.status],
+      rawTask: task
+    }))
+    .sort((left, right) => new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime());
+}
+
 function buildWorkloads(tasks: SyncTask[], capabilityJobs: CapabilityJob[]): WorkloadItem[] {
-  const items: WorkloadItem[] = tasks.map((task) => ({
-    id: task.id,
-    key: `sync:${task.id}`,
-    kind: "sync",
-    type: syncTaskTypeText(task),
-    title: task.name,
-    detail: `${task.sourceDatasource?.name || task.sourceDatasourceId} to ${task.targetDatasource?.name || task.targetDatasourceId}`,
-    updatedAt: taskActivityAt(task),
-    statusText: taskStatusText[task.status],
-    rawTask: task
-  }));
+  const items: WorkloadItem[] = buildTaskItems(tasks);
   capabilityJobs.forEach((job) => {
     items.push({
       id: job.id,
@@ -4173,17 +4246,17 @@ function filteredTypeCounts(items: WorkloadItem[]) {
 }
 
 function pageTitle(page: Page) {
-  if (page === "dashboard") return "工作台";
+  if (page === "dashboard") return "总览";
   if (page === "datasources") return "数据源";
-  if (page === "tasks") return "任务";
+  if (page === "tasks") return "任务中心";
   if (page === "nodes") return "节点";
   return "系统设置";
 }
 
 function pageDescription(page: Page) {
-  if (page === "dashboard") return "聚合当前链路状态，并给出明确的下一步动作。";
+  if (page === "dashboard") return "只看全局状态、阻塞项和下一步去哪个页面处理。";
   if (page === "datasources") return "把连接资产收敛到一个入口，先配置，再测试。";
-  if (page === "tasks") return "用清晰的任务类型承接迁移、同步、校验、订正和结构对比。";
+  if (page === "tasks") return "同步任务是主入口，日志、状态和派生能力都围绕任务展开。";
   if (page === "nodes") return "围绕机器接入、部署、升级和卸载组织节点管理流程。";
   return "保留必要的系统配置、告警规则和审计记录。";
 }
@@ -4230,6 +4303,19 @@ function capabilityJobTone(status: CapabilityJob["status"]) {
   if (status === "completed") return "green";
   if (status === "failed") return "red";
   return "neutral";
+}
+
+function capabilityJobSummaryText(job: CapabilityJob) {
+  if (job.type === "structure") {
+    return `${job.summary.ddlCount} 条 DDL，风险 ${job.summary.riskLevel}`;
+  }
+  if (job.type === "quality" && job.mode === "verify_then_correct") {
+    return `${job.summary.diffRows} 条差异，已订正 ${job.summary.correctedRows} 条`;
+  }
+  if (job.type === "quality") {
+    return `${job.summary.diffRows} 条差异待核验`;
+  }
+  return job.schedule ? `调度 ${job.schedule}` : "订阅变更";
 }
 
 function nodeStatusText(status: ClusterNode["status"]) {
