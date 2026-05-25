@@ -849,6 +849,7 @@ function DatasourcePage({
   const [form, setForm] = useState({ ...emptyDatasourceForm });
   const [submitting, setSubmitting] = useState(false);
   const [testingId, setTestingId] = useState<string | null>(null);
+  const [confirmation, setConfirmation] = useState<ConfirmationDialogState | null>(null);
 
   useEffect(() => {
     if (openCreateToken === 0) return;
@@ -926,12 +927,11 @@ function DatasourcePage({
     }
   };
 
-  const removeDatasource = async (item: Datasource) => {
+  const executeRemoveDatasource = async (item: Datasource) => {
     if (!canManage) {
       pushNotice({ tone: "warning", message: "删除数据源需要管理员权限" });
       return;
     }
-    if (!window.confirm(`确认删除数据源“${item.name}”吗？`)) return;
     try {
       await api.deleteDatasource(item.id);
       pushNotice({ tone: "success", message: "数据源已删除" });
@@ -939,6 +939,18 @@ function DatasourcePage({
     } catch (requestError) {
       pushNotice({ tone: "error", message: requestError instanceof Error ? requestError.message : "删除失败" });
     }
+  };
+
+  const requestRemoveDatasource = (item: Datasource) => {
+    setConfirmation({
+      title: `删除数据源“${item.name}”`,
+      description: "删除后，依赖它的任务配置会失去对应连接。确认继续吗？",
+      confirmLabel: "确认删除",
+      confirmTone: "danger",
+      onConfirm: () => {
+        void executeRemoveDatasource(item);
+      }
+    });
   };
 
   const usageCount = (item: Datasource) => tasks.filter((task) => task.sourceDatasourceId === item.id || task.targetDatasourceId === item.id).length;
@@ -1061,7 +1073,7 @@ function DatasourcePage({
                               label: "删除",
                               danger: true,
                               disabled: !canManage,
-                              onSelect: () => void removeDatasource(item)
+                              onSelect: () => requestRemoveDatasource(item)
                             }
                           ]}
                         />
@@ -1127,6 +1139,20 @@ function DatasourcePage({
           </div>
         </form>
       </Modal>
+
+      <ConfirmDialog
+        open={Boolean(confirmation)}
+        title={confirmation?.title || ""}
+        description={confirmation?.description || ""}
+        confirmLabel={confirmation?.confirmLabel || "确认"}
+        confirmTone={confirmation?.confirmTone}
+        onCancel={() => setConfirmation(null)}
+        onConfirm={() => {
+          const action = confirmation?.onConfirm;
+          setConfirmation(null);
+          action?.();
+        }}
+      />
     </div>
   );
 }
@@ -1153,6 +1179,7 @@ function DatasourceDetailPage({
   const [form, setForm] = useState({ ...emptyDatasourceForm });
   const [submitting, setSubmitting] = useState(false);
   const [testing, setTesting] = useState(false);
+  const [confirmation, setConfirmation] = useState<ConfirmationDialogState | null>(null);
 
   useEffect(() => {
     if (!selected) return;
@@ -1204,9 +1231,8 @@ function DatasourceDetailPage({
     }
   };
 
-  const removeDatasource = async () => {
+  const executeRemoveDatasource = async () => {
     if (!selected || !canManage) return;
-    if (!window.confirm(`确认删除数据源“${selected.name}”吗？`)) return;
     try {
       await api.deleteDatasource(selected.id);
       pushNotice({ tone: "success", message: "数据源已删除" });
@@ -1215,6 +1241,19 @@ function DatasourceDetailPage({
     } catch (requestError) {
       pushNotice({ tone: "error", message: requestError instanceof Error ? requestError.message : "删除失败" });
     }
+  };
+
+  const requestRemoveDatasource = () => {
+    if (!selected) return;
+    setConfirmation({
+      title: `删除数据源“${selected.name}”`,
+      description: "删除后，依赖它的任务配置会失去对应连接。确认继续吗？",
+      confirmLabel: "确认删除",
+      confirmTone: "danger",
+      onConfirm: () => {
+        void executeRemoveDatasource();
+      }
+    });
   };
 
   if (!selected) {
@@ -1244,7 +1283,7 @@ function DatasourceDetailPage({
                   <button onClick={() => setEditorOpen(true)} className="btn-secondary">
                     编辑
                   </button>
-                  <button onClick={() => void removeDatasource()} className="btn-danger">
+                  <button onClick={requestRemoveDatasource} className="btn-danger">
                     删除
                   </button>
                 </>
@@ -1318,6 +1357,20 @@ function DatasourceDetailPage({
           </div>
         </form>
       </Modal>
+
+      <ConfirmDialog
+        open={Boolean(confirmation)}
+        title={confirmation?.title || ""}
+        description={confirmation?.description || ""}
+        confirmLabel={confirmation?.confirmLabel || "确认"}
+        confirmTone={confirmation?.confirmTone}
+        onCancel={() => setConfirmation(null)}
+        onConfirm={() => {
+          const action = confirmation?.onConfirm;
+          setConfirmation(null);
+          action?.();
+        }}
+      />
     </div>
   );
 }
@@ -1355,6 +1408,7 @@ function TasksPage({
   const [showCapabilityJobs, setShowCapabilityJobs] = useState(false);
   const [creatorOpen, setCreatorOpen] = useState(false);
   const [busyKey, setBusyKey] = useState<string | null>(null);
+  const [confirmation, setConfirmation] = useState<ConfirmationDialogState | null>(null);
 
   useEffect(() => {
     if (openCreateToken === 0) return;
@@ -1411,8 +1465,7 @@ function TasksPage({
     }
   };
 
-  const deleteTask = async (task: SyncTask) => {
-    if (!window.confirm(`确认删除任务“${task.name}”吗？`)) return;
+  const executeDeleteTask = async (task: SyncTask) => {
     setBusyKey(`${task.id}:delete`);
     try {
       await api.deleteTask(task.id);
@@ -1423,6 +1476,18 @@ function TasksPage({
     } finally {
       setBusyKey(null);
     }
+  };
+
+  const requestDeleteTask = (task: SyncTask) => {
+    setConfirmation({
+      title: `删除任务“${task.name}”`,
+      description: "删除后，任务配置和运行入口都会一起移除。确认继续吗？",
+      confirmLabel: "确认删除",
+      confirmTone: "danger",
+      onConfirm: () => {
+        void executeDeleteTask(task);
+      }
+    });
   };
 
   const rerunJob = async (job: CapabilityJob) => {
@@ -1581,7 +1646,7 @@ function TasksPage({
                     <ActionMenu
                       items={task ? [
                         { label: "重跑", onSelect: () => void rerunTask(task), disabled: !(task.status === "stopped" || task.status === "failed") },
-                        { label: "删除", onSelect: () => void deleteTask(task), danger: true, disabled: !canManage }
+                        { label: "删除", onSelect: () => requestDeleteTask(task), danger: true, disabled: !canManage }
                       ] : []}
                     />
                   </div>
@@ -1600,6 +1665,20 @@ function TasksPage({
         onClose={() => setCreatorOpen(false)}
         onChanged={onChanged}
         pushNotice={pushNotice}
+      />
+
+      <ConfirmDialog
+        open={Boolean(confirmation)}
+        title={confirmation?.title || ""}
+        description={confirmation?.description || ""}
+        confirmLabel={confirmation?.confirmLabel || "确认"}
+        confirmTone={confirmation?.confirmTone}
+        onCancel={() => setConfirmation(null)}
+        onConfirm={() => {
+          const action = confirmation?.onConfirm;
+          setConfirmation(null);
+          action?.();
+        }}
       />
     </div>
   );
@@ -2439,6 +2518,7 @@ function SettingsPage({
     errorThreshold: 1,
     webhookUrl: ""
   });
+  const [confirmation, setConfirmation] = useState<ConfirmationDialogState | null>(null);
 
   useEffect(() => {
     if (!editing) {
@@ -2483,13 +2563,12 @@ function SettingsPage({
     }
   };
 
-  const removeRule = async () => {
+  const executeRemoveRule = async () => {
     if (!editing) return;
     if (!canManage) {
       pushNotice({ tone: "warning", message: "删除告警规则需要管理员权限" });
       return;
     }
-    if (!window.confirm(`确认删除规则“${editing.name}”吗？`)) return;
     try {
       await api.deleteAlertRule(editing.id);
       setEditingId(null);
@@ -2498,6 +2577,19 @@ function SettingsPage({
     } catch (requestError) {
       pushNotice({ tone: "error", message: requestError instanceof Error ? requestError.message : "删除失败" });
     }
+  };
+
+  const requestRemoveRule = () => {
+    if (!editing) return;
+    setConfirmation({
+      title: `删除规则“${editing.name}”`,
+      description: "删除后，这条告警规则和它的编辑入口会一起移除。确认继续吗？",
+      confirmLabel: "确认删除",
+      confirmTone: "danger",
+      onConfirm: () => {
+        void executeRemoveRule();
+      }
+    });
   };
 
   return (
@@ -2602,7 +2694,7 @@ function SettingsPage({
               </label>
               <div className="flex flex-wrap justify-end gap-3 pt-2">
                 {editing && (
-                  <button type="button" onClick={removeRule} disabled={!canManage} className="btn-danger">
+                  <button type="button" onClick={requestRemoveRule} disabled={!canManage} className="btn-danger">
                     <Trash size={16} />
                     删除
                   </button>
@@ -2633,6 +2725,20 @@ function SettingsPage({
             </div>
           </div>
         </div>
+
+        <ConfirmDialog
+          open={Boolean(confirmation)}
+          title={confirmation?.title || ""}
+          description={confirmation?.description || ""}
+          confirmLabel={confirmation?.confirmLabel || "确认"}
+          confirmTone={confirmation?.confirmTone}
+          onCancel={() => setConfirmation(null)}
+          onConfirm={() => {
+            const action = confirmation?.onConfirm;
+            setConfirmation(null);
+            action?.();
+          }}
+        />
       </section>
     </div>
   );
