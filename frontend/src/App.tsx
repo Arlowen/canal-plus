@@ -705,10 +705,7 @@ function DashboardPage({
     <div className="space-y-5">
       <div className="grid gap-5 xl:grid-cols-[1.08fr_0.92fr]">
         <section className="surface p-6">
-          <SectionHeader
-            title="当前阻塞"
-            description="只保留需要立刻处理的事项。"
-          />
+          <SectionHeader title="当前阻塞" />
           <div className="mt-5 grid gap-3">
             {overviewActions.map((item) => (
               <NextStepCard
@@ -723,7 +720,7 @@ function DashboardPage({
         </section>
 
         <section className="surface p-6">
-          <SectionHeader title="资源准备度" description="看链路是否具备开工条件。" />
+          <SectionHeader title="资源准备度" />
           <div className="mt-5 grid gap-3 sm:grid-cols-2">
             <MetricMini label="数据源就绪" value={`${readyDatasources}/${datasources.length || 0}`} />
             <MetricMini label="在线节点" value={`${onlineNodes}/${totalNodes}`} />
@@ -742,18 +739,12 @@ function DashboardPage({
       </div>
 
       <section className="surface p-6">
-        <SectionHeader title="需要关注的任务" description="只点出异常、待接管和高延迟任务。" />
+        <SectionHeader title="需要关注的任务" />
         {attentionTasks.length === 0 ? (
           <EmptyPanel
             icon={ShieldCheck}
             title="当前没有高优先级风险任务"
             description="直接进入任务中心继续处理即可。"
-            action={
-              <button onClick={onOpenTasks} className="btn-primary">
-                <FlowArrow size={16} />
-                进入任务中心
-              </button>
-            }
           />
         ) : (
           <div className="mt-5 grid gap-3">
@@ -975,12 +966,7 @@ function DatasourcePage({
             icon={Database}
             title="暂无数据源"
             description="先补齐源端和目标端。"
-            action={canManage ? (
-              <button onClick={openCreate} className="btn-primary">
-                <Plus size={16} />
-                添加数据源
-              </button>
-            ) : <PermissionNotice compact description="当前角色可查看和测试连接；新增数据源需要管理员权限。" />}
+            action={!canManage ? <PermissionNotice compact description="当前角色可查看和测试连接；新增数据源需要管理员权限。" /> : undefined}
           />
         ) : (
           <div className="table-shell mt-5">
@@ -1051,7 +1037,7 @@ function DatasourcePage({
 
       <div className="space-y-5">
         <section className="surface p-6">
-          <SectionHeader title="当前数据源" description="状态与范围。" />
+          <SectionHeader title="当前数据源" />
           {selected ? (
             <div className="mt-5 grid gap-3">
               <DetailCard label="名称" value={selected.name} />
@@ -1409,12 +1395,7 @@ function TasksPage({
             icon={ClipboardText}
             title="暂无任务"
             description="创建一条任务开始使用。"
-            action={canManage ? (
-              <button onClick={() => setCreatorOpen(true)} className="btn-primary">
-                <Plus size={16} />
-                创建任务
-              </button>
-            ) : <PermissionNotice compact description="当前角色可查看任务运行态；新增任务需要管理员权限。" />}
+            action={!canManage ? <PermissionNotice compact description="当前角色可查看任务运行态；新增任务需要管理员权限。" /> : undefined}
           />
         ) : (
           <div className="mt-5 divide-y divide-line overflow-hidden rounded-3xl border border-line bg-white">
@@ -1488,7 +1469,7 @@ function TasksPage({
 
       <div className="space-y-5">
         <section className="surface p-6">
-          <SectionHeader title={selected?.rawJob ? "扩展任务详情" : "任务详情"} description="日志在前，其余信息收后。" />
+          <SectionHeader title={selected?.rawJob ? "扩展任务详情" : "任务详情"} />
           {!selected ? (
             <div className="mt-5 text-sm text-slate-500">选择一条任务查看详情。</div>
           ) : selected.rawTask ? (
@@ -1858,12 +1839,7 @@ function NodesPage({
             icon={HardDrives}
             title="暂无节点"
             description="先补一台可用节点。"
-            action={canManage ? (
-              <button onClick={() => setCreatorOpen(true)} className="btn-primary">
-                <Plus size={16} />
-                添加节点
-              </button>
-            ) : <PermissionNotice compact description="当前角色可查看节点状态；部署、升级、卸载节点需要管理员权限。" />}
+            action={!canManage ? <PermissionNotice compact description="当前角色可查看节点状态；部署、升级、卸载节点需要管理员权限。" /> : undefined}
           />
         ) : (
           <div className="mt-5 grid gap-4">
@@ -1908,7 +1884,7 @@ function NodesPage({
 
       <div className="space-y-5">
         <section className="surface p-6">
-          <SectionHeader title="节点详情" description="版本、连接与承载任务。" />
+          <SectionHeader title="节点详情" />
           {selected ? (
             <div className="mt-5 space-y-4">
               <div className="flex flex-wrap items-center gap-2">
@@ -1985,7 +1961,7 @@ function NodesPage({
         </section>
         {selected && awaitingTasks.length > 0 && (
           <section className="surface p-6">
-            <SectionHeader title="待接管任务" description="等待重新接管的任务。" />
+            <SectionHeader title="待接管任务" />
             <div className="mt-4 grid gap-3">
               {awaitingTasks.slice(0, 6).map((task) => (
                 <div key={task.id} className="rounded-2xl border border-line bg-white px-4 py-4">
@@ -2009,7 +1985,7 @@ function NodesPage({
         )}
         {selected && nodeEvents.length > 0 && (
           <section className="surface p-6">
-            <SectionHeader title="最近运维事件" description="当前节点相关操作。" />
+            <SectionHeader title="最近运维事件" />
             <div className="mt-4 grid gap-3">
               {nodeEvents.map((log) => (
                 <div key={log.id} className="rounded-2xl border border-line bg-white px-4 py-4">
@@ -2304,7 +2280,7 @@ function SettingsPage({
     <div className="grid gap-5 xl:grid-cols-[0.98fr_1.02fr]">
       <div className="space-y-5">
         <section className="surface p-6">
-          <SectionHeader title="部署配置" description="节点、端口和巡检参数。" />
+          <SectionHeader title="部署配置" />
           <div className="mt-5 grid gap-3">
             <DetailCard label="当前节点" value={runtimeConfig?.localNodeId || "-"} mono />
             <DetailCard label="后端端口" value={runtimeConfig?.backendPort || "-"} mono />
@@ -2318,7 +2294,7 @@ function SettingsPage({
         </section>
 
         <section className="surface p-6">
-          <SectionHeader title="最近操作" description="关键审计记录。" />
+          <SectionHeader title="最近操作" />
           <div className="mt-5 grid gap-3">
             {logs.slice(0, 4).map((log) => (
               <div key={log.id} className="rounded-2xl border border-line bg-slate-50/70 p-4">
@@ -2337,7 +2313,6 @@ function SettingsPage({
       <section className="surface p-6">
         <SectionHeader
           title="告警规则"
-          description="规则与事件。"
           action={canManage ? (
             <button onClick={() => setEditingId(null)} className="btn-secondary">
               <Plus size={16} />
