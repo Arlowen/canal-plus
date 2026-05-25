@@ -75,7 +75,7 @@ npm run dev
 
 启动后访问：
 
-- Frontend: [http://localhost:5173](http://localhost:5173)
+- Frontend: [http://localhost:8999](http://localhost:8999)
 - Backend health: [http://localhost:4100/api/health](http://localhost:4100/api/health)
 
 ## 环境变量
@@ -89,7 +89,7 @@ cp backend/.env.example backend/.env
 常用变量：
 
 - `PORT`: 后端端口，默认 `4100`
-- `FRONTEND_ORIGIN`: 允许跨域的前端地址，默认 `http://localhost:5173`
+- `FRONTEND_ORIGIN`: 允许跨域的前端地址，默认 `http://localhost:8999`
 - `CANAL_PLUS_SECRET`: 数据源密码加密密钥
 - `CANAL_PLUS_DATA_FILE`: 元数据与运行态文件路径
 - `CANAL_PLUS_NODE_ID`: 当前控制节点 ID。未设置时会自动选择一个在线节点作为当前节点

@@ -61,7 +61,7 @@ func NewServer() (*Server, error) {
 
 	frontendOrigin := os.Getenv("FRONTEND_ORIGIN")
 	if frontendOrigin == "" {
-		frontendOrigin = "http://localhost:5173"
+		frontendOrigin = "http://localhost:8999"
 	}
 	allowedOrigins := map[string]struct{}{}
 	frontendOrigins := []string{}
