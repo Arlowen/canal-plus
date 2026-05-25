@@ -2629,11 +2629,6 @@ function LoginScreen({ onLogin }: { onLogin: (username: string, password: string
           <p className="mt-4 max-w-2xl text-base leading-7 text-slate-500">
             面向数据迁移、同步、校验、订正和结构对比的分布式任务平台。入口更少，流程更清晰，适合开发者和数据工程师直接上手。
           </p>
-          <div className="mt-8 grid gap-3 sm:grid-cols-3">
-            <MetricMini label="任务类型" value="5" />
-            <MetricMini label="主路径" value="7 步" />
-            <MetricMini label="节点运维" value="页面化" />
-          </div>
         </section>
 
         <form onSubmit={submit} className="surface p-6 md:p-8">
