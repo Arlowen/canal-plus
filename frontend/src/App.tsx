@@ -780,7 +780,7 @@ function App() {
               <NoticeBanner
                 tone="warning"
                 action={(
-                  <Button onClick={() => void retryServiceConnection()} disabled={serviceRecoveryPending} className="btn-secondary px-3 py-2 text-xs">
+                  <Button onClick={() => void retryServiceConnection()} disabled={serviceRecoveryPending} className="btn-compact">
                     <ArrowsClockwise size={14} />
                     {serviceRecoveryPending ? "重试中" : "重试连接"}
                   </Button>
@@ -952,7 +952,7 @@ function DashboardPage({
   if (datasources.length < 2) {
     overviewActions.push({
       title: "先补齐数据源",
-      description: "至少保留一个源端和一个目标端。",
+      description: "补齐源端、目标端",
       actionLabel: "管理数据源",
       onClick: onCreateDatasource
     });
@@ -960,7 +960,7 @@ function DashboardPage({
   if (onlineNodes === 0) {
     overviewActions.push({
       title: "当前没有在线节点",
-      description: "先恢复节点在线状态和容量。",
+      description: "先恢复节点",
       actionLabel: "查看节点",
       onClick: onOpenNodes
     });
@@ -968,7 +968,7 @@ function DashboardPage({
   if (awaitingTasks > 0) {
     overviewActions.push({
       title: "存在待接管任务",
-      description: `当前有 ${awaitingTasks} 条任务没有执行节点。`,
+      description: `${awaitingTasks} 条待接管`,
       actionLabel: "进入任务中心",
       onClick: onOpenTasks
     });
@@ -976,7 +976,7 @@ function DashboardPage({
   if (failedTasks + pendingErrors > 0) {
     overviewActions.push({
       title: "异常需要处理",
-      description: `${failedTasks} 条任务异常，${pendingErrors} 条错误待处理。`,
+      description: `${failedTasks} 异常 · ${pendingErrors} 错误`,
       actionLabel: "查看任务",
       onClick: onOpenTasks
     });
@@ -985,8 +985,8 @@ function DashboardPage({
     overviewActions.push({
       title: hasCreatedTasks ? "主链路稳定" : "可以开始建第一条链路",
       description: hasCreatedTasks
-        ? "直接进入任务中心继续处理。"
-        : "先补齐数据源和节点。",
+        ? "继续处理"
+        : "先补资源",
       actionLabel: hasCreatedTasks ? "进入任务中心" : "创建任务",
       onClick: hasCreatedTasks ? onOpenTasks : onCreateTask
     });
@@ -1019,12 +1019,12 @@ function DashboardPage({
             <MetricMini label="待接管" value={`${awaitingTasks}`} />
           </div>
           <div className="mt-4 rounded-2xl border border-line bg-slate-50/70 px-4 py-4 text-sm text-slate-500">
-            当前控制节点：<span className="font-medium text-coal">{localNodeLabel}</span>
+            控制节点：<span className="font-medium text-coal">{localNodeLabel}</span>
           </div>
           <div className="mt-3 rounded-2xl border border-line bg-white px-4 py-4 text-sm text-slate-500">
             {remoteHostedTasks > 0
-              ? `当前有 ${remoteHostedTasks} 条任务由远程节点托管，任务详情中会明确标出日志是否能在当前节点直接查看。`
-              : "当前没有远程托管任务，任务日志默认在任务详情顶部直接查看。"}
+              ? `远程托管 ${remoteHostedTasks} 条`
+              : "无远程托管"}
           </div>
         </section>
       </div>
@@ -1034,13 +1034,13 @@ function DashboardPage({
         {attentionTasks.length === 0 ? (
           <EmptyPanel
             icon={ShieldCheck}
-            title="当前没有高优先级风险任务"
-            description="直接进入任务中心继续处理即可。"
+            title="暂无高优先级任务"
+            description="继续处理"
           />
         ) : (
           <div className="mt-5 grid gap-3">
             {attentionTasks.map((task) => (
-              <Button key={task.id} onClick={() => onOpenTask(task.id)} className="rounded-3xl border border-line bg-white px-5 py-4 text-left transition hover:border-blue-200 hover:bg-blue-50/40">
+              <Button key={task.id} onClick={() => onOpenTask(task.id)} className="item-button">
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="font-medium text-coal">{task.name}</span>
                   <StatusBadge status={task.status} />
@@ -1251,8 +1251,8 @@ function DatasourcePage({
           <EmptyPanel
             icon={Database}
             title="暂无数据源"
-            description="先补齐源端和目标端。"
-            action={!canManage ? <PermissionNotice compact description="当前角色可查看和测试连接；新增数据源需要管理员权限。" /> : undefined}
+            description="先补齐"
+            action={!canManage ? <PermissionNotice compact description="仅管理员可新增数据源。" /> : undefined}
           />
         ) : (
           <div className="table-shell mt-5">
@@ -1291,7 +1291,7 @@ function DatasourcePage({
                         <Button
                           onClick={() => void testConnection(item)}
                           disabled={testingId === item.id}
-                          className="btn-secondary px-3 py-2 text-xs"
+                          className="btn-compact"
                         >
                           {testingId === item.id ? <ArrowsClockwise size={14} /> : <ShieldCheck size={14} />}
                           {testingId === item.id ? "测试中" : "测试连接"}
@@ -1805,8 +1805,8 @@ function TasksPage({
           <EmptyPanel
             icon={ClipboardText}
             title="暂无任务"
-            description="创建一条任务开始使用。"
-            action={!canManage ? <PermissionNotice compact description="当前角色可查看任务运行态；新增任务需要管理员权限。" /> : undefined}
+            description="先创建"
+            action={!canManage ? <PermissionNotice compact description="仅管理员可新增任务。" /> : undefined}
           />
         ) : (
           <div className="mt-5 divide-y divide-line overflow-hidden rounded-3xl border border-line bg-white">
@@ -1857,7 +1857,7 @@ function TasksPage({
                       <Button
                         onClick={() => void runTaskAction(task, primaryAction)}
                         disabled={busyKey === `${task.id}:${primaryAction}`}
-                        className="btn-secondary px-3 py-2 text-xs"
+                        className="btn-compact"
                       >
                         {primaryAction === "start" || primaryAction === "resume" ? <Play size={14} /> : primaryAction === "pause" ? <Pause size={14} /> : <Stop size={14} />}
                         {taskActionLabel(primaryAction)}
@@ -1867,7 +1867,7 @@ function TasksPage({
                       <Button
                         onClick={() => void rerunJob(job)}
                         disabled={job.status === "running" || busyKey === `${job.id}:job`}
-                        className="btn-secondary px-3 py-2 text-xs"
+                        className="btn-compact"
                       >
                         <Play size={14} />
                         {job.status === "running" ? "运行中" : "重跑"}
@@ -2294,11 +2294,11 @@ function NodesPage({
 
   return (
     <div className="space-y-5">
-      <section className="surface min-w-0 p-6">
-        <SectionHeader
-          title="节点列表"
-          description={localNodeName ? `当前控制节点：${localNodeName}` : "部署与运维入口。"}
-          action={canManage ? (
+        <section className="surface min-w-0 p-6">
+          <SectionHeader
+            title="节点列表"
+            description={localNodeName ? `控制节点：${localNodeName}` : "部署与运维。"}
+            action={canManage ? (
             <Button onClick={requestRebalanceCluster} disabled={busyKey === "rebalance"} className="btn-secondary">
               <ArrowsClockwise size={16} />
               {busyKey === "rebalance" ? "均衡中" : "重新均衡"}
@@ -2344,8 +2344,8 @@ function NodesPage({
           <EmptyPanel
             icon={HardDrives}
             title="暂无节点"
-            description="先补一台可用节点。"
-            action={!canManage ? <PermissionNotice compact description="当前角色可查看节点状态；部署、升级、卸载节点需要管理员权限。" /> : undefined}
+            description="先补节点"
+            action={!canManage ? <PermissionNotice compact description="仅管理员可管节点。" /> : undefined}
           />
         ) : (
           <div className="mt-5 grid gap-4">
@@ -2663,7 +2663,7 @@ function NodeDetailPage({
                   {(task.sourceDatasource?.name || task.sourceDatasourceId)} to {(task.targetDatasource?.name || task.targetDatasourceId)}
                 </div>
                 <div className="mt-3 flex justify-end">
-                  <Button type="button" onClick={() => onOpenTask(task.id)} className="btn-secondary px-3 py-2 text-xs">
+                  <Button type="button" onClick={() => onOpenTask(task.id)} className="btn-compact">
                     查看任务
                   </Button>
                 </div>
@@ -2687,7 +2687,7 @@ function NodeDetailPage({
                   {(task.sourceDatasource?.name || task.sourceDatasourceId)} to {(task.targetDatasource?.name || task.targetDatasourceId)}
                 </div>
                 <div className="mt-3 flex justify-end">
-                  <Button type="button" onClick={() => onOpenTask(task.id)} className="btn-secondary px-3 py-2 text-xs">
+                  <Button type="button" onClick={() => onOpenTask(task.id)} className="btn-compact">
                     查看任务
                   </Button>
                 </div>
@@ -4362,7 +4362,7 @@ function SyncTaskDetail({
                             type="button"
                             onClick={() => onRunJob(job)}
                             disabled={job.status === "running" || busyActionKey === `${job.id}:job`}
-                            className="btn-secondary px-3 py-2 text-xs"
+                            className="btn-compact"
                           >
                             <Play size={14} />
                             {job.status === "running" ? "运行中" : "重跑"}
@@ -4511,7 +4511,7 @@ function SyncTaskDetail({
                       type="button"
                       onClick={() => requestRollbackRevision(revision.version)}
                       disabled={rollingBackVersion === revision.version}
-                      className="btn-secondary px-3 py-2 text-xs"
+                      className="btn-compact"
                     >
                       {rollingBackVersion === revision.version ? <ArrowsClockwise size={14} /> : <ArrowRight size={14} />}
                       {rollingBackVersion === revision.version ? "回滚中" : "回滚到此版本"}
@@ -4652,7 +4652,7 @@ function TaskLiveLogPanel({
       </div>
       {showJumpToLatest && (
         <div className="mt-3 flex justify-end">
-          <Button type="button" onClick={jumpToLatest} className="btn-secondary px-3 py-2 text-xs">
+          <Button type="button" onClick={jumpToLatest} className="btn-compact">
             <ArrowRight size={14} />
             回到最新日志
           </Button>
@@ -4795,7 +4795,7 @@ function DetailPageHeader({
   return (
     <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
       <div>
-        <Button type="button" onClick={onBack} className="btn-secondary px-3 py-2 text-xs">
+        <Button type="button" onClick={onBack} className="btn-compact">
           <ArrowRight size={14} className="rotate-180" />
           返回列表
         </Button>
@@ -4900,7 +4900,7 @@ function BackendUnavailableScreen({
           <div className="mt-4 text-6xl font-semibold tracking-tight text-coal md:text-7xl">500</div>
           <h1 className="mt-4 text-2xl font-semibold tracking-tight text-coal md:text-3xl">后端服务暂时不可用</h1>
           <p className="mx-auto mt-4 max-w-2xl text-sm leading-7 text-slate-500 md:text-base">
-            当前无法连接 Canal Plus API。请确认后端服务已经启动，或等待服务恢复后重试。
+            API 未响应。确认后端后重试。
           </p>
           <div className="mt-8 flex justify-center">
             <Button onClick={() => void onRetry()} disabled={retrying} className="btn-primary min-w-40 justify-center">
@@ -5072,7 +5072,7 @@ function Modal({
             <h3 id={titleId} className="text-2xl font-semibold tracking-tight text-coal">{title}</h3>
             {description && <p id={descriptionId} className="mt-2 text-sm text-slate-500">{description}</p>}
           </div>
-          <Button onClick={onClose} className="btn-secondary px-3 py-2 text-xs">
+          <Button onClick={onClose} className="btn-compact">
             关闭
           </Button>
         </div>
@@ -5177,7 +5177,7 @@ function ActionMenu({
             window.requestAnimationFrame(() => focusMenuItem(0));
           }
         }}
-        className="btn-secondary px-3 py-2 text-xs"
+        className="btn-compact"
       >
         <DotsThree size={14} />
         更多
@@ -5369,15 +5369,15 @@ function pageTitle(page: Page) {
 }
 
 function pageDescription(page: Page) {
-  if (page === "dashboard") return "只看状态、阻塞和下一步。";
-  if (page === "datasources") return "统一管理连接与测试。";
-  if (page === "tasks") return "统一处理任务、日志和异常。";
-  if (page === "nodes") return "统一处理节点接入与运维。";
-  if (page === "datasourceDetail") return "单独查看数据源详情与操作。";
-  if (page === "taskDetail") return "单独查看任务运行与配置。";
-  if (page === "capabilityJobDetail") return "单独查看扩展任务执行结果。";
-  if (page === "nodeDetail") return "单独查看节点详情与相关任务。";
-  return "只保留配置、告警和审计。";
+  if (page === "dashboard") return "状态与阻塞。";
+  if (page === "datasources") return "连接与测试。";
+  if (page === "tasks") return "任务与日志。";
+  if (page === "nodes") return "节点与运维。";
+  if (page === "datasourceDetail") return "数据源详情。";
+  if (page === "taskDetail") return "任务详情。";
+  if (page === "capabilityJobDetail") return "扩展任务详情。";
+  if (page === "nodeDetail") return "节点详情。";
+  return "配置与告警。";
 }
 
 function purposeText(value: DatasourcePurpose) {
