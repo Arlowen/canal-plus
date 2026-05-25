@@ -32,7 +32,7 @@ func NewServer() (*Server, error) {
 	}
 	dataFile := os.Getenv("CANAL_PLUS_DATA_FILE")
 	if dataFile == "" {
-		dataFile = "./data/store.json"
+		dataFile = defaultDataFilePath
 	}
 	store, err := NewStore(dataFile)
 	if err != nil {
@@ -73,6 +73,13 @@ func NewServer() (*Server, error) {
 		}
 	}
 
+	storageBackend := store.StorageBackend()
+	storageLocation := store.StorageLocation()
+	runtimeDataFile := ""
+	if storageBackend == "file" {
+		runtimeDataFile = storageLocation
+	}
+
 	server := &Server{
 		store:           store,
 		taskLogs:        taskLogs,
@@ -85,7 +92,9 @@ func NewServer() (*Server, error) {
 		runtimeConfig: RuntimeConfig{
 			BackendPort:                          port,
 			FrontendOrigins:                      frontendOrigins,
-			DataFile:                             dataFile,
+			StorageBackend:                       storageBackend,
+			StorageLocation:                      storageLocation,
+			DataFile:                             runtimeDataFile,
 			LocalNodeID:                          localNodeID,
 			ClusterSupervisorEnabled:             clusterSupervisorEnabled,
 			ClusterSupervisorIntervalSeconds:     int(clusterSupervisorInterval.Seconds()),

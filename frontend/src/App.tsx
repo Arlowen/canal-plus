@@ -2368,7 +2368,8 @@ function SettingsPage({
             <DetailCard label="当前节点" value={runtimeConfig?.localNodeId || "-"} mono />
             <DetailCard label="后端端口" value={runtimeConfig?.backendPort || "-"} mono />
             <DetailCard label="前端来源" value={runtimeConfig?.frontendOrigins.join(", ") || "-"} />
-            <DetailCard label="数据文件" value={runtimeConfig?.dataFile || "-"} mono />
+            <DetailCard label="存储后端" value={runtimeConfig?.storageBackend || "-"} mono />
+            <DetailCard label="存储位置" value={runtimeConfig?.storageLocation || runtimeConfig?.dataFile || "-"} mono />
             <DetailCard label="集群巡检" value={runtimeConfig ? `${runtimeConfig.clusterSupervisorEnabled ? "开启" : "关闭"} · ${runtimeConfig.clusterSupervisorIntervalSeconds}s` : "-"} />
             <DetailCard label="节点心跳" value={runtimeConfig ? `${runtimeConfig.embeddedHeartbeatEnabled ? "开启" : "关闭"} · ${runtimeConfig.embeddedHeartbeatIntervalSeconds}s` : "-"} />
             <DetailCard label="进程协调" value={runtimeConfig ? `${runtimeConfig.taskProcessSupervisorIntervalSeconds}s` : "-"} />

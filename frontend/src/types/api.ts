@@ -429,7 +429,9 @@ export interface DashboardSummary {
 export interface RuntimeConfig {
   backendPort: string;
   frontendOrigins: string[];
-  dataFile: string;
+  storageBackend: string;
+  storageLocation: string;
+  dataFile?: string;
   localNodeId: string;
   clusterSupervisorEnabled: boolean;
   clusterSupervisorIntervalSeconds: number;

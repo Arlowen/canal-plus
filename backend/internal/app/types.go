@@ -735,7 +735,9 @@ type DashboardSummary struct {
 type RuntimeConfig struct {
 	BackendPort                          string   `json:"backendPort"`
 	FrontendOrigins                      []string `json:"frontendOrigins"`
-	DataFile                             string   `json:"dataFile"`
+	StorageBackend                       string   `json:"storageBackend"`
+	StorageLocation                      string   `json:"storageLocation"`
+	DataFile                             string   `json:"dataFile,omitempty"`
 	LocalNodeID                          string   `json:"localNodeId"`
 	ClusterSupervisorEnabled             bool     `json:"clusterSupervisorEnabled"`
 	ClusterSupervisorIntervalSeconds     int      `json:"clusterSupervisorIntervalSeconds"`

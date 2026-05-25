@@ -1,11 +1,8 @@
 package app
 
 import (
-	"encoding/json"
 	"errors"
 	"math/rand"
-	"os"
-	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -14,28 +11,32 @@ import (
 )
 
 type Store struct {
-	path string
-	mu   sync.Mutex
-	data DatabaseShape
+	persistence storePersistence
+	mu          sync.Mutex
+	data        DatabaseShape
 }
 
 func NewStore(path string) (*Store, error) {
-	if path == "" {
-		path = "./data/store.json"
-	}
-	if err := ensureParentDir(path); err != nil {
+	persistence, err := newStorePersistence(path)
+	if err != nil {
 		return nil, err
 	}
 
-	store := &Store{path: path}
-	if _, err := os.Stat(path); err == nil {
-		bytes, err := os.ReadFile(path)
-		if err != nil {
-			return nil, err
+	store := &Store{persistence: persistence}
+	data, found, err := persistence.Load()
+	if err != nil {
+		return nil, err
+	}
+	if !found && persistence.Backend() == "mysql" {
+		if fileData, fileFound, fileErr := newFileStorePersistence(path).Load(); fileErr != nil {
+			return nil, fileErr
+		} else if fileFound {
+			data = fileData
+			found = true
 		}
-		if err := json.Unmarshal(bytes, &store.data); err != nil {
-			return nil, err
-		}
+	}
+	if found {
+		store.data = data
 		store.ensureUsersLocked()
 		store.ensureClusterLocked()
 		store.ensureTaskRevisionsLocked()
@@ -63,6 +64,14 @@ func NewStore(path string) (*Store, error) {
 		return nil, err
 	}
 	return store, nil
+}
+
+func (s *Store) StorageBackend() string {
+	return s.persistence.Backend()
+}
+
+func (s *Store) StorageLocation() string {
+	return s.persistence.Location()
 }
 
 func (s *Store) ensureUsersLocked() {
@@ -3428,16 +3437,5 @@ func (s *Store) logLocked(actor string, action string, targetType string, target
 }
 
 func (s *Store) saveLocked() error {
-	if err := ensureParentDir(s.path); err != nil {
-		return err
-	}
-	bytes, err := json.MarshalIndent(s.data, "", "  ")
-	if err != nil {
-		return err
-	}
-	tempPath := filepath.Join(filepath.Dir(s.path), "."+filepath.Base(s.path)+".tmp")
-	if err := os.WriteFile(tempPath, append(bytes, '\n'), 0o644); err != nil {
-		return err
-	}
-	return os.Rename(tempPath, s.path)
+	return s.persistence.Save(s.data)
 }
