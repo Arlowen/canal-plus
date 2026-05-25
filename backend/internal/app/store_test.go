@@ -9,7 +9,8 @@ import (
 func newTestStore(t *testing.T) *Store {
 	t.Helper()
 	t.Setenv(metadataDSNEnv, "")
-	t.Setenv(metadataTableEnv, "")
+	t.Setenv(metadataTablePrefixEnv, "")
+	t.Setenv(legacyMetadataTableEnv, "")
 	store, err := NewStore(filepath.Join(t.TempDir(), "store.json"))
 	if err != nil {
 		t.Fatalf("NewStore() error = %v", err)

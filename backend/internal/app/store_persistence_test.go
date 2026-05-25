@@ -10,7 +10,8 @@ import (
 
 func TestNewStoreUsesFilePersistenceByDefault(t *testing.T) {
 	t.Setenv(metadataDSNEnv, "")
-	t.Setenv(metadataTableEnv, "")
+	t.Setenv(metadataTablePrefixEnv, "")
+	t.Setenv(legacyMetadataTableEnv, "")
 
 	store, err := NewStore(filepath.Join(t.TempDir(), "store.json"))
 	if err != nil {
@@ -25,16 +26,16 @@ func TestNewStoreUsesFilePersistenceByDefault(t *testing.T) {
 	}
 }
 
-func TestNewStorePersistenceRejectsInvalidMySQLTableName(t *testing.T) {
+func TestNewStorePersistenceRejectsInvalidMySQLTablePrefix(t *testing.T) {
 	t.Setenv(metadataDSNEnv, "root:secret@tcp(127.0.0.1:3306)/canal_plus?parseTime=true")
-	t.Setenv(metadataTableEnv, "bad-table-name")
+	t.Setenv(metadataTablePrefixEnv, "bad-table-name")
 
 	_, err := newStorePersistence("")
 	if err == nil {
-		t.Fatal("expected invalid metadata table name error")
+		t.Fatal("expected invalid metadata table prefix error")
 	}
-	if !strings.Contains(err.Error(), metadataTableEnv) {
-		t.Fatalf("expected error to mention %s, got %v", metadataTableEnv, err)
+	if !strings.Contains(err.Error(), metadataTablePrefixEnv) {
+		t.Fatalf("expected error to mention %s, got %v", metadataTablePrefixEnv, err)
 	}
 }
 
@@ -44,11 +45,11 @@ func TestFormatMetadataLocationRedactsCredentials(t *testing.T) {
 		t.Fatalf("ParseDSN() error = %v", err)
 	}
 
-	location := formatMetadataLocation(config, "canal_plus_metadata")
+	location := formatMetadataLocation(config, "canal_plus")
 	if strings.Contains(location, "root") || strings.Contains(location, "secret") {
 		t.Fatalf("formatMetadataLocation leaked credentials: %q", location)
 	}
-	if location != "mysql://mysql.internal:3307/canal_plus#canal_plus_metadata" {
+	if location != "mysql://mysql.internal:3307/canal_plus#canal_plus_*" {
 		t.Fatalf("formatMetadataLocation() = %q", location)
 	}
 }

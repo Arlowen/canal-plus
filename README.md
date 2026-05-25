@@ -106,7 +106,7 @@ cp backend/.env.example backend/.env
 - `CANAL_PLUS_SECRET`: 数据源密码加密密钥
 - `CANAL_PLUS_DATA_FILE`: 未启用 MySQL 元数据存储时，本地元数据与运行态文件路径，默认 `./data/store.json`
 - `CANAL_PLUS_METADATA_DSN`: 元数据 MySQL DSN。设置后，后端会把元数据和运行态持久化到 MySQL，而不是 `store.json`
-- `CANAL_PLUS_METADATA_TABLE`: 元数据表名，默认 `canal_plus_metadata`
+- `CANAL_PLUS_METADATA_TABLE_PREFIX`: ORM 表前缀，默认 `canal_plus`，会生成如 `canal_plus_users`、`canal_plus_sync_tasks` 的实体表
 - `CANAL_PLUS_NODE_ID`: 当前控制节点 ID。未设置时会自动选择一个在线节点作为当前节点
 - `CANAL_PLUS_CLUSTER_SUPERVISOR`: 集群巡检开关，默认开启
 - `CANAL_PLUS_CLUSTER_SUPERVISOR_INTERVAL_SECONDS`: 集群巡检间隔秒
@@ -122,10 +122,10 @@ cp backend/.env.example backend/.env
 
 ```env
 CANAL_PLUS_METADATA_DSN=root:password@tcp(127.0.0.1:3306)/canal_plus?parseTime=true
-CANAL_PLUS_METADATA_TABLE=canal_plus_metadata
+CANAL_PLUS_METADATA_TABLE_PREFIX=canal_plus
 ```
 
-首次切换到 MySQL 时，如果目标表还没有数据而本地 `store.json` 已存在，后端会自动把现有文件数据导入 MySQL。
+首次切换到 MySQL 时，如果目标 ORM 表还没有数据而本地 `store.json` 已存在，后端会自动把现有文件数据导入 MySQL。
 
 ## 关键接口
 
@@ -169,6 +169,6 @@ CANAL_PLUS_METADATA_TABLE=canal_plus_metadata
 ## 下一步建议
 
 - 接入真实 MySQL CDC 执行引擎，替换当前模拟任务进程。
-- 将单表 JSON 元数据存储升级为结构化元数据库 schema。
+- 将仍使用 JSON 列承载的嵌套配置进一步拆分为更细粒度的关联表。
 - 完善节点回归后的更细粒度任务重分配策略。
 - 为节点操作和任务运行补充更完整的集成测试。
