@@ -21,5 +21,30 @@ export default tseslint.config(
       ...reactHooks.configs.recommended.rules,
       "react-refresh/only-export-components": ["warn", { allowConstantExport: true }]
     }
+  },
+  {
+    files: ["src/**/*.{ts,tsx}"],
+    ignores: ["src/components/ui.tsx"],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector: "JSXOpeningElement[name.name='button']",
+          message: "Use the shared <Button /> component from src/components/ui.tsx."
+        },
+        {
+          selector: "JSXOpeningElement[name.name='input']",
+          message: "Use the shared input components from src/components/ui.tsx."
+        },
+        {
+          selector: "JSXOpeningElement[name.name='select']",
+          message: "Use the shared <SelectInput /> component from src/components/ui.tsx."
+        },
+        {
+          selector: "JSXOpeningElement[name.name='textarea']",
+          message: "Use the shared <TextareaInput /> component from src/components/ui.tsx."
+        }
+      ]
+    }
   }
 );

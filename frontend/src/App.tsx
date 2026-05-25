@@ -24,6 +24,7 @@ import {
 } from "@phosphor-icons/react";
 import { PermissionNotice } from "./components/PermissionNotice";
 import { StatusBadge } from "./components/StatusBadge";
+import { Button, CheckboxInput, SelectInput, TextareaInput, TextInput } from "./components/ui";
 import {
   api,
   checkBackendHealth,
@@ -460,7 +461,7 @@ function App() {
               {navItems.map((item) => {
                 const Icon = item.icon;
                 return (
-                  <button
+                  <Button
                     key={item.id}
                     onClick={() => setPage(item.id)}
                     className={cx(
@@ -472,7 +473,7 @@ function App() {
                   >
                     <Icon size={18} />
                     <span>{item.label}</span>
-                  </button>
+                  </Button>
                 );
               })}
             </nav>
@@ -482,20 +483,20 @@ function App() {
                 <div className="text-sm font-medium text-coal">{user?.name || "admin"}</div>
                 <div className="mt-1 text-sm text-slate-500">{roleLabel(user?.role)}</div>
               </div>
-              <button onClick={handleLogout} className="btn-secondary">
+              <Button onClick={handleLogout} className="btn-secondary">
                 <SignOut size={16} />
                 退出
-              </button>
+              </Button>
             </div>
 
             <div className="mt-5 hidden rounded-3xl border border-line bg-slate-50/80 p-4 lg:block">
               <div className="text-xs font-medium uppercase tracking-[0.18em] text-slate-500">当前账号</div>
               <div className="mt-3 text-sm font-medium text-coal">{user?.name || "admin"}</div>
               <div className="mt-1 text-sm text-slate-500">{roleLabel(user?.role)}</div>
-              <button onClick={handleLogout} className="btn-secondary mt-4 w-full">
+              <Button onClick={handleLogout} className="btn-secondary mt-4 w-full">
                 <SignOut size={16} />
                 退出
-              </button>
+              </Button>
             </div>
           </aside>
 
@@ -510,27 +511,27 @@ function App() {
                 </p>
               </div>
               <div className="flex flex-wrap gap-2">
-                <button onClick={() => void refresh()} className="btn-secondary">
+                <Button onClick={() => void refresh()} className="btn-secondary">
                   <ArrowsClockwise size={16} />
                   刷新
-                </button>
+                </Button>
                 {page === "datasources" && canManage && (
-                  <button onClick={openDatasourceCreator} className="btn-primary">
+                  <Button onClick={openDatasourceCreator} className="btn-primary">
                     <Plus size={16} />
                     添加数据源
-                  </button>
+                  </Button>
                 )}
                 {page === "tasks" && canManage && (
-                  <button onClick={openTaskCreator} className="btn-primary">
+                  <Button onClick={openTaskCreator} className="btn-primary">
                     <Plus size={16} />
                     创建任务
-                  </button>
+                  </Button>
                 )}
                 {page === "nodes" && canManage && (
-                  <button onClick={openNodeCreator} className="btn-primary">
+                  <Button onClick={openNodeCreator} className="btn-primary">
                     <Plus size={16} />
                     添加节点
-                  </button>
+                  </Button>
                 )}
               </div>
             </div>
@@ -539,10 +540,10 @@ function App() {
               <NoticeBanner
                 tone="warning"
                 action={(
-                  <button onClick={() => void retryServiceConnection()} disabled={serviceRecoveryPending} className="btn-secondary px-3 py-2 text-xs">
+                  <Button onClick={() => void retryServiceConnection()} disabled={serviceRecoveryPending} className="btn-secondary px-3 py-2 text-xs">
                     <ArrowsClockwise size={14} />
                     {serviceRecoveryPending ? "重试中" : "重试连接"}
-                  </button>
+                  </Button>
                 )}
               >
                 后端暂时不可用，当前界面会保留；恢复后再重试。
@@ -601,7 +602,6 @@ function App() {
                 datasources={datasources}
                 tasks={tasks}
                 capabilityJobs={capabilityJobs}
-                errors={errors}
                 canManage={canManage}
                 onChanged={refresh}
                 pushNotice={pushNotice}
@@ -800,7 +800,7 @@ function DashboardPage({
         ) : (
           <div className="mt-5 grid gap-3">
             {attentionTasks.map((task) => (
-              <button key={task.id} onClick={() => onOpenTask(task.id)} className="rounded-3xl border border-line bg-white px-5 py-4 text-left transition hover:border-blue-200 hover:bg-blue-50/40">
+              <Button key={task.id} onClick={() => onOpenTask(task.id)} className="rounded-3xl border border-line bg-white px-5 py-4 text-left transition hover:border-blue-200 hover:bg-blue-50/40">
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="font-medium text-coal">{task.name}</span>
                   <StatusBadge status={task.status} />
@@ -815,7 +815,7 @@ function DashboardPage({
                 <div className="mt-2 text-xs text-slate-500">
                   {formatDateTime(task.runtime?.lastLogAt || task.runtime?.updatedAt || task.updatedAt)}
                 </div>
-              </button>
+              </Button>
             ))}
           </div>
         )}
@@ -866,12 +866,6 @@ function DatasourcePage({
       return matchesKeyword && matchesStatus && matchesPurpose;
     })
     .sort((left, right) => left.name.localeCompare(right.name, "zh-Hans-CN"));
-
-  const openCreate = () => {
-    setEditingId(null);
-    setForm({ ...emptyDatasourceForm });
-    setEditorOpen(true);
-  };
 
   const openEdit = (item: Datasource) => {
     setEditingId(item.id);
@@ -981,7 +975,7 @@ function DatasourcePage({
             <span className="mb-2 block text-xs font-medium uppercase tracking-[0.18em] text-slate-500">搜索</span>
             <span className="relative block">
               <MagnifyingGlass className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-              <input
+              <TextInput
                 className="input pl-9"
                 value={keyword}
                 onChange={(event) => setKeyword(event.target.value)}
@@ -990,23 +984,23 @@ function DatasourcePage({
             </span>
           </label>
           <Field label="状态">
-            <select className="select" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as "all" | DatasourceStatus)}>
+            <SelectInput className="select" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as "all" | DatasourceStatus)}>
               <option value="all">全部状态</option>
               <option value="online">在线</option>
               <option value="offline">离线</option>
               <option value="untested">未测试</option>
-            </select>
+            </SelectInput>
           </Field>
         </div>
 
         <div className="mt-3 grid gap-3 lg:grid-cols-[220px_minmax(0,1fr)]">
           <Field label="用途">
-            <select className="select" value={purposeFilter} onChange={(event) => setPurposeFilter(event.target.value as "all" | DatasourcePurpose)}>
+            <SelectInput className="select" value={purposeFilter} onChange={(event) => setPurposeFilter(event.target.value as "all" | DatasourcePurpose)}>
               <option value="all">全部用途</option>
               <option value="source">源端</option>
               <option value="target">目标端</option>
               <option value="both">源端和目标端</option>
-            </select>
+            </SelectInput>
           </Field>
           <div className="flex items-end text-sm text-slate-500">
             {`源端 ${sourceCount} · 目标端 ${targetCount} · 双向 ${bothCount}`}
@@ -1037,10 +1031,10 @@ function DatasourcePage({
                 {visibleDatasources.map((item) => (
                   <tr key={item.id} className="table-row hover:bg-slate-50/70">
                     <td className="px-4 py-4">
-                      <button onClick={() => onOpenDatasource(item.id)} className="text-left">
+                      <Button onClick={() => onOpenDatasource(item.id)} className="text-left">
                         <div className="font-medium text-coal">{item.name}</div>
                         <div className="mt-1 text-xs text-slate-500">{item.defaultSchema || "未设置默认库"}</div>
-                      </button>
+                      </Button>
                     </td>
                     <td className="px-4 py-4 text-slate-600">{purposeText(item.purpose)}</td>
                     <td className="px-4 py-4">
@@ -1054,14 +1048,14 @@ function DatasourcePage({
                     <td className="px-4 py-4 text-slate-600">{usageCount(item)}</td>
                     <td className="px-4 py-4">
                       <div className="flex justify-end gap-2">
-                        <button
+                        <Button
                           onClick={() => void testConnection(item)}
                           disabled={testingId === item.id}
                           className="btn-secondary px-3 py-2 text-xs"
                         >
                           {testingId === item.id ? <ArrowsClockwise size={14} /> : <ShieldCheck size={14} />}
                           {testingId === item.id ? "测试中" : "测试连接"}
-                        </button>
+                        </Button>
                         <ActionMenu
                           items={[
                             {
@@ -1095,28 +1089,28 @@ function DatasourcePage({
       >
         <form onSubmit={saveDatasource} className="grid gap-4">
           <Field label="名称">
-            <input className="input" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} required />
+            <TextInput className="input" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} required />
           </Field>
           <Field label="用途">
-            <select className="select" value={form.purpose} onChange={(event) => setForm({ ...form, purpose: event.target.value as DatasourcePurpose })}>
+            <SelectInput className="select" value={form.purpose} onChange={(event) => setForm({ ...form, purpose: event.target.value as DatasourcePurpose })}>
               <option value="source">源端</option>
               <option value="target">目标端</option>
               <option value="both">源端和目标端</option>
-            </select>
+            </SelectInput>
           </Field>
           <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_130px]">
             <Field label="主机地址">
-              <input className="input" value={form.host} onChange={(event) => setForm({ ...form, host: event.target.value })} required />
+              <TextInput className="input" value={form.host} onChange={(event) => setForm({ ...form, host: event.target.value })} required />
             </Field>
             <Field label="端口">
-              <input className="input" type="number" value={form.port} onChange={(event) => setForm({ ...form, port: Number(event.target.value) })} required />
+              <TextInput className="input" type="number" value={form.port} onChange={(event) => setForm({ ...form, port: Number(event.target.value) })} required />
             </Field>
           </div>
           <Field label="账号">
-            <input className="input" value={form.username} onChange={(event) => setForm({ ...form, username: event.target.value })} required />
+            <TextInput className="input" value={form.username} onChange={(event) => setForm({ ...form, username: event.target.value })} required />
           </Field>
           <Field label="密码">
-            <input
+            <TextInput
               className="input"
               type="password"
               value={form.password}
@@ -1126,16 +1120,16 @@ function DatasourcePage({
             />
           </Field>
           <Field label="默认库">
-            <input className="input" value={form.defaultSchema} onChange={(event) => setForm({ ...form, defaultSchema: event.target.value })} />
+            <TextInput className="input" value={form.defaultSchema} onChange={(event) => setForm({ ...form, defaultSchema: event.target.value })} />
           </Field>
           <div className="flex justify-end gap-3 pt-2">
-            <button type="button" onClick={() => setEditorOpen(false)} className="btn-secondary">
+            <Button type="button" onClick={() => setEditorOpen(false)} className="btn-secondary">
               取消
-            </button>
-            <button disabled={submitting} className="btn-primary">
+            </Button>
+            <Button disabled={submitting} className="btn-primary">
               {submitting ? <ArrowsClockwise size={16} /> : <CheckCircle size={16} />}
               {submitting ? "保存中" : "保存"}
-            </button>
+            </Button>
           </div>
         </form>
       </Modal>
@@ -1274,18 +1268,18 @@ function DatasourceDetailPage({
           onBack={onBack}
           actions={(
             <div className="flex flex-wrap gap-2">
-              <button onClick={() => void testConnection()} disabled={testing} className="btn-secondary">
+              <Button onClick={() => void testConnection()} disabled={testing} className="btn-secondary">
                 {testing ? <ArrowsClockwise size={16} /> : <ShieldCheck size={16} />}
                 {testing ? "测试中" : "测试连接"}
-              </button>
+              </Button>
               {canManage && (
                 <>
-                  <button onClick={() => setEditorOpen(true)} className="btn-secondary">
+                  <Button onClick={() => setEditorOpen(true)} className="btn-secondary">
                     编辑
-                  </button>
-                  <button onClick={requestRemoveDatasource} className="btn-danger">
+                  </Button>
+                  <Button onClick={requestRemoveDatasource} className="btn-danger">
                     删除
-                  </button>
+                  </Button>
                 </>
               )}
             </div>
@@ -1314,28 +1308,28 @@ function DatasourceDetailPage({
       >
         <form onSubmit={saveDatasource} className="grid gap-4">
           <Field label="名称">
-            <input className="input" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} required />
+            <TextInput className="input" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} required />
           </Field>
           <Field label="用途">
-            <select className="select" value={form.purpose} onChange={(event) => setForm({ ...form, purpose: event.target.value as DatasourcePurpose })}>
+            <SelectInput className="select" value={form.purpose} onChange={(event) => setForm({ ...form, purpose: event.target.value as DatasourcePurpose })}>
               <option value="source">源端</option>
               <option value="target">目标端</option>
               <option value="both">源端和目标端</option>
-            </select>
+            </SelectInput>
           </Field>
           <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_130px]">
             <Field label="主机地址">
-              <input className="input" value={form.host} onChange={(event) => setForm({ ...form, host: event.target.value })} required />
+              <TextInput className="input" value={form.host} onChange={(event) => setForm({ ...form, host: event.target.value })} required />
             </Field>
             <Field label="端口">
-              <input className="input" type="number" value={form.port} onChange={(event) => setForm({ ...form, port: Number(event.target.value) })} required />
+              <TextInput className="input" type="number" value={form.port} onChange={(event) => setForm({ ...form, port: Number(event.target.value) })} required />
             </Field>
           </div>
           <Field label="账号">
-            <input className="input" value={form.username} onChange={(event) => setForm({ ...form, username: event.target.value })} required />
+            <TextInput className="input" value={form.username} onChange={(event) => setForm({ ...form, username: event.target.value })} required />
           </Field>
           <Field label="密码">
-            <input
+            <TextInput
               className="input"
               type="password"
               value={form.password}
@@ -1344,16 +1338,16 @@ function DatasourceDetailPage({
             />
           </Field>
           <Field label="默认库">
-            <input className="input" value={form.defaultSchema} onChange={(event) => setForm({ ...form, defaultSchema: event.target.value })} />
+            <TextInput className="input" value={form.defaultSchema} onChange={(event) => setForm({ ...form, defaultSchema: event.target.value })} />
           </Field>
           <div className="flex justify-end gap-3 pt-2">
-            <button type="button" onClick={() => setEditorOpen(false)} className="btn-secondary">
+            <Button type="button" onClick={() => setEditorOpen(false)} className="btn-secondary">
               取消
-            </button>
-            <button disabled={submitting} className="btn-primary">
+            </Button>
+            <Button disabled={submitting} className="btn-primary">
               {submitting ? <ArrowsClockwise size={16} /> : <CheckCircle size={16} />}
               {submitting ? "保存中" : "保存"}
-            </button>
+            </Button>
           </div>
         </form>
       </Modal>
@@ -1379,7 +1373,6 @@ function TasksPage({
   datasources,
   tasks,
   capabilityJobs,
-  errors,
   canManage,
   onChanged,
   pushNotice,
@@ -1391,7 +1384,6 @@ function TasksPage({
   datasources: Datasource[];
   tasks: SyncTask[];
   capabilityJobs: CapabilityJob[];
-  errors: ErrorEvent[];
   canManage: boolean;
   onChanged: (quiet?: boolean) => Promise<void>;
   pushNotice: (notice: Notice) => void;
@@ -1503,8 +1495,6 @@ function TasksPage({
     }
   };
 
-  const pendingErrors = errors.filter((item) => item.status === "pending").length;
-  const awaitingTasks = tasks.filter(taskAwaitingNode).length;
   const typeCounts = filteredTypeCounts(workloads);
   return (
     <div className="space-y-5">
@@ -1523,7 +1513,7 @@ function TasksPage({
             <span className="mb-2 block text-xs font-medium uppercase tracking-[0.18em] text-slate-500">搜索</span>
             <span className="relative block">
               <MagnifyingGlass className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-              <input
+              <TextInput
                 className="input pl-9"
                 value={keyword}
                 onChange={(event) => setKeyword(event.target.value)}
@@ -1532,30 +1522,30 @@ function TasksPage({
             </span>
           </label>
           <Field label="类型">
-            <select className="select" value={typeFilter} onChange={(event) => setTypeFilter(event.target.value)}>
+            <SelectInput className="select" value={typeFilter} onChange={(event) => setTypeFilter(event.target.value)}>
               <option value="all">全部类型</option>
               {Object.keys(typeCounts).map((item) => (
                 <option key={item} value={item}>{item}</option>
               ))}
-            </select>
+            </SelectInput>
           </Field>
           <Field label="运行视角">
-            <select className="select" value={stateFilter} onChange={(event) => setStateFilter(event.target.value as TaskStateFilter)}>
+            <SelectInput className="select" value={stateFilter} onChange={(event) => setStateFilter(event.target.value as TaskStateFilter)}>
               <option value="all">全部状态</option>
               <option value="running">运行中</option>
               <option value="awaiting">待接管</option>
               <option value="remote">远程托管</option>
               <option value="failed">异常</option>
               <option value="stopped">已停止</option>
-            </select>
+            </SelectInput>
           </Field>
           <Field label="托管范围">
-            <select className="select" value={hostingFilter} onChange={(event) => setHostingFilter(event.target.value as "all" | "local" | "remote" | "unassigned")}>
+            <SelectInput className="select" value={hostingFilter} onChange={(event) => setHostingFilter(event.target.value as "all" | "local" | "remote" | "unassigned")}>
               <option value="all">全部任务</option>
               <option value="local">当前节点托管</option>
               <option value="remote">远程节点托管</option>
               <option value="unassigned">待分配</option>
-            </select>
+            </SelectInput>
           </Field>
         </div>
 
@@ -1565,10 +1555,10 @@ function TasksPage({
             title="先添加数据源"
             description="先准备源端和目标端。"
             action={
-              <button onClick={onCreateDatasource} className="btn-primary">
+              <Button onClick={onCreateDatasource} className="btn-primary">
                 <Plus size={16} />
                 添加数据源
-              </button>
+              </Button>
             }
           />
         ) : workloads.length === 0 ? (
@@ -1587,7 +1577,7 @@ function TasksPage({
               const executionNode = task?.runtime?.executionNodeName || task?.runtime?.nodeId;
               return (
                 <div key={item.key} className="grid gap-3 p-4 lg:grid-cols-[1fr_auto] lg:items-center">
-                  <button
+                  <Button
                     onClick={() => {
                       if (item.rawTask) {
                         onOpenTask(item.rawTask.id);
@@ -1621,27 +1611,27 @@ function TasksPage({
                       <div className="mt-2 text-xs text-slate-500">{task.runtime.lastLogMessage}</div>
                     )}
                     <div className="mt-2 text-xs text-slate-500">{formatDate(item.updatedAt)}</div>
-                  </button>
+                  </Button>
                   <div className="flex flex-wrap justify-end gap-2">
                     {task && primaryAction && (
-                      <button
+                      <Button
                         onClick={() => void runTaskAction(task, primaryAction)}
                         disabled={busyKey === `${task.id}:${primaryAction}`}
                         className="btn-secondary px-3 py-2 text-xs"
                       >
                         {primaryAction === "start" || primaryAction === "resume" ? <Play size={14} /> : primaryAction === "pause" ? <Pause size={14} /> : <Stop size={14} />}
                         {taskActionLabel(primaryAction)}
-                      </button>
+                      </Button>
                     )}
                     {job && (
-                      <button
+                      <Button
                         onClick={() => void rerunJob(job)}
                         disabled={job.status === "running" || busyKey === `${job.id}:job`}
                         className="btn-secondary px-3 py-2 text-xs"
                       >
                         <Play size={14} />
                         {job.status === "running" ? "运行中" : "重跑"}
-                      </button>
+                      </Button>
                     )}
                     <ActionMenu
                       items={task ? [
@@ -2069,10 +2059,10 @@ function NodesPage({
           title="节点列表"
           description={localNodeName ? `当前控制节点：${localNodeName}` : "部署与运维入口。"}
           action={canManage ? (
-            <button onClick={requestRebalanceCluster} disabled={busyKey === "rebalance"} className="btn-secondary">
+            <Button onClick={requestRebalanceCluster} disabled={busyKey === "rebalance"} className="btn-secondary">
               <ArrowsClockwise size={16} />
               {busyKey === "rebalance" ? "均衡中" : "重新均衡"}
-            </button>
+            </Button>
           ) : undefined}
         />
 
@@ -2088,7 +2078,7 @@ function NodesPage({
             <span className="mb-2 block text-xs font-medium uppercase tracking-[0.18em] text-slate-500">搜索</span>
             <span className="relative block">
               <MagnifyingGlass className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-              <input
+              <TextInput
                 className="input pl-9"
                 value={keyword}
                 onChange={(event) => setKeyword(event.target.value)}
@@ -2097,12 +2087,12 @@ function NodesPage({
             </span>
           </label>
           <Field label="状态">
-            <select className="select" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as "all" | ClusterNode["status"])}>
+            <SelectInput className="select" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as "all" | ClusterNode["status"])}>
               <option value="all">全部状态</option>
               <option value="online">在线</option>
               <option value="draining">排空中</option>
               <option value="offline">离线</option>
-            </select>
+            </SelectInput>
           </Field>
         </div>
 
@@ -2124,7 +2114,7 @@ function NodesPage({
               return (
                 <div key={node.id} className="rounded-3xl border border-line bg-white p-4">
                   <div className="grid gap-4 xl:grid-cols-[1fr_auto] xl:items-start">
-                    <button onClick={() => onOpenNode(node.id)} className="min-w-0 text-left">
+                    <Button onClick={() => onOpenNode(node.id)} className="min-w-0 text-left">
                       <div className="flex flex-wrap items-center gap-2">
                         <div className="font-medium text-coal">{node.name}</div>
                         <Badge tone={nodeTone(node.status)}>{nodeStatusText(node.status)}</Badge>
@@ -2138,7 +2128,7 @@ function NodesPage({
                         <span>CPU {node.cpuPercent}%</span>
                         <span>内存 {node.memoryPercent}%</span>
                       </div>
-                    </button>
+                    </Button>
                     <div className="flex flex-wrap justify-end gap-2">
                       <ActionMenu
                         items={[
@@ -2433,9 +2423,9 @@ function NodeDetailPage({
                   {(task.sourceDatasource?.name || task.sourceDatasourceId)} to {(task.targetDatasource?.name || task.targetDatasourceId)}
                 </div>
                 <div className="mt-3 flex justify-end">
-                  <button type="button" onClick={() => onOpenTask(task.id)} className="btn-secondary px-3 py-2 text-xs">
+                  <Button type="button" onClick={() => onOpenTask(task.id)} className="btn-secondary px-3 py-2 text-xs">
                     查看任务
-                  </button>
+                  </Button>
                 </div>
               </div>
             ))}
@@ -2457,9 +2447,9 @@ function NodeDetailPage({
                   {(task.sourceDatasource?.name || task.sourceDatasourceId)} to {(task.targetDatasource?.name || task.targetDatasourceId)}
                 </div>
                 <div className="mt-3 flex justify-end">
-                  <button type="button" onClick={() => onOpenTask(task.id)} className="btn-secondary px-3 py-2 text-xs">
+                  <Button type="button" onClick={() => onOpenTask(task.id)} className="btn-secondary px-3 py-2 text-xs">
                     查看任务
-                  </button>
+                  </Button>
                 </div>
               </div>
             ))}
@@ -2630,10 +2620,10 @@ function SettingsPage({
         <SectionHeader
           title="告警规则"
           action={canManage ? (
-            <button onClick={() => setEditingId(null)} className="btn-secondary">
+            <Button onClick={() => setEditingId(null)} className="btn-secondary">
               <Plus size={16} />
               新增规则
-            </button>
+            </Button>
           ) : undefined}
         />
 
@@ -2644,7 +2634,7 @@ function SettingsPage({
             ) : alertRules.map((rule) => {
               const evaluation = evaluations.find((item) => item.ruleId === rule.id);
               return (
-                <button
+                <Button
                   key={rule.id}
                   onClick={() => setEditingId(rule.id)}
                   className={cx(
@@ -2658,7 +2648,7 @@ function SettingsPage({
                   </div>
                   <div className="mt-2 text-sm text-slate-500">{rule.taskId ? tasks.find((task) => task.id === rule.taskId)?.name || rule.taskId : "全部任务"}</div>
                   <div className="mt-2 text-xs text-slate-500">延迟 {rule.delayThresholdSeconds}s · 错误 {rule.errorThreshold}</div>
-                </button>
+                </Button>
               );
             })}
           </div>
@@ -2669,40 +2659,40 @@ function SettingsPage({
             )}
             <form onSubmit={saveRule} className="mt-4 grid gap-4 xl:mt-0">
               <Field label="规则名称">
-                <input className="input" value={form.name} disabled={!canManage} onChange={(event) => setForm({ ...form, name: event.target.value })} />
+                <TextInput className="input" value={form.name} disabled={!canManage} onChange={(event) => setForm({ ...form, name: event.target.value })} />
               </Field>
               <Field label="作用范围">
-                <select className="select" value={form.taskId || ""} disabled={!canManage} onChange={(event) => setForm({ ...form, taskId: event.target.value })}>
+                <SelectInput className="select" value={form.taskId || ""} disabled={!canManage} onChange={(event) => setForm({ ...form, taskId: event.target.value })}>
                   <option value="">全部任务</option>
                   {tasks.map((task) => <option key={task.id} value={task.id}>{task.name}</option>)}
-                </select>
+                </SelectInput>
               </Field>
               <div className="grid gap-4 sm:grid-cols-2">
                 <Field label="延迟阈值秒">
-                  <input className="input" type="number" min={1} value={form.delayThresholdSeconds} disabled={!canManage} onChange={(event) => setForm({ ...form, delayThresholdSeconds: Number(event.target.value) })} />
+                  <TextInput className="input" type="number" min={1} value={form.delayThresholdSeconds} disabled={!canManage} onChange={(event) => setForm({ ...form, delayThresholdSeconds: Number(event.target.value) })} />
                 </Field>
                 <Field label="错误次数阈值">
-                  <input className="input" type="number" min={0} value={form.errorThreshold} disabled={!canManage} onChange={(event) => setForm({ ...form, errorThreshold: Number(event.target.value) })} />
+                  <TextInput className="input" type="number" min={0} value={form.errorThreshold} disabled={!canManage} onChange={(event) => setForm({ ...form, errorThreshold: Number(event.target.value) })} />
                 </Field>
               </div>
               <Field label="Webhook">
-                <input className="input" value={form.webhookUrl || ""} disabled={!canManage} onChange={(event) => setForm({ ...form, webhookUrl: event.target.value })} placeholder="https://example.com/webhook" />
+                <TextInput className="input" value={form.webhookUrl || ""} disabled={!canManage} onChange={(event) => setForm({ ...form, webhookUrl: event.target.value })} placeholder="https://example.com/webhook" />
               </Field>
               <label className="inline-flex items-center gap-2 text-sm text-slate-600">
-                <input type="checkbox" checked={Boolean(form.enabled)} disabled={!canManage} onChange={(event) => setForm({ ...form, enabled: event.target.checked })} />
+                <CheckboxInput checked={Boolean(form.enabled)} disabled={!canManage} onChange={(event) => setForm({ ...form, enabled: event.target.checked })} />
                 启用规则
               </label>
               <div className="flex flex-wrap justify-end gap-3 pt-2">
                 {editing && (
-                  <button type="button" onClick={requestRemoveRule} disabled={!canManage} className="btn-danger">
+                  <Button type="button" onClick={requestRemoveRule} disabled={!canManage} className="btn-danger">
                     <Trash size={16} />
                     删除
-                  </button>
+                  </Button>
                 )}
-                <button disabled={!canManage} className="btn-primary">
+                <Button disabled={!canManage} className="btn-primary">
                   <CheckCircle size={16} />
                   保存
-                </button>
+                </Button>
               </div>
             </form>
 
@@ -2782,16 +2772,16 @@ function LoginScreen({ onLogin }: { onLogin: (username: string, password: string
           <div className="text-2xl font-semibold tracking-tight text-coal">登录</div>
           <div className="mt-6 grid gap-4">
             <Field label="账号">
-              <input className="input" value={username} onChange={(event) => setUsername(event.target.value)} />
+              <TextInput className="input" value={username} onChange={(event) => setUsername(event.target.value)} />
             </Field>
             <Field label="密码">
-              <input className="input" type="password" value={password} onChange={(event) => setPassword(event.target.value)} />
+              <TextInput className="input" type="password" value={password} onChange={(event) => setPassword(event.target.value)} />
             </Field>
             {error && <NoticeBanner tone="error">{error}</NoticeBanner>}
-            <button disabled={loading} className="btn-primary w-full">
+            <Button disabled={loading} className="btn-primary w-full">
               {loading ? <ArrowsClockwise size={16} /> : <ArrowRight size={16} />}
               {loading ? "登录中" : "进入控制台"}
-            </button>
+            </Button>
           </div>
         </form>
       </div>
@@ -2850,6 +2840,7 @@ function TaskCreatorModal({
   const [loadingTargetSchemas, setLoadingTargetSchemas] = useState(false);
   const [loadingTables, setLoadingTables] = useState(false);
   const [loadingColumns, setLoadingColumns] = useState(false);
+  const initializedOpenRef = useRef(false);
   const sourceSchemasRequestId = useRef(0);
   const targetSchemasRequestId = useRef(0);
   const tablesRequestId = useRef(0);
@@ -2858,7 +2849,12 @@ function TaskCreatorModal({
   const isSyncType = selectedType === "full_migration" || selectedType === "incremental_sync";
 
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      initializedOpenRef.current = false;
+      return;
+    }
+    if (initializedOpenRef.current) return;
+    initializedOpenRef.current = true;
     setStep(0);
     setSelectedType("full_migration");
     setFormError(null);
@@ -3254,7 +3250,7 @@ function TaskCreatorModal({
         {step === 0 && (
           <div className="grid gap-3 md:grid-cols-2">
             {taskBlueprints.map((item) => (
-              <button
+              <Button
                 key={item.type}
                 onClick={() => setSelectedType(item.type)}
                 className={cx(
@@ -3266,7 +3262,7 @@ function TaskCreatorModal({
                 <div className="mt-4 text-lg font-semibold text-coal">{item.name}</div>
                 <div className="mt-2 text-sm text-slate-500">{item.description}</div>
                 <div className="mt-2 text-sm text-slate-500">{item.scenario}</div>
-              </button>
+              </Button>
             ))}
           </div>
         )}
@@ -3274,20 +3270,20 @@ function TaskCreatorModal({
         {step === 1 && isSyncType && (
           <div className="grid gap-4">
             <Field label="任务名称">
-              <input className="input" value={syncDraft.name} onChange={(event) => setSyncDraft({ ...syncDraft, name: event.target.value })} placeholder={selectedType === "full_migration" ? "例如：订单历史全量迁移" : "例如：订单增量同步"} />
+              <TextInput className="input" value={syncDraft.name} onChange={(event) => setSyncDraft({ ...syncDraft, name: event.target.value })} placeholder={selectedType === "full_migration" ? "例如：订单历史全量迁移" : "例如：订单增量同步"} />
             </Field>
             <div className="grid gap-4 sm:grid-cols-2">
               <Field label="负责人">
-                <input className="input" value={syncDraft.owner} onChange={(event) => setSyncDraft({ ...syncDraft, owner: event.target.value })} />
+                <TextInput className="input" value={syncDraft.owner} onChange={(event) => setSyncDraft({ ...syncDraft, owner: event.target.value })} />
               </Field>
               <Field label="目标表">
-                <input className="input" value={syncDraft.targetTable} onChange={(event) => setSyncDraft({ ...syncDraft, targetTable: event.target.value })} />
+                <TextInput className="input" value={syncDraft.targetTable} onChange={(event) => setSyncDraft({ ...syncDraft, targetTable: event.target.value })} />
               </Field>
             </div>
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="grid gap-4">
                 <Field label="源端数据源">
-                  <select
+                  <SelectInput
                     className="select"
                     value={syncDraft.sourceDatasourceId}
                     onChange={(event) => setSyncDraft({ ...syncDraft, sourceDatasourceId: event.target.value, sourceSchema: "", sourceTable: "" })}
@@ -3295,11 +3291,11 @@ function TaskCreatorModal({
                   >
                     {sourceOptions.length === 0 && <option value="">暂无可用源端数据源</option>}
                     {sourceOptions.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-                  </select>
+                  </SelectInput>
                 </Field>
                 <div className="grid gap-4 sm:grid-cols-2">
                   <Field label="源库">
-                    <select
+                    <SelectInput
                       className="select"
                       value={syncDraft.sourceSchema}
                       onChange={(event) => setSyncDraft({ ...syncDraft, sourceSchema: event.target.value, sourceTable: "" })}
@@ -3307,10 +3303,10 @@ function TaskCreatorModal({
                     >
                       {sourceSchemas.length === 0 && <option value="">{loadingSourceSchemas ? "源库加载中..." : "暂无可选源库"}</option>}
                       {sourceSchemas.map((item) => <option key={item} value={item}>{item}</option>)}
-                    </select>
+                    </SelectInput>
                   </Field>
                   <Field label="源表">
-                    <select
+                    <SelectInput
                       className="select"
                       value={syncDraft.sourceTable}
                       onChange={(event) => setSyncDraft({ ...syncDraft, sourceTable: event.target.value })}
@@ -3318,13 +3314,13 @@ function TaskCreatorModal({
                     >
                       {tables.length === 0 && <option value="">{loadingTables ? "源表加载中..." : "暂无可选源表"}</option>}
                       {tables.map((item) => <option key={item.name} value={item.name}>{item.name}</option>)}
-                    </select>
+                    </SelectInput>
                   </Field>
                 </div>
               </div>
               <div className="grid gap-4">
                 <Field label="目标端数据源">
-                  <select
+                  <SelectInput
                     className="select"
                     value={syncDraft.targetDatasourceId}
                     onChange={(event) => setSyncDraft({ ...syncDraft, targetDatasourceId: event.target.value, targetSchema: "" })}
@@ -3332,10 +3328,10 @@ function TaskCreatorModal({
                   >
                     {targetOptions.length === 0 && <option value="">暂无可用目标端数据源</option>}
                     {targetOptions.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-                  </select>
+                  </SelectInput>
                 </Field>
                 <Field label="目标库">
-                  <select
+                  <SelectInput
                     className="select"
                     value={syncDraft.targetSchema}
                     onChange={(event) => setSyncDraft({ ...syncDraft, targetSchema: event.target.value })}
@@ -3343,7 +3339,7 @@ function TaskCreatorModal({
                   >
                     {targetSchemas.length === 0 && <option value="">{loadingTargetSchemas ? "目标库加载中..." : "暂无可选目标库"}</option>}
                     {targetSchemas.map((item) => <option key={item} value={item}>{item}</option>)}
-                  </select>
+                  </SelectInput>
                 </Field>
               </div>
             </div>
@@ -3377,7 +3373,7 @@ function TaskCreatorModal({
                       <tr key={field.sourceField} className="border-b border-line last:border-b-0">
                         <td className="px-3 py-3 mono text-slate-700">{field.sourceField}</td>
                         <td className="px-3 py-3">
-                          <input
+                          <TextInput
                             className="input py-2"
                             value={field.targetField}
                             onChange={(event) => {
@@ -3390,8 +3386,7 @@ function TaskCreatorModal({
                         <td className="px-3 py-3 text-slate-500">{field.sourceType}</td>
                         <td className="px-3 py-3">{field.primaryKey ? "是" : "否"}</td>
                         <td className="px-3 py-3">
-                          <input
-                            type="checkbox"
+                          <CheckboxInput
                             checked={field.ignored}
                             onChange={(event) => {
                               const next = [...fieldMappings];
@@ -3419,12 +3414,12 @@ function TaskCreatorModal({
           ) : (
             <div className="grid gap-4">
               <Field label="关联同步任务">
-                <select className="select" value={capabilityDraft.taskId} onChange={(event) => setCapabilityDraft({ ...capabilityDraft, taskId: event.target.value })}>
+                <SelectInput className="select" value={capabilityDraft.taskId} onChange={(event) => setCapabilityDraft({ ...capabilityDraft, taskId: event.target.value })}>
                   {executableTasks.map((task) => <option key={task.id} value={task.id}>{task.name}</option>)}
-                </select>
+                </SelectInput>
               </Field>
               <Field label="任务名称">
-                <input className="input" value={capabilityDraft.name} onChange={(event) => setCapabilityDraft({ ...capabilityDraft, name: event.target.value })} placeholder="可留空，系统会自动生成" />
+                <TextInput className="input" value={capabilityDraft.name} onChange={(event) => setCapabilityDraft({ ...capabilityDraft, name: event.target.value })} placeholder="可留空，系统会自动生成" />
               </Field>
             </div>
           )
@@ -3484,35 +3479,35 @@ function TaskCreatorModal({
 
         <div className="flex flex-wrap justify-between gap-3 border-t border-line pt-4">
           <div className="flex gap-3">
-            <button type="button" onClick={onClose} className="btn-secondary">取消</button>
+            <Button type="button" onClick={onClose} className="btn-secondary">取消</Button>
             {step > 0 && (
-              <button type="button" onClick={() => setStep((value) => Math.max(0, value - 1))} className="btn-secondary">
+              <Button type="button" onClick={() => setStep((value) => Math.max(0, value - 1))} className="btn-secondary">
                 上一步
-              </button>
+              </Button>
             )}
           </div>
           <div className="flex flex-wrap gap-3">
             {step < 2 ? (
-              <button
+              <Button
                 type="button"
                 onClick={() => setStep((value) => Math.min(2, value + 1))}
                 disabled={step === 1 && Boolean(stepOneError)}
                 className="btn-primary"
               >
                 下一步
-              </button>
+              </Button>
             ) : (
               <>
                 {isSyncType && (
-                  <button type="button" onClick={() => void runPreflight()} disabled={checking || Boolean(syncStepError)} className="btn-secondary">
+                  <Button type="button" onClick={() => void runPreflight()} disabled={checking || Boolean(syncStepError)} className="btn-secondary">
                     {checking ? <ArrowsClockwise size={16} /> : <ShieldCheck size={16} />}
                     {checking ? "预检中" : "运行预检"}
-                  </button>
+                  </Button>
                 )}
-                <button type="button" onClick={() => void submit()} disabled={submitting || Boolean(submitBlockedError)} className="btn-primary">
+                <Button type="button" onClick={() => void submit()} disabled={submitting || Boolean(submitBlockedError)} className="btn-primary">
                   {submitting ? <ArrowsClockwise size={16} /> : <RocketLaunch size={16} />}
                   {submitting ? "启动中" : "创建并启动"}
-                </button>
+                </Button>
               </>
             )}
           </div>
@@ -3628,52 +3623,52 @@ function NodeCreatorModal({
       <div className="grid gap-4">
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="节点名称">
-            <input className="input" value={form.name || ""} onChange={(event) => setForm({ ...form, name: event.target.value })} />
+            <TextInput className="input" value={form.name || ""} onChange={(event) => setForm({ ...form, name: event.target.value })} />
           </Field>
           <Field label="主机地址">
-            <input className="input" value={form.endpoint || ""} onChange={(event) => setForm({ ...form, endpoint: event.target.value })} placeholder="例如：10.18.4.24" />
+            <TextInput className="input" value={form.endpoint || ""} onChange={(event) => setForm({ ...form, endpoint: event.target.value })} placeholder="例如：10.18.4.24" />
           </Field>
         </div>
         <div className="grid gap-4 sm:grid-cols-[130px_minmax(0,1fr)]">
           <Field label="SSH 端口">
-            <input className="input" type="number" value={form.sshPort || 22} onChange={(event) => setForm({ ...form, sshPort: Number(event.target.value) })} />
+            <TextInput className="input" type="number" value={form.sshPort || 22} onChange={(event) => setForm({ ...form, sshPort: Number(event.target.value) })} />
           </Field>
           <Field label="SSH 用户">
-            <input className="input" value={form.sshUser || ""} onChange={(event) => setForm({ ...form, sshUser: event.target.value })} />
+            <TextInput className="input" value={form.sshUser || ""} onChange={(event) => setForm({ ...form, sshUser: event.target.value })} />
           </Field>
         </div>
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="认证方式">
-            <select className="select" value={form.authMode || "password"} onChange={(event) => setForm({ ...form, authMode: event.target.value as "password" | "private_key" })}>
+            <SelectInput className="select" value={form.authMode || "password"} onChange={(event) => setForm({ ...form, authMode: event.target.value as "password" | "private_key" })}>
               <option value="password">密码</option>
               <option value="private_key">私钥</option>
-            </select>
+            </SelectInput>
           </Field>
           <Field label="安装目录">
-            <input className="input" value={form.installDir || ""} onChange={(event) => setForm({ ...form, installDir: event.target.value })} />
+            <TextInput className="input" value={form.installDir || ""} onChange={(event) => setForm({ ...form, installDir: event.target.value })} />
           </Field>
         </div>
         {form.authMode === "private_key" ? (
           <Field label="私钥">
-            <textarea className="textarea" value={form.privateKey || ""} onChange={(event) => setForm({ ...form, privateKey: event.target.value })} />
+            <TextareaInput className="textarea" value={form.privateKey || ""} onChange={(event) => setForm({ ...form, privateKey: event.target.value })} />
           </Field>
         ) : (
           <Field label="密码">
-            <input className="input" type="password" value={form.password || ""} onChange={(event) => setForm({ ...form, password: event.target.value })} />
+            <TextInput className="input" type="password" value={form.password || ""} onChange={(event) => setForm({ ...form, password: event.target.value })} />
           </Field>
         )}
         <div className="grid gap-4 sm:grid-cols-3">
           <Field label="节点角色">
-            <select className="select" value={form.role || "worker"} onChange={(event) => setForm({ ...form, role: event.target.value })}>
+            <SelectInput className="select" value={form.role || "worker"} onChange={(event) => setForm({ ...form, role: event.target.value })}>
               <option value="worker">worker</option>
               <option value="scheduler+worker">scheduler+worker</option>
-            </select>
+            </SelectInput>
           </Field>
           <Field label="可承载任务数">
-            <input className="input" type="number" value={form.capacity || 4} onChange={(event) => setForm({ ...form, capacity: Number(event.target.value) })} />
+            <TextInput className="input" type="number" value={form.capacity || 4} onChange={(event) => setForm({ ...form, capacity: Number(event.target.value) })} />
           </Field>
           <Field label="版本">
-            <input className="input" value={form.version || "v1.0.0"} onChange={(event) => setForm({ ...form, version: event.target.value })} />
+            <TextInput className="input" value={form.version || "v1.0.0"} onChange={(event) => setForm({ ...form, version: event.target.value })} />
           </Field>
         </div>
 
@@ -3700,15 +3695,15 @@ function NodeCreatorModal({
         )}
 
         <div className="flex justify-end gap-3 border-t border-line pt-4">
-          <button type="button" onClick={onClose} className="btn-secondary">关闭</button>
-          <button type="button" onClick={() => void runTest()} disabled={testing || Boolean(nodeFormError)} className="btn-secondary">
+          <Button type="button" onClick={onClose} className="btn-secondary">关闭</Button>
+          <Button type="button" onClick={() => void runTest()} disabled={testing || Boolean(nodeFormError)} className="btn-secondary">
             {testing ? <ArrowsClockwise size={16} /> : <ShieldCheck size={16} />}
             {testing ? "测试中" : "测试连接"}
-          </button>
-          <button type="button" onClick={() => void deploy()} disabled={deploying || Boolean(deployBlockedReason)} className="btn-primary">
+          </Button>
+          <Button type="button" onClick={() => void deploy()} disabled={deploying || Boolean(deployBlockedReason)} className="btn-primary">
             {deploying ? <ArrowsClockwise size={16} /> : <RocketLaunch size={16} />}
             {deploying ? "部署中" : "部署节点"}
-          </button>
+          </Button>
         </div>
       </div>
     </Modal>
@@ -4016,10 +4011,10 @@ function SyncTaskDetail({
             </div>
           </div>
           {runtime?.nodeId && (
-            <button type="button" onClick={() => onOpenNode(runtime.nodeId!)} className="btn-secondary">
+            <Button type="button" onClick={() => onOpenNode(runtime.nodeId!)} className="btn-secondary">
               <HardDrives size={16} />
               查看节点
-            </button>
+            </Button>
           )}
         </div>
       </section>
@@ -4087,7 +4082,7 @@ function SyncTaskDetail({
                           <div className="rounded-2xl border border-line bg-slate-50 px-3 py-2 text-xs text-slate-500">
                             {job.progressPercent}%
                           </div>
-                          <button
+                          <Button
                             type="button"
                             onClick={() => onRunJob(job)}
                             disabled={job.status === "running" || busyActionKey === `${job.id}:job`}
@@ -4095,7 +4090,7 @@ function SyncTaskDetail({
                           >
                             <Play size={14} />
                             {job.status === "running" ? "运行中" : "重跑"}
-                          </button>
+                          </Button>
                         </div>
                       </div>
                     </div>
@@ -4160,34 +4155,34 @@ function SyncTaskDetail({
             <div className="font-medium text-coal">运行参数</div>
             <div className="mt-4 grid gap-4 sm:grid-cols-2">
               <Field label="批量写入">
-                <input className="input" type="number" value={paramsDraft.batchSize} onChange={(event) => setParamsDraft({ ...paramsDraft, batchSize: Number(event.target.value) })} />
+                <TextInput className="input" type="number" value={paramsDraft.batchSize} onChange={(event) => setParamsDraft({ ...paramsDraft, batchSize: Number(event.target.value) })} />
               </Field>
               <Field label="重试次数">
-                <input className="input" type="number" value={paramsDraft.retryTimes} onChange={(event) => setParamsDraft({ ...paramsDraft, retryTimes: Number(event.target.value) })} />
+                <TextInput className="input" type="number" value={paramsDraft.retryTimes} onChange={(event) => setParamsDraft({ ...paramsDraft, retryTimes: Number(event.target.value) })} />
               </Field>
               <Field label="重试间隔秒">
-                <input className="input" type="number" value={paramsDraft.retryIntervalSeconds} onChange={(event) => setParamsDraft({ ...paramsDraft, retryIntervalSeconds: Number(event.target.value) })} />
+                <TextInput className="input" type="number" value={paramsDraft.retryIntervalSeconds} onChange={(event) => setParamsDraft({ ...paramsDraft, retryIntervalSeconds: Number(event.target.value) })} />
               </Field>
               <Field label="冲突策略">
-                <select className="select" value={paramsDraft.conflictStrategy} onChange={(event) => setParamsDraft({ ...paramsDraft, conflictStrategy: event.target.value as SyncStrategy["conflictStrategy"] })}>
+                <SelectInput className="select" value={paramsDraft.conflictStrategy} onChange={(event) => setParamsDraft({ ...paramsDraft, conflictStrategy: event.target.value as SyncStrategy["conflictStrategy"] })}>
                   <option value="overwrite">覆盖</option>
                   <option value="ignore">忽略</option>
                   <option value="fail">失败停止</option>
-                </select>
+                </SelectInput>
               </Field>
               <Field label="删除策略">
-                <select className="select" value={paramsDraft.deleteStrategy} onChange={(event) => setParamsDraft({ ...paramsDraft, deleteStrategy: event.target.value as SyncStrategy["deleteStrategy"] })}>
+                <SelectInput className="select" value={paramsDraft.deleteStrategy} onChange={(event) => setParamsDraft({ ...paramsDraft, deleteStrategy: event.target.value as SyncStrategy["deleteStrategy"] })}>
                   <option value="physical">物理删除</option>
                   <option value="soft_delete">软删除字段更新</option>
                   <option value="ignore">忽略删除</option>
-                </select>
+                </SelectInput>
               </Field>
             </div>
             <div className="mt-4 flex justify-end">
-              <button type="button" onClick={() => void saveRuntimeParams()} disabled={savingParams} className="btn-secondary">
+              <Button type="button" onClick={() => void saveRuntimeParams()} disabled={savingParams} className="btn-secondary">
                 {savingParams ? <ArrowsClockwise size={16} /> : <CheckCircle size={16} />}
                 {savingParams ? "保存中" : "保存参数"}
-              </button>
+              </Button>
             </div>
           </section>
 
@@ -4196,14 +4191,14 @@ function SyncTaskDetail({
             <div className="mt-2 text-sm text-slate-500">仅已停止任务允许重置位点。</div>
             <div className="mt-4 grid gap-4 sm:grid-cols-2">
               <Field label="Binlog 文件">
-                <input className="input mono" value={positionDraft.binlogFile} onChange={(event) => setPositionDraft({ ...positionDraft, binlogFile: event.target.value })} />
+                <TextInput className="input mono" value={positionDraft.binlogFile} onChange={(event) => setPositionDraft({ ...positionDraft, binlogFile: event.target.value })} />
               </Field>
               <Field label="Binlog Position">
-                <input className="input mono" type="number" value={positionDraft.binlogPosition} onChange={(event) => setPositionDraft({ ...positionDraft, binlogPosition: Number(event.target.value) })} />
+                <TextInput className="input mono" type="number" value={positionDraft.binlogPosition} onChange={(event) => setPositionDraft({ ...positionDraft, binlogPosition: Number(event.target.value) })} />
               </Field>
             </div>
             <div className="mt-4 flex justify-end">
-                <button
+                <Button
                   type="button"
                   onClick={requestResetPosition}
                   disabled={resettingPosition || task.status !== "stopped"}
@@ -4211,7 +4206,7 @@ function SyncTaskDetail({
                 >
                 {resettingPosition ? <ArrowsClockwise size={16} /> : <ArrowRight size={16} />}
                 {resettingPosition ? "重置中" : "重置位点"}
-              </button>
+              </Button>
             </div>
           </section>
         </div>
@@ -4236,7 +4231,7 @@ function SyncTaskDetail({
                     </div>
                   </div>
                   {canManage && revision.version !== task.configVersion && (
-                    <button
+                    <Button
                       type="button"
                       onClick={() => requestRollbackRevision(revision.version)}
                       disabled={rollingBackVersion === revision.version}
@@ -4244,7 +4239,7 @@ function SyncTaskDetail({
                     >
                       {rollingBackVersion === revision.version ? <ArrowsClockwise size={14} /> : <ArrowRight size={14} />}
                       {rollingBackVersion === revision.version ? "回滚中" : "回滚到此版本"}
-                    </button>
+                    </Button>
                   )}
                 </div>
               </div>
@@ -4381,10 +4376,10 @@ function TaskLiveLogPanel({
       </div>
       {showJumpToLatest && (
         <div className="mt-3 flex justify-end">
-          <button type="button" onClick={jumpToLatest} className="btn-secondary px-3 py-2 text-xs">
+          <Button type="button" onClick={jumpToLatest} className="btn-secondary px-3 py-2 text-xs">
             <ArrowRight size={14} />
             回到最新日志
-          </button>
+          </Button>
         </div>
       )}
       <div className="mt-4 rounded-[1.5rem] border border-slate-800 bg-slate-900/80">
@@ -4524,10 +4519,10 @@ function DetailPageHeader({
   return (
     <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
       <div>
-        <button type="button" onClick={onBack} className="btn-secondary px-3 py-2 text-xs">
+        <Button type="button" onClick={onBack} className="btn-secondary px-3 py-2 text-xs">
           <ArrowRight size={14} className="rotate-180" />
           返回列表
-        </button>
+        </Button>
         {subtitle && <div className="mt-4 text-xs font-medium uppercase tracking-[0.18em] text-slate-500">{subtitle}</div>}
         <h2 className="mt-2 text-2xl font-semibold tracking-tight text-coal">{title}</h2>
       </div>
@@ -4632,10 +4627,10 @@ function BackendUnavailableScreen({
             当前无法连接 Canal Plus API。请确认后端服务已经启动，或等待服务恢复后重试。
           </p>
           <div className="mt-8 flex justify-center">
-            <button onClick={() => void onRetry()} disabled={retrying} className="btn-primary min-w-40 justify-center">
+            <Button onClick={() => void onRetry()} disabled={retrying} className="btn-primary min-w-40 justify-center">
               <ArrowsClockwise size={16} />
               {retrying ? "重新连接中" : "重试连接"}
-            </button>
+            </Button>
           </div>
         </section>
       </div>
@@ -4653,7 +4648,7 @@ function FilterChip({
   onClick: () => void;
 }) {
   return (
-    <button
+    <Button
       onClick={onClick}
       className={cx(
         "chip transition",
@@ -4661,7 +4656,7 @@ function FilterChip({
       )}
     >
       {label}
-    </button>
+    </Button>
   );
 }
 
@@ -4702,10 +4697,10 @@ function NextStepCard({
     <div className="rounded-3xl border border-line bg-white p-4">
       <div className="text-base font-semibold text-coal">{title}</div>
       <div className="mt-2 text-sm text-slate-500">{description}</div>
-      <button onClick={onClick} className="btn-secondary mt-4">
+      <Button onClick={onClick} className="btn-secondary mt-4">
         <ArrowRight size={16} />
         {actionLabel}
-      </button>
+      </Button>
     </div>
   );
 }
@@ -4801,9 +4796,9 @@ function Modal({
             <h3 id={titleId} className="text-2xl font-semibold tracking-tight text-coal">{title}</h3>
             {description && <p id={descriptionId} className="mt-2 text-sm text-slate-500">{description}</p>}
           </div>
-          <button onClick={onClose} className="btn-secondary px-3 py-2 text-xs">
+          <Button onClick={onClose} className="btn-secondary px-3 py-2 text-xs">
             关闭
-          </button>
+          </Button>
         </div>
         <div className="mt-6">{children}</div>
       </div>
@@ -4831,12 +4826,12 @@ function ConfirmDialog({
   return (
     <Modal open={open} title={title} description={description} onClose={onCancel} size="md" closeOnOverlay={false}>
       <div className="flex justify-end gap-3">
-        <button type="button" onClick={onCancel} className="btn-secondary">
+        <Button type="button" onClick={onCancel} className="btn-secondary">
           取消
-        </button>
-        <button type="button" onClick={onConfirm} className={confirmTone === "danger" ? "btn-danger" : "btn-primary"}>
+        </Button>
+        <Button type="button" onClick={onConfirm} className={confirmTone === "danger" ? "btn-danger" : "btn-primary"}>
           {confirmLabel}
-        </button>
+        </Button>
       </div>
     </Modal>
   );
@@ -4893,7 +4888,7 @@ function ActionMenu({
 
   return (
     <div ref={rootRef} className="relative">
-      <button
+      <Button
         ref={buttonRef}
         type="button"
         aria-haspopup="menu"
@@ -4910,7 +4905,7 @@ function ActionMenu({
       >
         <DotsThree size={14} />
         更多
-      </button>
+      </Button>
       {open && (
         <div
           ref={menuRef}
@@ -4937,7 +4932,7 @@ function ActionMenu({
           className="absolute right-0 top-11 z-20 w-40 rounded-2xl border border-line bg-white p-2 shadow-panel"
         >
           {items.map((item) => (
-            <button
+            <Button
               key={item.label}
               type="button"
               role="menuitem"
@@ -4954,7 +4949,7 @@ function ActionMenu({
               )}
             >
               {item.label}
-            </button>
+            </Button>
           ))}
         </div>
       )}
