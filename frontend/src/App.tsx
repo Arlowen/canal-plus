@@ -218,6 +218,233 @@ const focusableSelector = [
   "[tabindex]:not([tabindex='-1'])"
 ].join(", ");
 
+type ParticlePoint = {
+  x: number;
+  y: number;
+  size: number;
+  opacity: number;
+  delay: number;
+  duration: number;
+  tint: "blue" | "white";
+};
+
+const loginDisplayFont = "\"Avenir Next\", \"Segoe UI Variable Display\", \"PingFang SC\", \"Helvetica Neue\", sans-serif";
+
+function particleNoise(x: number, y: number) {
+  const value = Math.sin(x * 12.9898 + y * 78.233) * 43758.5453;
+  return value - Math.floor(value);
+}
+
+function createWordmarkParticles(width: number, height: number, compact: boolean) {
+  const columns = compact ? 54 : 76;
+  const rows = compact ? 28 : 18;
+  const limit = compact ? 520 : 640;
+  const paddingX = compact ? 34 : 42;
+  const paddingY = compact ? 44 : 52;
+  const samples: ParticlePoint[] = [];
+
+  for (let row = 0; row < rows; row += 1) {
+    for (let column = 0; column < columns; column += 1) {
+      const seed = particleNoise(column * 3.1, row * 7.7);
+      if (seed < 0.24) continue;
+      const x = paddingX + (column / Math.max(1, columns - 1)) * (width - paddingX * 2);
+      const y = paddingY + (row / Math.max(1, rows - 1)) * (height - paddingY * 2);
+      samples.push({
+        x: x + (seed - 0.5) * 4,
+        y: y + (0.5 - seed) * 3,
+        size: seed > 0.76 ? 3.5 : seed > 0.42 ? 2.8 : 2.1,
+        opacity: seed > 0.72 ? 0.92 : seed > 0.48 ? 0.76 : 0.56,
+        delay: seed * 3.4,
+        duration: 3.6 + seed * 2.8,
+        tint: seed > 0.55 ? "white" : "blue"
+      });
+    }
+  }
+
+  const stride = Math.max(1, Math.ceil(samples.length / limit));
+  return samples.filter((_, index) => index % stride === 0).slice(0, limit);
+}
+
+function ParticleWordmark({ wordmark }: { wordmark: string }) {
+  const frameRef = useRef<HTMLDivElement | null>(null);
+  const maskId = useId().replace(/:/g, "");
+  const [compact, setCompact] = useState(false);
+  const [particles, setParticles] = useState<ParticlePoint[]>([]);
+
+  useEffect(() => {
+    const renderParticles = () => {
+      const width = Math.max(320, Math.round(frameRef.current?.getBoundingClientRect().width || 720));
+      const nextCompact = width < 860;
+      const viewWidth = nextCompact ? 620 : 760;
+      const viewHeight = nextCompact ? 300 : 260;
+      setCompact(nextCompact);
+      setParticles(createWordmarkParticles(viewWidth, viewHeight, nextCompact));
+    };
+
+    renderParticles();
+    let frame = 0;
+    const handleResize = () => {
+      window.cancelAnimationFrame(frame);
+      frame = window.requestAnimationFrame(renderParticles);
+    };
+    window.addEventListener("resize", handleResize);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.removeEventListener("resize", handleResize);
+    };
+  }, [wordmark]);
+
+  return (
+    <div ref={frameRef} className="relative mx-auto h-[220px] w-full md:h-[300px]">
+      <div className="absolute inset-0 rounded-[2rem] border border-white/12 bg-[radial-gradient(circle_at_18%_18%,rgba(125,211,252,0.2),transparent_28%),linear-gradient(140deg,rgba(255,255,255,0.1),rgba(255,255,255,0.02)_40%,rgba(255,255,255,0.01))] shadow-[inset_0_1px_0_rgba(255,255,255,0.12),0_24px_60px_-28px_rgba(8,15,30,0.85)]" />
+      <div className="absolute left-6 top-6 h-16 w-16 rounded-full bg-sky-300/20 blur-2xl" />
+      <div className="absolute right-10 top-8 h-12 w-12 rounded-full bg-white/14 blur-2xl" />
+      <div className="absolute inset-0 overflow-hidden rounded-[2rem]" aria-hidden="true">
+        <svg
+          viewBox={compact ? "0 0 620 300" : "0 0 760 260"}
+          preserveAspectRatio="xMidYMid meet"
+          className="absolute inset-0 h-full w-full"
+        >
+          <defs>
+            <mask id={maskId}>
+              <rect width="100%" height="100%" fill="black" />
+              {compact ? (
+                <>
+                  <text
+                    x="50%"
+                    y="42%"
+                    textAnchor="middle"
+                    fill="white"
+                    fontFamily={loginDisplayFont}
+                    fontWeight="900"
+                    fontSize="116"
+                    letterSpacing="-7"
+                  >
+                    {wordmark.split(" ")[0]}
+                  </text>
+                  <text
+                    x="50%"
+                    y="74%"
+                    textAnchor="middle"
+                    fill="white"
+                    fontFamily={loginDisplayFont}
+                    fontWeight="900"
+                    fontSize="110"
+                    letterSpacing="-6"
+                  >
+                    {wordmark.split(" ")[1]}
+                  </text>
+                </>
+              ) : (
+                <text
+                  x="50%"
+                  y="58%"
+                  textAnchor="middle"
+                  fill="white"
+                  fontFamily={loginDisplayFont}
+                  fontWeight="900"
+                  fontSize="126"
+                  letterSpacing="-8"
+                >
+                  {wordmark}
+                </text>
+              )}
+            </mask>
+          </defs>
+
+          <g opacity="0.08">
+            {compact ? (
+              <>
+                <text
+                  x="50%"
+                  y="42%"
+                  textAnchor="middle"
+                  fill="white"
+                  fontFamily={loginDisplayFont}
+                  fontWeight="900"
+                  fontSize="116"
+                  letterSpacing="-7"
+                >
+                  {wordmark.split(" ")[0]}
+                </text>
+                <text
+                  x="50%"
+                  y="74%"
+                  textAnchor="middle"
+                  fill="white"
+                  fontFamily={loginDisplayFont}
+                  fontWeight="900"
+                  fontSize="110"
+                  letterSpacing="-6"
+                >
+                  {wordmark.split(" ")[1]}
+                </text>
+              </>
+            ) : (
+              <text
+                x="50%"
+                y="58%"
+                textAnchor="middle"
+                fill="white"
+                fontFamily={loginDisplayFont}
+                fontWeight="900"
+                fontSize="126"
+                letterSpacing="-8"
+              >
+                {wordmark}
+              </text>
+            )}
+          </g>
+
+          <g mask={`url(#${maskId})`}>
+            {particles.map((particle, index) => (
+              <circle
+                key={`${particle.x}-${particle.y}-${index}`}
+                className="particle-node"
+                cx={particle.x}
+                cy={particle.y}
+                r={particle.size / 2}
+                fill={particle.tint === "white" ? "#ffffff" : "#93c5fd"}
+                opacity={particle.opacity}
+                style={{
+                  animationDelay: `${particle.delay}s`,
+                  animationDuration: `${particle.duration}s`
+                }}
+              />
+            ))}
+          </g>
+        </svg>
+        <div className="absolute inset-x-[8%] bottom-8 h-px bg-gradient-to-r from-transparent via-sky-100/40 to-transparent" />
+      </div>
+      <div className="absolute bottom-5 left-5 rounded-full border border-white/10 bg-slate-950/45 px-4 py-2 text-[11px] uppercase tracking-[0.28em] text-sky-100/75 backdrop-blur">
+        Canal Plus Signal Mesh
+      </div>
+    </div>
+  );
+}
+
+function LoginSignalCard({
+  icon: Icon,
+  label,
+  description
+}: {
+  icon: typeof Database;
+  label: string;
+  description: string;
+}) {
+  return (
+    <div className="rounded-[1.5rem] border border-white/10 bg-white/[0.04] px-4 py-4">
+      <div className="flex items-center gap-3 text-sky-100">
+        <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-slate-950/35">
+          <Icon size={18} />
+        </div>
+        <div className="text-sm font-medium text-white">{label}</div>
+      </div>
+      <p className="mt-3 text-sm leading-6 text-slate-300">{description}</p>
+    </div>
+  );
+}
+
 function App() {
   const [tokenState, setTokenState] = useState(getToken());
   const [user, setUser] = useState<User | null>(null);
@@ -2739,6 +2966,23 @@ function LoginScreen({ onLogin }: { onLogin: (username: string, password: string
   const [password, setPassword] = useState("admin123");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const loginSignals = [
+    {
+      icon: Database,
+      label: "链路映射",
+      description: "把源端、目标端和表字段的映射关系收敛在一个入口里开始处理。"
+    },
+    {
+      icon: HardDrives,
+      label: "节点接管",
+      description: "任务调度、接管、重跑和排空动作全部延续到同一条运维路径。"
+    },
+    {
+      icon: ShieldCheck,
+      label: "校验闭环",
+      description: "结构对比、数据校验和订正能力紧贴同步任务，不再分散跳转。"
+    }
+  ];
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -2757,31 +3001,159 @@ function LoginScreen({ onLogin }: { onLogin: (username: string, password: string
   };
 
   return (
-    <div className="min-h-[100dvh] bg-mist px-4 py-8 text-ink">
-      <div className="mx-auto grid min-h-[calc(100dvh-4rem)] max-w-6xl items-center gap-8 lg:grid-cols-[1.12fr_0.88fr]">
-        <section className="surface overflow-hidden p-8 md:p-10">
-          <h1 className="max-w-3xl text-5xl font-semibold tracking-tight text-coal md:text-6xl">
-            canal-plus
-          </h1>
-          <p className="mt-4 max-w-2xl text-base leading-7 text-slate-500">
-            统一处理迁移、同步、校验、订正和结构对比。
-          </p>
+    <div className="relative min-h-[100dvh] overflow-hidden bg-[#07111f] px-4 py-5 text-slate-100">
+      <div className="pointer-events-none absolute inset-0 overflow-hidden">
+        <div className="login-aurora absolute -left-20 top-8 h-[26rem] w-[26rem] rounded-full bg-[radial-gradient(circle,rgba(96,165,250,0.34),rgba(96,165,250,0))] blur-3xl" />
+        <div className="login-aurora absolute right-[-6rem] top-[18%] h-[25rem] w-[25rem] rounded-full bg-[radial-gradient(circle,rgba(255,255,255,0.18),rgba(255,255,255,0))] blur-3xl [animation-delay:-6s]" />
+        <div className="absolute inset-0 bg-[linear-gradient(140deg,rgba(7,17,31,0.96),rgba(10,28,48,0.88)_42%,rgba(4,12,22,0.97))]" />
+        <div className="absolute inset-0 bg-[linear-gradient(rgba(148,163,184,0.08)_1px,transparent_1px),linear-gradient(90deg,rgba(148,163,184,0.08)_1px,transparent_1px)] bg-[size:36px_36px]" />
+      </div>
+
+      <div className="relative mx-auto grid min-h-[calc(100dvh-2.5rem)] max-w-[1400px] items-stretch gap-6 lg:grid-cols-[1.15fr_0.85fr]">
+        <section className="order-2 overflow-hidden rounded-[2.25rem] border border-white/10 bg-white/[0.04] p-5 shadow-[0_30px_90px_-40px_rgba(2,6,23,0.95)] backdrop-blur-xl md:p-8 lg:order-1">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="rounded-full border border-white/12 bg-white/[0.06] px-4 py-2 text-[11px] uppercase tracking-[0.32em] text-sky-100/75">
+              Canal Plus Console
+            </div>
+            <div className="rounded-full border border-sky-200/15 bg-slate-950/35 px-4 py-2 text-xs text-slate-300">
+              蓝白粒子入口页
+            </div>
+          </div>
+
+          <div className="mt-8 grid gap-8 xl:grid-cols-[1.08fr_0.92fr] xl:items-center">
+            <div>
+              <p className="max-w-[14rem] text-xs uppercase tracking-[0.3em] text-sky-100/55">
+                Distributed Task Control Plane
+              </p>
+              <h1
+                style={{ fontFamily: "var(--font-display)" }}
+                className="mt-4 max-w-[14ch] text-4xl font-semibold tracking-[-0.06em] text-white md:text-6xl"
+              >
+                Canal Plus 由蓝白粒子拼接成你的第一眼信号。
+              </h1>
+              <p className="mt-5 max-w-[60ch] text-sm leading-7 text-slate-300 md:text-base">
+                进入之后，任务创建、链路校验、节点接管和异常治理都沿着同一条操作路径展开，不需要在多个系统里回跳。
+              </p>
+              <div className="mt-6 flex flex-wrap gap-3 text-xs text-slate-200">
+                <div className="rounded-full border border-white/10 bg-slate-950/35 px-4 py-2">同步任务</div>
+                <div className="rounded-full border border-white/10 bg-slate-950/35 px-4 py-2">数据校验</div>
+                <div className="rounded-full border border-white/10 bg-slate-950/35 px-4 py-2">节点治理</div>
+              </div>
+            </div>
+
+            <ParticleWordmark wordmark="CANAL PLUS" />
+          </div>
+
+          <div className="mt-8 grid gap-4 md:grid-cols-[1.2fr_0.8fr]">
+            <div className="rounded-[1.75rem] border border-white/10 bg-slate-950/35 p-5">
+              <div className="text-xs uppercase tracking-[0.3em] text-slate-400">进入后可直接处理</div>
+              <div className="mt-4 grid gap-3">
+                {loginSignals.map((signal) => (
+                  <LoginSignalCard
+                    key={signal.label}
+                    icon={signal.icon}
+                    label={signal.label}
+                    description={signal.description}
+                  />
+                ))}
+              </div>
+            </div>
+
+            <div className="grid gap-4">
+              <div className="rounded-[1.75rem] border border-white/10 bg-white/[0.05] p-5">
+                <div className="text-xs uppercase tracking-[0.28em] text-slate-400">Launch Notes</div>
+                <div style={{ fontFamily: "var(--font-display)" }} className="mt-3 text-3xl font-semibold tracking-[-0.05em] text-white">
+                  Blue + White
+                </div>
+                <p className="mt-2 text-sm leading-6 text-slate-300">
+                  粒子只在字标上聚集，背景保持克制，保证软件入口依旧像控制台，而不是展示页。
+                </p>
+              </div>
+
+              <div className="rounded-[1.75rem] border border-sky-200/10 bg-[linear-gradient(145deg,rgba(12,22,37,0.92),rgba(20,55,98,0.76))] p-5">
+                <div className="flex items-center gap-3 text-sky-100">
+                  <ShieldCheck size={18} />
+                  <span className="text-sm font-medium">入口保持原有登录流程</span>
+                </div>
+                <p className="mt-3 text-sm leading-6 text-sky-50/80">
+                  账号校验、错误提示和成功进入控制台的路径没有变化，只替换了视觉表达层。
+                </p>
+              </div>
+            </div>
+          </div>
         </section>
 
-        <form onSubmit={submit} className="surface p-6 md:p-8">
-          <div className="text-2xl font-semibold tracking-tight text-coal">登录</div>
-          <div className="mt-6 grid gap-4">
-            <Field label="账号">
-              <TextInput className="input" value={username} onChange={(event) => setUsername(event.target.value)} />
-            </Field>
-            <Field label="密码">
-              <TextInput className="input" type="password" value={password} onChange={(event) => setPassword(event.target.value)} />
-            </Field>
-            {error && <NoticeBanner tone="error">{error}</NoticeBanner>}
-            <Button disabled={loading} className="btn-primary w-full">
-              {loading ? <ArrowsClockwise size={16} /> : <ArrowRight size={16} />}
-              {loading ? "登录中" : "进入控制台"}
-            </Button>
+        <form onSubmit={submit} className="order-1 flex lg:order-2">
+          <div className="relative flex w-full overflow-hidden rounded-[2.25rem] border border-white/12 bg-slate-950/72 p-6 shadow-[0_30px_90px_-40px_rgba(2,6,23,1)] backdrop-blur-xl md:p-8 lg:p-10">
+            <div className="absolute inset-0 bg-[linear-gradient(165deg,rgba(255,255,255,0.09),rgba(255,255,255,0.03)_35%,rgba(255,255,255,0))]" />
+            <div className="relative flex h-full w-full flex-col">
+              <div className="rounded-full border border-white/10 bg-white/[0.05] px-4 py-2 text-[11px] uppercase tracking-[0.32em] text-sky-100/70 w-fit">
+                Secure Entry
+              </div>
+
+              <div className="mt-8">
+                <div className="text-sm uppercase tracking-[0.3em] text-slate-400">登录</div>
+                <h2
+                  style={{ fontFamily: "var(--font-display)" }}
+                  className="mt-3 text-3xl font-semibold tracking-[-0.05em] text-white md:text-4xl"
+                >
+                  进入任务控制台
+                </h2>
+                <p className="mt-3 text-sm leading-7 text-slate-300">
+                  使用管理员或运维账号进入当前环境。粒子视觉只发生在入口页，不影响后续操作效率。
+                </p>
+              </div>
+
+              <div className="mt-8 grid gap-5">
+                <label className="block">
+                  <span className="mb-2 block text-xs font-medium uppercase tracking-[0.18em] text-slate-400">账号</span>
+                  <TextInput
+                    className="w-full rounded-[1.35rem] border border-white/10 bg-white/[0.05] px-4 py-3.5 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-sky-300/60 focus:bg-white/[0.08] focus:ring-4 focus:ring-sky-500/15"
+                    value={username}
+                    onChange={(event) => setUsername(event.target.value)}
+                  />
+                  <p className="mt-2 text-xs text-slate-400">默认可用 `admin` 或 `operator` 账号。</p>
+                </label>
+
+                <label className="block">
+                  <span className="mb-2 block text-xs font-medium uppercase tracking-[0.18em] text-slate-400">密码</span>
+                  <TextInput
+                    className="w-full rounded-[1.35rem] border border-white/10 bg-white/[0.05] px-4 py-3.5 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-sky-300/60 focus:bg-white/[0.08] focus:ring-4 focus:ring-sky-500/15"
+                    type="password"
+                    value={password}
+                    onChange={(event) => setPassword(event.target.value)}
+                  />
+                  <p className="mt-2 text-xs text-slate-400">登录成功后直接进入任务中心。</p>
+                </label>
+
+                {error && (
+                  <div className="rounded-[1.4rem] border border-red-400/20 bg-red-500/10 px-4 py-3 text-sm text-red-100">
+                    {error}
+                  </div>
+                )}
+
+                <Button
+                  disabled={loading}
+                  className="btn w-full justify-center rounded-[1.35rem] border border-sky-200/20 bg-[linear-gradient(135deg,#f8fdff,#8fd2ff_38%,#3b82f6_70%,#1638b5)] py-3.5 text-slate-950 shadow-[0_18px_40px_-24px_rgba(96,165,250,0.85)] hover:brightness-105"
+                >
+                  {loading ? <ArrowsClockwise size={16} /> : <ArrowRight size={16} />}
+                  {loading ? "登录中" : "进入控制台"}
+                </Button>
+              </div>
+
+              <div className="mt-auto grid gap-3 pt-8 sm:grid-cols-2">
+                <div className="rounded-[1.35rem] border border-white/10 bg-white/[0.04] px-4 py-4">
+                  <div className="text-[11px] uppercase tracking-[0.28em] text-slate-500">Environment</div>
+                  <div className="mt-2 text-sm font-medium text-white">Local Console</div>
+                  <div className="mt-1 text-xs text-slate-400">当前浏览器会直接进入本地开发环境。</div>
+                </div>
+                <div className="rounded-[1.35rem] border border-white/10 bg-white/[0.04] px-4 py-4">
+                  <div className="text-[11px] uppercase tracking-[0.28em] text-slate-500">Flow</div>
+                  <div className="mt-2 text-sm font-medium text-white">Create · Verify · Handoff</div>
+                  <div className="mt-1 text-xs text-slate-400">创建任务后，预检、启动和节点接管沿同一视角展开。</div>
+                </div>
+              </div>
+            </div>
           </div>
         </form>
       </div>

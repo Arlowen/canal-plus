@@ -5,6 +5,8 @@
 :root {
   color: #102033;
   background: #f4f8fc;
+  --font-display: "Avenir Next", "Segoe UI Variable Display", "PingFang SC", "Helvetica Neue", sans-serif;
+  --font-body: "Segoe UI Variable Text", "PingFang SC", "Helvetica Neue", sans-serif;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -23,6 +25,7 @@ body {
   margin: 0;
   min-width: 320px;
   min-height: 100dvh;
+  font-family: var(--font-body);
   background:
     linear-gradient(180deg, rgba(37, 99, 235, 0.06), rgba(244, 248, 252, 0) 220px),
     linear-gradient(rgba(148, 163, 184, 0.08) 1px, transparent 1px),
@@ -102,6 +105,18 @@ textarea {
   animation: shimmer 1.45s ease-in-out infinite;
 }
 
+.login-aurora {
+  animation: aurora-shift 18s ease-in-out infinite alternate;
+  will-change: transform, opacity;
+}
+
+.particle-node {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: particle-float 4.8s ease-in-out infinite;
+  will-change: transform, opacity;
+}
+
 @keyframes shimmer {
   0% {
     background-position: 100% 0;
@@ -109,5 +124,28 @@ textarea {
 
   100% {
     background-position: 0 0;
+  }
+}
+
+@keyframes aurora-shift {
+  0% {
+    transform: translate3d(0, 0, 0) scale(1);
+    opacity: 0.7;
+  }
+
+  100% {
+    transform: translate3d(2.5%, -3%, 0) scale(1.08);
+    opacity: 1;
+  }
+}
+
+@keyframes particle-float {
+  0%,
+  100% {
+    transform: translateY(0) scale(1);
+  }
+
+  50% {
+    transform: translateY(-6px) scale(1.24);
   }
 }
