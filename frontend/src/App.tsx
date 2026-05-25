@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from "react";
 import {
   ArrowsClockwise,
   ArrowRight,
@@ -93,6 +93,14 @@ type WorkloadItem = {
 type Notice = {
   tone: NoticeTone;
   message: string;
+};
+
+type ConfirmationDialogState = {
+  title: string;
+  description: string;
+  confirmLabel: string;
+  confirmTone?: "danger" | "primary";
+  onConfirm: () => void;
 };
 
 type ClusterHandoffReport = {
@@ -199,6 +207,15 @@ const emptyNodeForm: ClusterNodeInput = {
 };
 
 const emptyNodes: ClusterNode[] = [];
+
+const focusableSelector = [
+  "a[href]",
+  "button:not([disabled])",
+  "textarea:not([disabled])",
+  "input:not([disabled])",
+  "select:not([disabled])",
+  "[tabindex]:not([tabindex='-1'])"
+].join(", ");
 
 function App() {
   const [tokenState, setTokenState] = useState(getToken());
@@ -405,11 +422,10 @@ function App() {
     setPage("nodes");
   };
 
-  if (serviceUnavailable) {
-    return <BackendUnavailableScreen retrying={serviceRecoveryPending} onRetry={retryServiceConnection} />;
-  }
-
   if (!tokenState) {
+    if (serviceUnavailable) {
+      return <BackendUnavailableScreen retrying={serviceRecoveryPending} onRetry={retryServiceConnection} />;
+    }
     return <LoginScreen onLogin={handleLogin} />;
   }
 
@@ -507,6 +523,20 @@ function App() {
                 )}
               </div>
             </div>
+
+            {serviceUnavailable && (
+              <NoticeBanner
+                tone="warning"
+                action={(
+                  <button onClick={() => void retryServiceConnection()} disabled={serviceRecoveryPending} className="btn-secondary px-3 py-2 text-xs">
+                    <ArrowsClockwise size={14} />
+                    {serviceRecoveryPending ? "重试中" : "重试连接"}
+                  </button>
+                )}
+              >
+                后端暂时不可用，当前页面、筛选和弹窗状态会保留；服务恢复后再继续同步数据。
+              </NoticeBanner>
+            )}
 
             {notice && (
               <NoticeBanner tone={notice.tone}>
@@ -1713,6 +1743,7 @@ function NodesPage({
   const [operationResult, setOperationResult] = useState<NodeOperationResult | null>(null);
   const [handoffReport, setHandoffReport] = useState<ClusterHandoffReport | null>(null);
   const [busyKey, setBusyKey] = useState<string | null>(null);
+  const [confirmation, setConfirmation] = useState<ConfirmationDialogState | null>(null);
   const localNodeId = cluster?.localNodeId;
   const localNodeName = cluster?.localNodeName || localNodeId;
   const awaitingTasks = tasks.filter(taskAwaitingNode);
@@ -1768,7 +1799,7 @@ function NodesPage({
     }).slice(0, 8)
     : [];
 
-  const runQuickAction = async (node: ClusterNode, action: "upgrade" | "uninstall") => {
+  const executeQuickAction = async (node: ClusterNode, action: "upgrade" | "uninstall") => {
     if (!canManage) {
       pushNotice({ tone: "warning", message: "节点运维需要管理员权限" });
       return;
@@ -1786,7 +1817,21 @@ function NodesPage({
     }
   };
 
-  const runMoreAction = async (node: ClusterNode, action: "drain" | "offline" | "online" | "drill") => {
+  const requestQuickAction = (node: ClusterNode, action: "upgrade" | "uninstall") => {
+    setConfirmation({
+      title: action === "upgrade" ? `升级节点“${node.name}”` : `卸载节点“${node.name}”`,
+      description: action === "upgrade"
+        ? "升级前会先迁移当前节点承载的任务，过程可能触发任务接管。确认继续吗？"
+        : "卸载会迁移承载任务并移除节点安装，操作不可直接撤销。确认继续吗？",
+      confirmLabel: action === "upgrade" ? "确认升级" : "确认卸载",
+      confirmTone: "danger",
+      onConfirm: () => {
+        void executeQuickAction(node, action);
+      }
+    });
+  };
+
+  const executeMoreAction = async (node: ClusterNode, action: "drain" | "offline" | "online" | "drill") => {
     if (!canManage) {
       pushNotice({ tone: "warning", message: "节点运维需要管理员权限" });
       return;
@@ -1818,7 +1863,34 @@ function NodesPage({
     }
   };
 
-  const rebalanceCluster = async () => {
+  const requestMoreAction = (node: ClusterNode, action: "drain" | "offline" | "online" | "drill") => {
+    const title = action === "drain"
+      ? `排空节点“${node.name}”`
+      : action === "offline"
+        ? `下线节点“${node.name}”`
+        : action === "online"
+          ? `恢复节点“${node.name}”`
+          : `对节点“${node.name}”执行故障演练`;
+    const description = action === "drain"
+      ? "该节点上的任务会迁移到其他节点，适合维护前使用。确认继续吗？"
+      : action === "offline"
+        ? "节点会被标记为离线，并触发受影响任务重新接管。确认继续吗？"
+        : action === "online"
+          ? "节点恢复上线后，待分配任务可能被重新接管。确认继续吗？"
+          : "系统会模拟节点故障并触发切换，仅应在演练窗口执行。确认继续吗？";
+    const confirmLabel = action === "online" ? "确认上线" : action === "offline" ? "确认下线" : action === "drain" ? "确认排空" : "确认演练";
+    setConfirmation({
+      title,
+      description,
+      confirmLabel,
+      confirmTone: "danger",
+      onConfirm: () => {
+        void executeMoreAction(node, action);
+      }
+    });
+  };
+
+  const executeRebalanceCluster = async () => {
     if (!canManage) {
       pushNotice({ tone: "warning", message: "节点运维需要管理员权限" });
       return;
@@ -1836,6 +1908,18 @@ function NodesPage({
     }
   };
 
+  const requestRebalanceCluster = () => {
+    setConfirmation({
+      title: "重新均衡集群任务",
+      description: "系统会重新分配节点承载任务，可能触发任务迁移和接管。确认继续吗？",
+      confirmLabel: "确认均衡",
+      confirmTone: "danger",
+      onConfirm: () => {
+        void executeRebalanceCluster();
+      }
+    });
+  };
+
   return (
     <div className="grid gap-5 xl:grid-cols-[1.08fr_0.92fr]">
       <section className="surface min-w-0 p-6">
@@ -1844,7 +1928,7 @@ function NodesPage({
           description={localNodeName ? `当前控制节点：${localNodeName}` : "部署、升级、卸载都在页面完成。"}
           action={canManage ? (
             <div className="flex flex-wrap gap-2">
-              <button onClick={() => void rebalanceCluster()} disabled={busyKey === "rebalance"} className="btn-secondary">
+              <button onClick={requestRebalanceCluster} disabled={busyKey === "rebalance"} className="btn-secondary">
                 <ArrowsClockwise size={16} />
                 {busyKey === "rebalance" ? "均衡中" : "重新均衡"}
               </button>
@@ -1934,7 +2018,7 @@ function NodesPage({
                     </button>
                     <div className="flex flex-wrap justify-end gap-2">
                       <button
-                        onClick={() => void runQuickAction(node, "upgrade")}
+                        onClick={() => requestQuickAction(node, "upgrade")}
                         disabled={!canManage || busyKey === `${node.id}:upgrade`}
                         className="btn-secondary px-3 py-2 text-xs"
                       >
@@ -1942,7 +2026,7 @@ function NodesPage({
                         升级
                       </button>
                       <button
-                        onClick={() => void runQuickAction(node, "uninstall")}
+                        onClick={() => requestQuickAction(node, "uninstall")}
                         disabled={!canManage || isCurrentNode || busyKey === `${node.id}:uninstall`}
                         className="btn-danger px-3 py-2 text-xs"
                       >
@@ -1951,9 +2035,9 @@ function NodesPage({
                       </button>
                       <ActionMenu
                         items={[
-                          { label: "维护排空", onSelect: () => void runMoreAction(node, "drain"), disabled: !canManage || node.status === "offline" },
-                          { label: node.status === "online" ? "手动下线" : "恢复上线", onSelect: () => void runMoreAction(node, node.status === "online" ? "offline" : "online"), disabled: !canManage || (isCurrentNode && node.status === "online") },
-                          { label: "故障演练", onSelect: () => void runMoreAction(node, "drill"), disabled: !canManage || node.status !== "online" || isCurrentNode }
+                          { label: "维护排空", onSelect: () => requestMoreAction(node, "drain"), disabled: !canManage || node.status === "offline" },
+                          { label: node.status === "online" ? "手动下线" : "恢复上线", onSelect: () => requestMoreAction(node, node.status === "online" ? "offline" : "online"), disabled: !canManage || (isCurrentNode && node.status === "online") },
+                          { label: "故障演练", onSelect: () => requestMoreAction(node, "drill"), disabled: !canManage || node.status !== "online" || isCurrentNode }
                         ]}
                       />
                     </div>
@@ -2252,6 +2336,20 @@ function NodesPage({
           </div>
         )}
       </Modal>
+
+      <ConfirmDialog
+        open={Boolean(confirmation)}
+        title={confirmation?.title || ""}
+        description={confirmation?.description || ""}
+        confirmLabel={confirmation?.confirmLabel || "确认"}
+        confirmTone={confirmation?.confirmTone}
+        onCancel={() => setConfirmation(null)}
+        onConfirm={() => {
+          const action = confirmation?.onConfirm;
+          setConfirmation(null);
+          action?.();
+        }}
+      />
     </div>
   );
 }
@@ -2595,6 +2693,7 @@ function TaskCreatorModal({
     name: "",
     taskId: executableTasks[0]?.id || ""
   });
+  const [defaultStrategyTemplate, setDefaultStrategyTemplate] = useState<SyncStrategy>(defaultStrategy);
   const [strategy, setStrategy] = useState<SyncStrategy>(defaultStrategy);
   const [sourceSchemas, setSourceSchemas] = useState<string[]>([]);
   const [targetSchemas, setTargetSchemas] = useState<string[]>([]);
@@ -2605,6 +2704,14 @@ function TaskCreatorModal({
   const [checking, setChecking] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const [loadingSourceSchemas, setLoadingSourceSchemas] = useState(false);
+  const [loadingTargetSchemas, setLoadingTargetSchemas] = useState(false);
+  const [loadingTables, setLoadingTables] = useState(false);
+  const [loadingColumns, setLoadingColumns] = useState(false);
+  const sourceSchemasRequestId = useRef(0);
+  const targetSchemasRequestId = useRef(0);
+  const tablesRequestId = useRef(0);
+  const columnsRequestId = useRef(0);
 
   const isSyncType = selectedType === "full_migration" || selectedType === "incremental_sync";
 
@@ -2614,7 +2721,16 @@ function TaskCreatorModal({
     setSelectedType("full_migration");
     setFormError(null);
     setPreflight(null);
-    setStrategy(defaultStrategy);
+    setStrategy(defaultStrategyTemplate);
+    setLoadingSourceSchemas(false);
+    setLoadingTargetSchemas(false);
+    setLoadingTables(false);
+    setLoadingColumns(false);
+    setSourceSchemas([]);
+    setTargetSchemas([]);
+    setTables([]);
+    setColumns([]);
+    setFieldMappings([]);
     setSyncDraft({
       name: "",
       owner: "数据平台",
@@ -2629,46 +2745,182 @@ function TaskCreatorModal({
       name: "",
       taskId: executableTasks[0]?.id || ""
     });
-  }, [open, sourceOptions, targetOptions, executableTasks]);
+  }, [defaultStrategyTemplate, open, sourceOptions, targetOptions, executableTasks]);
 
   useEffect(() => {
-    api.defaultStrategy().then(setStrategy).catch(() => undefined);
+    let cancelled = false;
+    api.defaultStrategy()
+      .then((nextStrategy) => {
+        if (!cancelled) {
+          setDefaultStrategyTemplate(nextStrategy);
+          setStrategy(nextStrategy);
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
-    if (!syncDraft.sourceDatasourceId) return;
-    api.schemas(syncDraft.sourceDatasourceId)
+    if (!open) return;
+    const requestId = sourceSchemasRequestId.current + 1;
+    sourceSchemasRequestId.current = requestId;
+    setSourceSchemas([]);
+    setTables([]);
+    setColumns([]);
+    setFieldMappings([]);
+    setLoadingTables(false);
+    setLoadingColumns(false);
+    if (!syncDraft.sourceDatasourceId) {
+      setLoadingSourceSchemas(false);
+      return;
+    }
+    const controller = new AbortController();
+    const datasourceId = syncDraft.sourceDatasourceId;
+    setLoadingSourceSchemas(true);
+    api.schemas(datasourceId, { signal: controller.signal })
       .then((items) => {
+        if (controller.signal.aborted || requestId !== sourceSchemasRequestId.current) return;
         setSourceSchemas(items);
-        setSyncDraft((current) => ({ ...current, sourceSchema: current.sourceSchema || items[0] || "" }));
+        setSyncDraft((current) => {
+          if (current.sourceDatasourceId !== datasourceId) {
+            return current;
+          }
+          const nextSourceSchema = items.includes(current.sourceSchema) ? current.sourceSchema : items[0] || "";
+          return {
+            ...current,
+            sourceSchema: nextSourceSchema,
+            sourceTable: current.sourceSchema === nextSourceSchema ? current.sourceTable : ""
+          };
+        });
       })
-      .catch(() => setSourceSchemas([]));
-  }, [syncDraft.sourceDatasourceId]);
+      .catch((error) => {
+        if (controller.signal.aborted || requestId !== sourceSchemasRequestId.current) return;
+        setSourceSchemas([]);
+        if (error instanceof Error) {
+          setFormError(error.message);
+        }
+      })
+      .finally(() => {
+        if (!controller.signal.aborted && requestId === sourceSchemasRequestId.current) {
+          setLoadingSourceSchemas(false);
+        }
+      });
+    return () => {
+      controller.abort();
+    };
+  }, [open, syncDraft.sourceDatasourceId]);
 
   useEffect(() => {
-    if (!syncDraft.targetDatasourceId) return;
-    api.schemas(syncDraft.targetDatasourceId)
+    if (!open) return;
+    const requestId = targetSchemasRequestId.current + 1;
+    targetSchemasRequestId.current = requestId;
+    setTargetSchemas([]);
+    if (!syncDraft.targetDatasourceId) {
+      setLoadingTargetSchemas(false);
+      return;
+    }
+    const controller = new AbortController();
+    const datasourceId = syncDraft.targetDatasourceId;
+    setLoadingTargetSchemas(true);
+    api.schemas(datasourceId, { signal: controller.signal })
       .then((items) => {
+        if (controller.signal.aborted || requestId !== targetSchemasRequestId.current) return;
         setTargetSchemas(items);
-        setSyncDraft((current) => ({ ...current, targetSchema: current.targetSchema || items[0] || "" }));
+        setSyncDraft((current) => {
+          if (current.targetDatasourceId !== datasourceId) {
+            return current;
+          }
+          return {
+            ...current,
+            targetSchema: items.includes(current.targetSchema) ? current.targetSchema : items[0] || ""
+          };
+        });
       })
-      .catch(() => setTargetSchemas([]));
-  }, [syncDraft.targetDatasourceId]);
+      .catch((error) => {
+        if (controller.signal.aborted || requestId !== targetSchemasRequestId.current) return;
+        setTargetSchemas([]);
+        if (error instanceof Error) {
+          setFormError(error.message);
+        }
+      })
+      .finally(() => {
+        if (!controller.signal.aborted && requestId === targetSchemasRequestId.current) {
+          setLoadingTargetSchemas(false);
+        }
+      });
+    return () => {
+      controller.abort();
+    };
+  }, [open, syncDraft.targetDatasourceId]);
 
   useEffect(() => {
-    if (!syncDraft.sourceDatasourceId || !syncDraft.sourceSchema) return;
-    api.tables(syncDraft.sourceDatasourceId, syncDraft.sourceSchema)
+    if (!open) return;
+    const requestId = tablesRequestId.current + 1;
+    tablesRequestId.current = requestId;
+    setTables([]);
+    setColumns([]);
+    setFieldMappings([]);
+    setLoadingColumns(false);
+    if (!syncDraft.sourceDatasourceId || !syncDraft.sourceSchema) {
+      setLoadingTables(false);
+      return;
+    }
+    const controller = new AbortController();
+    const datasourceId = syncDraft.sourceDatasourceId;
+    const sourceSchema = syncDraft.sourceSchema;
+    setLoadingTables(true);
+    api.tables(datasourceId, sourceSchema, { signal: controller.signal })
       .then((items) => {
+        if (controller.signal.aborted || requestId !== tablesRequestId.current) return;
         setTables(items);
-        setSyncDraft((current) => ({ ...current, sourceTable: current.sourceTable || items[0]?.name || "" }));
+        setSyncDraft((current) => {
+          if (current.sourceDatasourceId !== datasourceId || current.sourceSchema !== sourceSchema) {
+            return current;
+          }
+          const nextSourceTable = items.some((item) => item.name === current.sourceTable) ? current.sourceTable : items[0]?.name || "";
+          return {
+            ...current,
+            sourceTable: nextSourceTable
+          };
+        });
       })
-      .catch(() => setTables([]));
-  }, [syncDraft.sourceDatasourceId, syncDraft.sourceSchema]);
+      .catch((error) => {
+        if (controller.signal.aborted || requestId !== tablesRequestId.current) return;
+        setTables([]);
+        if (error instanceof Error) {
+          setFormError(error.message);
+        }
+      })
+      .finally(() => {
+        if (!controller.signal.aborted && requestId === tablesRequestId.current) {
+          setLoadingTables(false);
+        }
+      });
+    return () => {
+      controller.abort();
+    };
+  }, [open, syncDraft.sourceDatasourceId, syncDraft.sourceSchema]);
 
   useEffect(() => {
-    if (!syncDraft.sourceDatasourceId || !syncDraft.sourceSchema || !syncDraft.sourceTable) return;
-    api.columns(syncDraft.sourceDatasourceId, syncDraft.sourceSchema, syncDraft.sourceTable)
+    if (!open) return;
+    const requestId = columnsRequestId.current + 1;
+    columnsRequestId.current = requestId;
+    setColumns([]);
+    setFieldMappings([]);
+    if (!syncDraft.sourceDatasourceId || !syncDraft.sourceSchema || !syncDraft.sourceTable) {
+      setLoadingColumns(false);
+      return;
+    }
+    const controller = new AbortController();
+    const datasourceId = syncDraft.sourceDatasourceId;
+    const sourceSchema = syncDraft.sourceSchema;
+    const sourceTable = syncDraft.sourceTable;
+    setLoadingColumns(true);
+    api.columns(datasourceId, sourceSchema, sourceTable, { signal: controller.signal })
       .then((items) => {
+        if (controller.signal.aborted || requestId !== columnsRequestId.current) return;
         setColumns(items);
         setFieldMappings(items.map((column) => ({
           sourceField: column.name,
@@ -2679,16 +2931,37 @@ function TaskCreatorModal({
           nullable: column.nullable,
           ignored: false
         })));
-        setSyncDraft((current) => ({
-          ...current,
-          targetTable: current.targetTable || `ods_${current.sourceTable}`
-        }));
+        setSyncDraft((current) => {
+          if (
+            current.sourceDatasourceId !== datasourceId
+            || current.sourceSchema !== sourceSchema
+            || current.sourceTable !== sourceTable
+          ) {
+            return current;
+          }
+          return {
+            ...current,
+            targetTable: current.targetTable || `ods_${sourceTable}`
+          };
+        });
       })
-      .catch(() => {
+      .catch((error) => {
+        if (controller.signal.aborted || requestId !== columnsRequestId.current) return;
         setColumns([]);
         setFieldMappings([]);
+        if (error instanceof Error) {
+          setFormError(error.message);
+        }
+      })
+      .finally(() => {
+        if (!controller.signal.aborted && requestId === columnsRequestId.current) {
+          setLoadingColumns(false);
+        }
       });
-  }, [syncDraft.sourceDatasourceId, syncDraft.sourceSchema, syncDraft.sourceTable]);
+    return () => {
+      controller.abort();
+    };
+  }, [open, syncDraft.sourceDatasourceId, syncDraft.sourceSchema, syncDraft.sourceTable]);
 
   useEffect(() => {
     setPreflight(null);
@@ -2721,7 +2994,37 @@ function TaskCreatorModal({
     };
   };
 
+  const activeFieldMappings = fieldMappings.filter((item) => !item.ignored);
+  const syncStepError = !sourceOptions.length || !targetOptions.length
+    ? "请先准备至少一个源端和一个目标端数据源。"
+    : !syncDraft.sourceDatasourceId || !syncDraft.targetDatasourceId
+      ? "请选择源端和目标端数据源。"
+      : loadingSourceSchemas || loadingTargetSchemas || loadingTables || loadingColumns
+        ? "正在加载最新库表结构，请稍候再继续。"
+        : !syncDraft.sourceSchema || !syncDraft.sourceTable || !syncDraft.targetSchema
+          ? "请选择源库、源表和目标库。"
+          : !syncDraft.targetTable.trim()
+            ? "请填写目标表。"
+            : fieldMappings.length === 0
+              ? "等待字段映射加载完成后再继续。"
+              : activeFieldMappings.length === 0
+                ? "至少保留一个同步字段。"
+                : activeFieldMappings.some((item) => !item.targetField.trim())
+                  ? "目标字段名不能为空。"
+                  : null;
+  const capabilityStepError = executableTasks.length === 0
+    ? "请先准备一条可执行的同步任务。"
+    : !capabilityDraft.taskId
+      ? "请选择关联同步任务。"
+      : null;
+  const stepOneError = isSyncType ? syncStepError : capabilityStepError;
+  const submitBlockedError = stepOneError || (isSyncType && preflight && !preflight.ok ? "预检未通过，请返回上一步修复失败项。" : null);
+
   const runPreflight = async () => {
+    if (syncStepError) {
+      setFormError(syncStepError);
+      return null;
+    }
     setChecking(true);
     setFormError(null);
     try {
@@ -2742,6 +3045,10 @@ function TaskCreatorModal({
   const submit = async () => {
     if (!canManage) {
       pushNotice({ tone: "warning", message: "创建任务需要管理员权限" });
+      return;
+    }
+    if (submitBlockedError) {
+      setFormError(submitBlockedError);
       return;
     }
     setSubmitting(true);
@@ -2838,18 +3145,36 @@ function TaskCreatorModal({
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="grid gap-4">
                 <Field label="源端数据源">
-                  <select className="select" value={syncDraft.sourceDatasourceId} onChange={(event) => setSyncDraft({ ...syncDraft, sourceDatasourceId: event.target.value, sourceSchema: "", sourceTable: "" })}>
+                  <select
+                    className="select"
+                    value={syncDraft.sourceDatasourceId}
+                    onChange={(event) => setSyncDraft({ ...syncDraft, sourceDatasourceId: event.target.value, sourceSchema: "", sourceTable: "" })}
+                    disabled={sourceOptions.length === 0}
+                  >
+                    {sourceOptions.length === 0 && <option value="">暂无可用源端数据源</option>}
                     {sourceOptions.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
                   </select>
                 </Field>
                 <div className="grid gap-4 sm:grid-cols-2">
                   <Field label="源库">
-                    <select className="select" value={syncDraft.sourceSchema} onChange={(event) => setSyncDraft({ ...syncDraft, sourceSchema: event.target.value, sourceTable: "" })}>
+                    <select
+                      className="select"
+                      value={syncDraft.sourceSchema}
+                      onChange={(event) => setSyncDraft({ ...syncDraft, sourceSchema: event.target.value, sourceTable: "" })}
+                      disabled={!syncDraft.sourceDatasourceId || loadingSourceSchemas || sourceSchemas.length === 0}
+                    >
+                      {sourceSchemas.length === 0 && <option value="">{loadingSourceSchemas ? "源库加载中..." : "暂无可选源库"}</option>}
                       {sourceSchemas.map((item) => <option key={item} value={item}>{item}</option>)}
                     </select>
                   </Field>
                   <Field label="源表">
-                    <select className="select" value={syncDraft.sourceTable} onChange={(event) => setSyncDraft({ ...syncDraft, sourceTable: event.target.value })}>
+                    <select
+                      className="select"
+                      value={syncDraft.sourceTable}
+                      onChange={(event) => setSyncDraft({ ...syncDraft, sourceTable: event.target.value })}
+                      disabled={!syncDraft.sourceSchema || loadingTables || tables.length === 0}
+                    >
+                      {tables.length === 0 && <option value="">{loadingTables ? "源表加载中..." : "暂无可选源表"}</option>}
                       {tables.map((item) => <option key={item.name} value={item.name}>{item.name}</option>)}
                     </select>
                   </Field>
@@ -2857,12 +3182,24 @@ function TaskCreatorModal({
               </div>
               <div className="grid gap-4">
                 <Field label="目标端数据源">
-                  <select className="select" value={syncDraft.targetDatasourceId} onChange={(event) => setSyncDraft({ ...syncDraft, targetDatasourceId: event.target.value, targetSchema: "" })}>
+                  <select
+                    className="select"
+                    value={syncDraft.targetDatasourceId}
+                    onChange={(event) => setSyncDraft({ ...syncDraft, targetDatasourceId: event.target.value, targetSchema: "" })}
+                    disabled={targetOptions.length === 0}
+                  >
+                    {targetOptions.length === 0 && <option value="">暂无可用目标端数据源</option>}
                     {targetOptions.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
                   </select>
                 </Field>
                 <Field label="目标库">
-                  <select className="select" value={syncDraft.targetSchema} onChange={(event) => setSyncDraft({ ...syncDraft, targetSchema: event.target.value })}>
+                  <select
+                    className="select"
+                    value={syncDraft.targetSchema}
+                    onChange={(event) => setSyncDraft({ ...syncDraft, targetSchema: event.target.value })}
+                    disabled={!syncDraft.targetDatasourceId || loadingTargetSchemas || targetSchemas.length === 0}
+                  >
+                    {targetSchemas.length === 0 && <option value="">{loadingTargetSchemas ? "目标库加载中..." : "暂无可选目标库"}</option>}
                     {targetSchemas.map((item) => <option key={item} value={item}>{item}</option>)}
                   </select>
                 </Field>
@@ -2874,7 +3211,7 @@ function TaskCreatorModal({
                   <div className="font-medium text-coal">字段映射</div>
                   <div className="mt-1 text-sm text-slate-500">默认按同名字段填充，必要时再精简或忽略。</div>
                 </div>
-                <div className="chip border-slate-200 bg-white text-slate-600">{columns.length} 列</div>
+                <div className="chip border-slate-200 bg-white text-slate-600">{loadingColumns ? "加载中" : `${columns.length} 列`}</div>
               </div>
               <div className="mt-4 overflow-auto rounded-2xl border border-line bg-white">
                 <table className="w-full min-w-[640px] text-left text-sm">
@@ -2888,7 +3225,13 @@ function TaskCreatorModal({
                     </tr>
                   </thead>
                   <tbody>
-                    {fieldMappings.map((field, index) => (
+                    {fieldMappings.length === 0 ? (
+                      <tr>
+                        <td colSpan={5} className="px-3 py-6 text-center text-sm text-slate-500">
+                          {loadingColumns ? "正在加载字段映射..." : "请选择可用的源表后再配置字段映射。"}
+                        </td>
+                      </tr>
+                    ) : fieldMappings.map((field, index) => (
                       <tr key={field.sourceField} className="border-b border-line last:border-b-0">
                         <td className="px-3 py-3 mono text-slate-700">{field.sourceField}</td>
                         <td className="px-3 py-3">
@@ -2994,6 +3337,7 @@ function TaskCreatorModal({
           </div>
         )}
 
+        {step === 1 && stepOneError && <NoticeBanner tone="warning">{stepOneError}</NoticeBanner>}
         {formError && <NoticeBanner tone="error">{formError}</NoticeBanner>}
 
         <div className="flex flex-wrap justify-between gap-3 border-t border-line pt-4">
@@ -3010,6 +3354,7 @@ function TaskCreatorModal({
               <button
                 type="button"
                 onClick={() => setStep((value) => Math.min(2, value + 1))}
+                disabled={step === 1 && Boolean(stepOneError)}
                 className="btn-primary"
               >
                 下一步
@@ -3017,12 +3362,12 @@ function TaskCreatorModal({
             ) : (
               <>
                 {isSyncType && (
-                  <button type="button" onClick={() => void runPreflight()} disabled={checking} className="btn-secondary">
+                  <button type="button" onClick={() => void runPreflight()} disabled={checking || Boolean(syncStepError)} className="btn-secondary">
                     {checking ? <ArrowsClockwise size={16} /> : <ShieldCheck size={16} />}
                     {checking ? "预检中" : "运行预检"}
                   </button>
                 )}
-                <button type="button" onClick={() => void submit()} disabled={submitting} className="btn-primary">
+                <button type="button" onClick={() => void submit()} disabled={submitting || Boolean(submitBlockedError)} className="btn-primary">
                   {submitting ? <ArrowsClockwise size={16} /> : <RocketLaunch size={16} />}
                   {submitting ? "启动中" : "创建并启动"}
                 </button>
@@ -3053,6 +3398,26 @@ function NodeCreatorModal({
   const [deploying, setDeploying] = useState(false);
   const [testResult, setTestResult] = useState<NodeConnectionTestResult | null>(null);
   const [deployResult, setDeployResult] = useState<NodeOperationResult | null>(null);
+  const [lastSuccessfulTestSignature, setLastSuccessfulTestSignature] = useState<string | null>(null);
+  const currentFormSignature = nodeFormFingerprint(form);
+  const nodeFormError = validateNodeForm(form);
+  const testExpired = Boolean(lastSuccessfulTestSignature && lastSuccessfulTestSignature !== currentFormSignature);
+  const deployBlockedReason = nodeFormError
+    || (!testResult
+      ? "请先完成连接测试，再部署节点。"
+      : !testResult.success
+        ? "连接测试未通过，请修复后重新测试。"
+        : testExpired
+          ? "连接信息已变更，请重新测试后再部署。"
+          : null);
+  const showDeployGuard = Boolean(
+    testResult
+    || form.name
+    || form.endpoint
+    || form.sshUser
+    || form.password
+    || form.privateKey
+  );
 
   useEffect(() => {
     if (!open) return;
@@ -3061,6 +3426,7 @@ function NodeCreatorModal({
     setDeploying(false);
     setTestResult(null);
     setDeployResult(null);
+    setLastSuccessfulTestSignature(null);
   }, [open]);
 
   const runTest = async () => {
@@ -3068,12 +3434,18 @@ function NodeCreatorModal({
       pushNotice({ tone: "warning", message: "节点部署需要管理员权限" });
       return;
     }
+    if (nodeFormError) {
+      pushNotice({ tone: "warning", message: nodeFormError });
+      return;
+    }
     setTesting(true);
     try {
       const result = await api.testNodeConnection(form);
       setTestResult(result);
+      setLastSuccessfulTestSignature(result.success ? currentFormSignature : null);
       pushNotice({ tone: result.success ? "success" : "warning", message: result.message });
     } catch (requestError) {
+      setLastSuccessfulTestSignature(null);
       pushNotice({ tone: "error", message: requestError instanceof Error ? requestError.message : "测试失败" });
     } finally {
       setTesting(false);
@@ -3083,6 +3455,10 @@ function NodeCreatorModal({
   const deploy = async () => {
     if (!canManage) {
       pushNotice({ tone: "warning", message: "节点部署需要管理员权限" });
+      return;
+    }
+    if (deployBlockedReason) {
+      pushNotice({ tone: "warning", message: deployBlockedReason });
       return;
     }
     setDeploying(true);
@@ -3165,6 +3541,8 @@ function NodeCreatorModal({
           </div>
         )}
 
+        {showDeployGuard && deployBlockedReason && <NoticeBanner tone="warning">{deployBlockedReason}</NoticeBanner>}
+
         {deployResult && (
           <div className="grid gap-3">
             {deployResult.steps.map((step) => (
@@ -3181,11 +3559,11 @@ function NodeCreatorModal({
 
         <div className="flex justify-end gap-3 border-t border-line pt-4">
           <button type="button" onClick={onClose} className="btn-secondary">关闭</button>
-          <button type="button" onClick={() => void runTest()} disabled={testing} className="btn-secondary">
+          <button type="button" onClick={() => void runTest()} disabled={testing || Boolean(nodeFormError)} className="btn-secondary">
             {testing ? <ArrowsClockwise size={16} /> : <ShieldCheck size={16} />}
             {testing ? "测试中" : "测试连接"}
           </button>
-          <button type="button" onClick={() => void deploy()} disabled={deploying} className="btn-primary">
+          <button type="button" onClick={() => void deploy()} disabled={deploying || Boolean(deployBlockedReason)} className="btn-primary">
             {deploying ? <ArrowsClockwise size={16} /> : <RocketLaunch size={16} />}
             {deploying ? "部署中" : "部署节点"}
           </button>
@@ -3227,6 +3605,7 @@ function SyncTaskDetail({
   const [rollingBackVersion, setRollingBackVersion] = useState<number | null>(null);
   const [savingParams, setSavingParams] = useState(false);
   const [resettingPosition, setResettingPosition] = useState(false);
+  const [confirmation, setConfirmation] = useState<ConfirmationDialogState | null>(null);
   const [paramsDraft, setParamsDraft] = useState({
     batchSize: task.strategy.batchSize,
     retryTimes: task.strategy.retryTimes,
@@ -3311,7 +3690,7 @@ function SyncTaskDetail({
     };
   }, [task.id]);
 
-  const rollbackRevision = async (version: number) => {
+  const executeRollbackRevision = async (version: number) => {
     if (!canManage) {
       pushNotice({ tone: "warning", message: "回滚任务版本需要管理员权限" });
       return;
@@ -3326,6 +3705,18 @@ function SyncTaskDetail({
     } finally {
       setRollingBackVersion(null);
     }
+  };
+
+  const requestRollbackRevision = (version: number) => {
+    setConfirmation({
+      title: `回滚到 v${version}`,
+      description: `任务配置会被回滚到 v${version}，当前版本的参数和表映射会被替换。确认继续吗？`,
+      confirmLabel: "确认回滚",
+      confirmTone: "danger",
+      onConfirm: () => {
+        void executeRollbackRevision(version);
+      }
+    });
   };
 
   const saveRuntimeParams = async () => {
@@ -3351,7 +3742,7 @@ function SyncTaskDetail({
     }
   };
 
-  const resetPosition = async () => {
+  const executeResetPosition = async () => {
     if (!canManage) {
       pushNotice({ tone: "warning", message: "重置位点需要管理员权限" });
       return;
@@ -3369,6 +3760,18 @@ function SyncTaskDetail({
     } finally {
       setResettingPosition(false);
     }
+  };
+
+  const requestResetPosition = () => {
+    setConfirmation({
+      title: "重置任务位点",
+      description: `任务会跳转到 ${positionDraft.binlogFile}:${Number(positionDraft.binlogPosition)}。请确认当前任务已停止，并且允许从该位点重新开始。`,
+      confirmLabel: "确认重置",
+      confirmTone: "danger",
+      onConfirm: () => {
+        void executeResetPosition();
+      }
+    });
   };
 
   useEffect(() => {
@@ -3652,12 +4055,12 @@ function SyncTaskDetail({
               </Field>
             </div>
             <div className="mt-4 flex justify-end">
-              <button
-                type="button"
-                onClick={() => void resetPosition()}
-                disabled={resettingPosition || task.status !== "stopped"}
-                className="btn-secondary"
-              >
+                <button
+                  type="button"
+                  onClick={requestResetPosition}
+                  disabled={resettingPosition || task.status !== "stopped"}
+                  className="btn-secondary"
+                >
                 {resettingPosition ? <ArrowsClockwise size={16} /> : <ArrowRight size={16} />}
                 {resettingPosition ? "重置中" : "重置位点"}
               </button>
@@ -3690,7 +4093,7 @@ function SyncTaskDetail({
                 {canManage && revision.version !== task.configVersion && (
                   <button
                     type="button"
-                    onClick={() => void rollbackRevision(revision.version)}
+                    onClick={() => requestRollbackRevision(revision.version)}
                     disabled={rollingBackVersion === revision.version}
                     className="btn-secondary px-3 py-2 text-xs"
                   >
@@ -3746,6 +4149,20 @@ function SyncTaskDetail({
           ))}
         </div>
       </section>
+
+      <ConfirmDialog
+        open={Boolean(confirmation)}
+        title={confirmation?.title || ""}
+        description={confirmation?.description || ""}
+        confirmLabel={confirmation?.confirmLabel || "确认"}
+        confirmTone={confirmation?.confirmTone}
+        onCancel={() => setConfirmation(null)}
+        onConfirm={() => {
+          const action = confirmation?.onConfirm;
+          setConfirmation(null);
+          action?.();
+        }}
+      />
     </div>
   );
 }
@@ -3765,6 +4182,46 @@ function TaskLiveLogPanel({
   taskLogs: TaskLogEntry[];
   lastLogAt?: string;
 }) {
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const logEndRef = useRef<HTMLDivElement | null>(null);
+  const [followLatest, setFollowLatest] = useState(true);
+  const [showJumpToLatest, setShowJumpToLatest] = useState(false);
+
+  useEffect(() => {
+    if (remoteManaged || logNotice || taskLogs.length === 0) {
+      setFollowLatest(true);
+      setShowJumpToLatest(false);
+      return;
+    }
+    if (!followLatest) {
+      setShowJumpToLatest(true);
+      return;
+    }
+    const frame = window.requestAnimationFrame(() => {
+      logEndRef.current?.scrollIntoView({ block: "end" });
+      setShowJumpToLatest(false);
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [followLatest, logNotice, remoteManaged, taskLogs.length]);
+
+  const handleScroll = () => {
+    const node = scrollRef.current;
+    if (!node) return;
+    const nearBottom = node.scrollHeight - node.scrollTop - node.clientHeight < 40;
+    setFollowLatest(nearBottom);
+    if (nearBottom) {
+      setShowJumpToLatest(false);
+    }
+  };
+
+  const jumpToLatest = () => {
+    const node = scrollRef.current;
+    if (!node) return;
+    node.scrollTo({ top: node.scrollHeight, behavior: "smooth" });
+    setFollowLatest(true);
+    setShowJumpToLatest(false);
+  };
+
   return (
     <section className={cx("rounded-[2rem] border border-slate-800 bg-slate-950 p-4 text-slate-100 shadow-panel", className)}>
       <div className="flex items-center justify-between gap-3">
@@ -3778,8 +4235,16 @@ function TaskLiveLogPanel({
           {remoteManaged ? "远程节点" : logConnected ? "实时连接" : "等待连接"}
         </Badge>
       </div>
+      {showJumpToLatest && (
+        <div className="mt-3 flex justify-end">
+          <button type="button" onClick={jumpToLatest} className="btn-secondary px-3 py-2 text-xs">
+            <ArrowRight size={14} />
+            回到最新日志
+          </button>
+        </div>
+      )}
       <div className="mt-4 rounded-[1.5rem] border border-slate-800 bg-slate-900/80">
-        <div className="max-h-[560px] overflow-auto px-4 py-4">
+        <div ref={scrollRef} onScroll={handleScroll} className="max-h-[560px] overflow-auto px-4 py-4">
           {logNotice ? (
             <div className="text-sm leading-6 text-slate-300">{logNotice}</div>
           ) : taskLogs.length === 0 ? (
@@ -3796,6 +4261,7 @@ function TaskLiveLogPanel({
                   <div className="mt-2 break-words text-sm leading-6 text-slate-100">{entry.message}</div>
                 </div>
               ))}
+              <div ref={logEndRef} />
             </div>
           )}
         </div>
@@ -3986,16 +4452,27 @@ function EmptyPanel({
   );
 }
 
-function NoticeBanner({ tone, children }: { tone: NoticeTone; children: ReactNode }) {
+function NoticeBanner({
+  tone,
+  children,
+  action
+}: {
+  tone: NoticeTone;
+  children: ReactNode;
+  action?: ReactNode;
+}) {
   const className = tone === "success"
     ? "border-emerald-200 bg-emerald-50 text-emerald-700"
     : tone === "warning"
       ? "border-amber-200 bg-amber-50 text-amber-700"
       : "border-red-200 bg-red-50 text-red-700";
   return (
-    <div className={cx("mb-5 flex items-start gap-2 rounded-2xl border px-4 py-3 text-sm", className)}>
-      {tone === "success" ? <CheckCircle size={18} /> : tone === "warning" ? <WarningCircle size={18} /> : <XCircle size={18} />}
-      <div>{children}</div>
+    <div className={cx("mb-5 flex flex-col gap-3 rounded-2xl border px-4 py-3 text-sm sm:flex-row sm:items-start sm:justify-between", className)}>
+      <div className="flex items-start gap-2">
+        {tone === "success" ? <CheckCircle size={18} /> : tone === "warning" ? <WarningCircle size={18} /> : <XCircle size={18} />}
+        <div>{children}</div>
+      </div>
+      {action && <div className="sm:pl-4">{action}</div>}
     </div>
   );
 }
@@ -4071,6 +4548,11 @@ function TypeBadge({ type }: { type: string }) {
   return <Badge tone="blue">{type}</Badge>;
 }
 
+function getFocusableElements(container: HTMLElement | null) {
+  if (!container) return [];
+  return Array.from(container.querySelectorAll<HTMLElement>(focusableSelector)).filter((element) => !element.hasAttribute("disabled"));
+}
+
 function NextStepCard({
   title,
   description,
@@ -4099,22 +4581,91 @@ function Modal({
   title,
   description,
   children,
-  onClose
+  onClose,
+  size = "xl",
+  closeOnOverlay = true
 }: {
   open: boolean;
   title: string;
   description?: string;
   children: ReactNode;
   onClose: () => void;
+  size?: "md" | "lg" | "xl";
+  closeOnOverlay?: boolean;
 }) {
+  const titleId = useId();
+  const descriptionId = useId();
+  const panelRef = useRef<HTMLDivElement | null>(null);
+  const lastActiveElementRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    lastActiveElementRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const focusFrame = window.requestAnimationFrame(() => {
+      const focusable = getFocusableElements(panelRef.current);
+      (focusable[0] || panelRef.current)?.focus();
+    });
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onClose();
+        return;
+      }
+      if (event.key !== "Tab") {
+        return;
+      }
+      const focusable = getFocusableElements(panelRef.current);
+      if (focusable.length === 0) {
+        event.preventDefault();
+        panelRef.current?.focus();
+        return;
+      }
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      const activeElement = document.activeElement;
+      if (event.shiftKey && activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.cancelAnimationFrame(focusFrame);
+      document.removeEventListener("keydown", handleKeyDown);
+      document.body.style.overflow = previousOverflow;
+      lastActiveElementRef.current?.focus();
+    };
+  }, [onClose, open]);
+
   if (!open) return null;
+  const sizeClass = size === "md" ? "max-w-xl" : size === "lg" ? "max-w-3xl" : "max-w-5xl";
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/35 px-4 py-8">
-      <div className="surface max-h-[90dvh] w-full max-w-5xl overflow-auto p-6 md:p-8">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/35 px-4 py-8"
+      onMouseDown={(event) => {
+        if (closeOnOverlay && event.target === event.currentTarget) {
+          onClose();
+        }
+      }}
+    >
+      <div
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        aria-describedby={description ? descriptionId : undefined}
+        tabIndex={-1}
+        className={cx("surface max-h-[90dvh] w-full overflow-auto p-6 md:p-8", sizeClass)}
+      >
         <div className="flex items-start justify-between gap-4">
           <div>
-            <h3 className="text-2xl font-semibold tracking-tight text-coal">{title}</h3>
-            {description && <p className="mt-2 text-sm text-slate-500">{description}</p>}
+            <h3 id={titleId} className="text-2xl font-semibold tracking-tight text-coal">{title}</h3>
+            {description && <p id={descriptionId} className="mt-2 text-sm text-slate-500">{description}</p>}
           </div>
           <button onClick={onClose} className="btn-secondary px-3 py-2 text-xs">
             关闭
@@ -4126,37 +4677,154 @@ function Modal({
   );
 }
 
+function ConfirmDialog({
+  open,
+  title,
+  description,
+  confirmLabel,
+  confirmTone = "danger",
+  onCancel,
+  onConfirm
+}: {
+  open: boolean;
+  title: string;
+  description: string;
+  confirmLabel: string;
+  confirmTone?: "danger" | "primary";
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <Modal open={open} title={title} description={description} onClose={onCancel} size="md" closeOnOverlay={false}>
+      <div className="flex justify-end gap-3">
+        <button type="button" onClick={onCancel} className="btn-secondary">
+          取消
+        </button>
+        <button type="button" onClick={onConfirm} className={confirmTone === "danger" ? "btn-danger" : "btn-primary"}>
+          {confirmLabel}
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
 function ActionMenu({
   items
 }: {
   items: Array<{ label: string; onSelect: () => void; disabled?: boolean; danger?: boolean }>;
 }) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const buttonRef = useRef<HTMLButtonElement | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+
+  const focusMenuItem = (index: number) => {
+    const enabledItems = Array.from(menuRef.current?.querySelectorAll<HTMLButtonElement>("[role='menuitem']:not([disabled])") || []);
+    if (enabledItems.length === 0) return;
+    const normalizedIndex = ((index % enabledItems.length) + enabledItems.length) % enabledItems.length;
+    enabledItems[normalizedIndex].focus();
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    const handlePointerDown = (event: MouseEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    };
+    const handleFocusIn = (event: FocusEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setOpen(false);
+        buttonRef.current?.focus();
+      }
+    };
+    document.addEventListener("mousedown", handlePointerDown);
+    document.addEventListener("focusin", handleFocusIn);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      document.removeEventListener("focusin", handleFocusIn);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [open]);
+
   if (items.length === 0) {
     return null;
   }
+
   return (
-    <details className="relative">
-      <summary className="btn-secondary list-none px-3 py-2 text-xs">
+    <div ref={rootRef} className="relative">
+      <button
+        ref={buttonRef}
+        type="button"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((current) => !current)}
+        onKeyDown={(event) => {
+          if (event.key === "ArrowDown") {
+            event.preventDefault();
+            setOpen(true);
+            window.requestAnimationFrame(() => focusMenuItem(0));
+          }
+        }}
+        className="btn-secondary px-3 py-2 text-xs"
+      >
         <DotsThree size={14} />
         更多
-      </summary>
-      <div className="absolute right-0 top-11 z-20 w-40 rounded-2xl border border-line bg-white p-2 shadow-panel">
-        {items.map((item) => (
-          <button
-            key={item.label}
-            onClick={item.onSelect}
-            disabled={item.disabled}
-            className={cx(
-              "block w-full rounded-xl px-3 py-2 text-left text-sm transition",
-              item.danger ? "text-red-700 hover:bg-red-50" : "text-slate-700 hover:bg-slate-50",
-              item.disabled && "cursor-not-allowed opacity-45"
-            )}
-          >
-            {item.label}
-          </button>
-        ))}
-      </div>
-    </details>
+      </button>
+      {open && (
+        <div
+          ref={menuRef}
+          role="menu"
+          onKeyDown={(event) => {
+            const enabledItems = Array.from(menuRef.current?.querySelectorAll<HTMLButtonElement>("[role='menuitem']:not([disabled])") || []);
+            const currentIndex = enabledItems.findIndex((item) => item === document.activeElement);
+            if (event.key === "ArrowDown") {
+              event.preventDefault();
+              focusMenuItem(currentIndex < 0 ? 0 : currentIndex + 1);
+            } else if (event.key === "ArrowUp") {
+              event.preventDefault();
+              focusMenuItem(currentIndex < 0 ? enabledItems.length - 1 : currentIndex - 1);
+            } else if (event.key === "Home") {
+              event.preventDefault();
+              focusMenuItem(0);
+            } else if (event.key === "End") {
+              event.preventDefault();
+              focusMenuItem(enabledItems.length - 1);
+            } else if (event.key === "Tab") {
+              setOpen(false);
+            }
+          }}
+          className="absolute right-0 top-11 z-20 w-40 rounded-2xl border border-line bg-white p-2 shadow-panel"
+        >
+          {items.map((item) => (
+            <button
+              key={item.label}
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                if (item.disabled) return;
+                setOpen(false);
+                item.onSelect();
+              }}
+              disabled={item.disabled}
+              className={cx(
+                "block w-full rounded-xl px-3 py-2 text-left text-sm transition",
+                item.danger ? "text-red-700 hover:bg-red-50" : "text-slate-700 hover:bg-slate-50",
+                item.disabled && "cursor-not-allowed opacity-45"
+              )}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -4178,6 +4846,36 @@ function ShellSkeleton() {
       </div>
     </div>
   );
+}
+
+function nodeFormFingerprint(form: ClusterNodeInput) {
+  return JSON.stringify({
+    name: form.name?.trim() || "",
+    endpoint: form.endpoint?.trim() || "",
+    sshPort: Number(form.sshPort) || 0,
+    sshUser: form.sshUser?.trim() || "",
+    authMode: form.authMode,
+    password: form.password || "",
+    privateKey: form.privateKey || "",
+    installDir: form.installDir?.trim() || "",
+    version: form.version?.trim() || "",
+    zone: form.zone?.trim() || "",
+    role: form.role?.trim() || "",
+    capacity: Number(form.capacity) || 0
+  });
+}
+
+function validateNodeForm(form: ClusterNodeInput) {
+  if (!form.name?.trim()) return "请先填写节点名称。";
+  if (!form.endpoint?.trim()) return "请先填写主机地址。";
+  if (!form.sshUser?.trim()) return "请先填写 SSH 用户。";
+  if (!Number.isFinite(Number(form.sshPort)) || Number(form.sshPort) <= 0) return "SSH 端口必须大于 0。";
+  if (!form.installDir?.trim()) return "请先填写安装目录。";
+  if (!form.version?.trim()) return "请先填写节点版本。";
+  if (!Number.isFinite(Number(form.capacity)) || Number(form.capacity) <= 0) return "可承载任务数必须大于 0。";
+  if (form.authMode === "private_key" && !form.privateKey?.trim()) return "请先填写私钥后再测试连接。";
+  if (form.authMode !== "private_key" && !form.password) return "请先填写密码后再测试连接。";
+  return null;
 }
 
 function datasourceSearchText(item: Datasource) {

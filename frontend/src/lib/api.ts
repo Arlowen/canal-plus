@@ -86,6 +86,13 @@ function createResponseError(status: number, fallbackMessage: string, body: unkn
   });
 }
 
+function isAbortError(error: unknown) {
+  return typeof error === "object"
+    && error !== null
+    && "name" in error
+    && error.name === "AbortError";
+}
+
 function normalizeRequestError(error: unknown) {
   if (error instanceof ApiError) {
     return error;
@@ -132,6 +139,9 @@ export async function checkBackendHealth() {
     publishBackendAvailability(true);
     return response.json().catch(() => ({}));
   } catch (error) {
+    if (isAbortError(error)) {
+      throw error;
+    }
     const normalizedError = normalizeRequestError(error);
     if (normalizedError.isServiceUnavailable) {
       publishBackendAvailability(false);
@@ -160,9 +170,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     const body = await response.json().catch(() => ({}));
     if (!response.ok) {
       const error = createResponseError(response.status, "请求失败", body);
-      if (error.isServiceUnavailable) {
-        publishBackendAvailability(false);
-      } else {
+      if (!error.isServiceUnavailable) {
         publishBackendAvailability(true);
       }
       throw error;
@@ -170,10 +178,10 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     publishBackendAvailability(true);
     return body as T;
   } catch (error) {
-    const normalizedError = normalizeRequestError(error);
-    if (normalizedError.isServiceUnavailable) {
-      publishBackendAvailability(false);
+    if (isAbortError(error)) {
+      throw error;
     }
+    const normalizedError = normalizeRequestError(error);
     throw normalizedError;
   }
 }
@@ -231,14 +239,14 @@ export const api = {
   testDatasource(id: string) {
     return request<Datasource>(`/datasources/${id}/test`, { method: "POST" });
   },
-  schemas(datasourceId: string) {
-    return request<string[]>(`/datasources/${datasourceId}/schemas`);
+  schemas(datasourceId: string, options?: RequestInit) {
+    return request<string[]>(`/datasources/${datasourceId}/schemas`, options);
   },
-  tables(datasourceId: string, schema: string) {
-    return request<TableInfo[]>(`/datasources/${datasourceId}/schemas/${schema}/tables`);
+  tables(datasourceId: string, schema: string, options?: RequestInit) {
+    return request<TableInfo[]>(`/datasources/${datasourceId}/schemas/${schema}/tables`, options);
   },
-  columns(datasourceId: string, schema: string, table: string) {
-    return request<TableColumn[]>(`/datasources/${datasourceId}/schemas/${schema}/tables/${table}/columns`);
+  columns(datasourceId: string, schema: string, table: string, options?: RequestInit) {
+    return request<TableColumn[]>(`/datasources/${datasourceId}/schemas/${schema}/tables/${table}/columns`, options);
   },
   tasks() {
     return request<SyncTask[]>("/sync-tasks");
