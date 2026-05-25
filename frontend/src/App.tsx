@@ -684,7 +684,7 @@ function App() {
             <div className="flex items-center justify-between gap-3 border-b border-line pb-4">
               <div>
                 <div className="text-xs font-medium uppercase tracking-[0.22em] text-slate-500">Canal Plus</div>
-                <div className="mt-2 text-lg font-semibold tracking-tight text-coal">数据任务平台</div>
+                <div className="mt-2 text-lg font-semibold tracking-tight text-coal">任务平台</div>
               </div>
               <div className="rounded-2xl border border-blue-100 bg-blue-50 px-3 py-2 text-xs font-medium text-blue-700">
                 {user?.role === "admin" ? "Admin" : "Operator"}
@@ -714,8 +714,7 @@ function App() {
 
             <div className="mt-4 flex items-center justify-between gap-3 rounded-3xl border border-line bg-slate-50/80 p-4 lg:hidden">
               <div>
-                <div className="text-sm font-medium text-coal">{user?.name || "admin"}</div>
-                <div className="mt-1 text-sm text-slate-500">{roleLabel(user?.role)}</div>
+                <div className="text-sm font-medium text-coal">{roleLabel(user?.role)}</div>
               </div>
               <Button onClick={handleLogout} className="btn-secondary">
                 <SignOut size={16} />
@@ -724,9 +723,7 @@ function App() {
             </div>
 
             <div className="mt-5 hidden rounded-3xl border border-line bg-slate-50/80 p-4 lg:block">
-              <div className="text-xs font-medium uppercase tracking-[0.18em] text-slate-500">当前账号</div>
-              <div className="mt-3 text-sm font-medium text-coal">{user?.name || "admin"}</div>
-              <div className="mt-1 text-sm text-slate-500">{roleLabel(user?.role)}</div>
+              <div className="text-sm font-medium text-coal">{roleLabel(user?.role)}</div>
               <Button onClick={handleLogout} className="btn-secondary mt-4 w-full">
                 <SignOut size={16} />
                 退出
@@ -1044,7 +1041,7 @@ function DashboardPage({
                   {taskAwaitingNode(task) && <Badge tone="yellow">待接管</Badge>}
                 </div>
                 <div className="mt-2 text-sm text-slate-500">
-                  {task.runtime?.executionNodeName || task.runtime?.nodeId || "待分配"} · {task.runtime?.lastLogMessage || "暂无运行日志摘要"}
+                  {task.runtime?.executionNodeName || task.runtime?.nodeId || "待分配"}
                 </div>
                 <div className="mt-2 text-xs text-slate-500">
                   {formatDateTime(task.runtime?.lastLogAt || task.runtime?.updatedAt || task.updatedAt)}
@@ -1832,19 +1829,11 @@ function TasksPage({
                     </div>
                     <div className="mt-1 text-sm text-slate-500">{item.detail}</div>
                     {task && (
-                      <div className="mt-2 flex flex-wrap gap-2 text-xs text-slate-500">
-                        <span className="rounded-full border border-line bg-slate-50 px-2 py-1">
-                          {executionNode ? `节点 ${executionNode}` : "待分配节点"}
-                        </span>
-                        {task.runtime?.managedByLocalNode === false && (
-                          <span className="rounded-full border border-line bg-slate-50 px-2 py-1">远程托管</span>
-                        )}
+                      <div className="mt-2 text-xs text-slate-500">
+                        {executionNode ? `节点 ${executionNode}` : "待分配"} · {formatDate(item.updatedAt)}
                       </div>
                     )}
-                    {task?.runtime?.lastLogMessage && (
-                      <div className="mt-2 text-xs text-slate-500">{task.runtime.lastLogMessage}</div>
-                    )}
-                    <div className="mt-2 text-xs text-slate-500">{formatDate(item.updatedAt)}</div>
+                    {!task && <div className="mt-2 text-xs text-slate-500">{formatDate(item.updatedAt)}</div>}
                   </Button>
                   <div className="flex flex-wrap justify-end gap-2">
                     {task && primaryAction && (
@@ -2991,45 +2980,38 @@ function LoginScreen({ onLogin }: { onLogin: (username: string, password: string
   };
 
   return (
-    <div className="relative min-h-[100dvh] overflow-hidden bg-[#07111f] px-4 py-5 text-slate-100">
-      <div className="pointer-events-none absolute inset-0 overflow-hidden">
-        <div className="login-aurora absolute -left-20 top-8 h-[26rem] w-[26rem] rounded-full bg-[radial-gradient(circle,rgba(96,165,250,0.34),rgba(96,165,250,0))] blur-3xl" />
-        <div className="login-aurora absolute right-[-6rem] top-[18%] h-[25rem] w-[25rem] rounded-full bg-[radial-gradient(circle,rgba(255,255,255,0.18),rgba(255,255,255,0))] blur-3xl [animation-delay:-6s]" />
-        <div className="absolute inset-0 bg-[linear-gradient(140deg,rgba(7,17,31,0.96),rgba(10,28,48,0.88)_42%,rgba(4,12,22,0.97))]" />
-        <div className="absolute inset-0 bg-[linear-gradient(rgba(148,163,184,0.08)_1px,transparent_1px),linear-gradient(90deg,rgba(148,163,184,0.08)_1px,transparent_1px)] bg-[size:36px_36px]" />
-      </div>
-
-      <div className="relative mx-auto grid min-h-[calc(100dvh-2.5rem)] max-w-[1400px] items-center gap-6 lg:grid-cols-[1.18fr_0.82fr]">
-        <section className="order-2 flex items-center justify-center overflow-hidden rounded-[2.5rem] border border-white/10 bg-white/[0.03] p-5 shadow-[0_30px_90px_-40px_rgba(2,6,23,0.95)] backdrop-blur-xl md:p-8 lg:order-1 lg:min-h-[720px]">
+    <div className="min-h-[100dvh] bg-mist text-ink">
+      <div className="page-shell">
+        <div className="mx-auto grid min-h-[calc(100dvh-2rem)] max-w-[1400px] items-center gap-6 lg:grid-cols-[1.18fr_0.82fr]">
+        <section className="order-2 surface flex items-center justify-center overflow-hidden p-5 md:p-8 lg:order-1 lg:min-h-[720px]">
           <ParticleWordmark wordmark="CANAL PLUS" />
         </section>
 
         <form onSubmit={submit} className="order-1 flex lg:order-2">
-          <div className="relative flex w-full overflow-hidden rounded-[2.5rem] border border-white/12 bg-slate-950/78 p-6 shadow-[0_30px_90px_-40px_rgba(2,6,23,1)] backdrop-blur-xl md:p-8 lg:min-h-[720px] lg:p-10">
-            <div className="absolute inset-0 bg-[linear-gradient(165deg,rgba(255,255,255,0.09),rgba(255,255,255,0.03)_35%,rgba(255,255,255,0))]" />
-            <div className="relative flex h-full w-full items-center">
+          <div className="surface flex w-full items-center p-6 md:p-8 lg:min-h-[720px] lg:p-10">
+            <div className="flex h-full w-full items-center">
               <div className="mx-auto w-full max-w-[360px]">
                 <h2
                   style={{ fontFamily: "var(--font-display)" }}
-                  className="mt-3 text-4xl font-semibold tracking-[-0.05em] text-white"
+                  className="text-4xl font-semibold tracking-[-0.05em] text-coal"
                 >
                   登录
                 </h2>
 
                 <div className="mt-8 grid gap-5">
                   <label className="block">
-                    <span className="mb-2 block text-xs font-medium uppercase tracking-[0.18em] text-slate-400">账号</span>
+                    <span className="mb-2 block text-xs font-medium uppercase tracking-[0.18em] text-slate-500">账号</span>
                     <TextInput
-                      className="auth-input"
+                      className="input"
                       value={username}
                       onChange={(event) => setUsername(event.target.value)}
                     />
                   </label>
 
                   <label className="block">
-                    <span className="mb-2 block text-xs font-medium uppercase tracking-[0.18em] text-slate-400">密码</span>
+                    <span className="mb-2 block text-xs font-medium uppercase tracking-[0.18em] text-slate-500">密码</span>
                     <TextInput
-                      className="auth-input"
+                      className="input"
                       type="password"
                       value={password}
                       onChange={(event) => setPassword(event.target.value)}
@@ -3037,14 +3019,14 @@ function LoginScreen({ onLogin }: { onLogin: (username: string, password: string
                   </label>
 
                   {error && (
-                    <div className="rounded-[1.4rem] border border-red-400/20 bg-red-500/10 px-4 py-3 text-sm text-red-100">
+                    <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
                       {error}
                     </div>
                   )}
 
                   <Button
                     disabled={loading}
-                    className="auth-button"
+                    className="btn-primary w-full justify-center py-3.5"
                   >
                     {loading ? <ArrowsClockwise size={16} /> : <ArrowRight size={16} />}
                     {loading ? "登录中" : "登录"}
@@ -3054,6 +3036,7 @@ function LoginScreen({ onLogin }: { onLogin: (username: string, password: string
             </div>
           </div>
         </form>
+      </div>
       </div>
     </div>
   );

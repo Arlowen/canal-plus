@@ -98,15 +98,6 @@ textarea {
     @apply min-w-0 text-left;
   }
 
-  .auth-input {
-    @apply w-full rounded-[1.35rem] border border-white/10 bg-white/[0.05] px-4 py-3.5 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-sky-300/60 focus:bg-white/[0.08] focus:ring-4 focus:ring-sky-500/15;
-  }
-
-  .auth-button {
-    @apply btn w-full justify-center rounded-[1.35rem] border border-sky-200/20 py-3.5 text-slate-950 shadow-[0_18px_40px_-24px_rgba(96,165,250,0.85)] hover:brightness-105;
-    background-image: linear-gradient(135deg, #f8fdff, #8fd2ff 38%, #3b82f6 70%, #1638b5);
-  }
-
   .chip {
     @apply inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium;
   }
@@ -130,11 +121,6 @@ textarea {
   animation: shimmer 1.45s ease-in-out infinite;
 }
 
-.login-aurora {
-  animation: aurora-shift 18s ease-in-out infinite alternate;
-  will-change: transform, opacity;
-}
-
 @keyframes shimmer {
   0% {
     background-position: 100% 0;
@@ -142,17 +128,5 @@ textarea {
 
   100% {
     background-position: 0 0;
-  }
-}
-
-@keyframes aurora-shift {
-  0% {
-    transform: translate3d(0, 0, 0) scale(1);
-    opacity: 0.7;
-  }
-
-  100% {
-    transform: translate3d(2.5%, -3%, 0) scale(1.08);
-    opacity: 1;
   }
 }
