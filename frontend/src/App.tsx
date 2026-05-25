@@ -72,7 +72,8 @@ import type {
   User
 } from "./types/api";
 
-type Page = "dashboard" | "datasources" | "tasks" | "nodes" | "settings";
+type MainPage = "dashboard" | "datasources" | "tasks" | "nodes" | "settings";
+type Page = MainPage | "datasourceDetail" | "taskDetail" | "nodeDetail" | "capabilityJobDetail";
 type NoticeTone = "success" | "error" | "warning";
 type TaskBlueprintType = "full_migration" | "incremental_sync" | "data_validation" | "data_correction" | "structure_compare";
 type TaskStateFilter = "all" | "running" | "awaiting" | "remote" | "failed" | "stopped";
@@ -114,7 +115,7 @@ type ClusterHandoffReport = {
   after: ClusterSnapshot;
 };
 
-const navItems: Array<{ id: Page; label: string; icon: typeof SquaresFour }> = [
+const navItems: Array<{ id: MainPage; label: string; icon: typeof SquaresFour }> = [
   { id: "tasks", label: "任务中心", icon: FlowArrow },
   { id: "datasources", label: "数据源", icon: Database },
   { id: "nodes", label: "节点", icon: HardDrives },
@@ -239,8 +240,10 @@ function App() {
   const [datasourceCreateToken, setDatasourceCreateToken] = useState(0);
   const [taskCreateToken, setTaskCreateToken] = useState(0);
   const [nodeCreateToken, setNodeCreateToken] = useState(0);
+  const [focusedDatasourceId, setFocusedDatasourceId] = useState<string | null>(null);
   const [focusedNodeId, setFocusedNodeId] = useState<string | null>(null);
   const [focusedTaskId, setFocusedTaskId] = useState<string | null>(null);
+  const [focusedCapabilityJobId, setFocusedCapabilityJobId] = useState<string | null>(null);
   const previousServiceUnavailable = useRef(false);
   const canManage = canManageConfig(user);
 
@@ -400,6 +403,11 @@ function App() {
     setDatasourceCreateToken((value) => value + 1);
   };
 
+  const openDatasourceDetail = (datasourceId: string) => {
+    setFocusedDatasourceId(datasourceId);
+    setPage("datasourceDetail");
+  };
+
   const openTaskCreator = () => {
     setPage("tasks");
     setTaskCreateToken((value) => value + 1);
@@ -407,7 +415,13 @@ function App() {
 
   const openTaskDetail = (taskID: string) => {
     setFocusedTaskId(taskID);
-    setPage("tasks");
+    setFocusedCapabilityJobId(null);
+    setPage("taskDetail");
+  };
+
+  const openCapabilityJobDetail = (jobId: string) => {
+    setFocusedCapabilityJobId(jobId);
+    setPage("capabilityJobDetail");
   };
 
   const openNodeCreator = () => {
@@ -417,7 +431,7 @@ function App() {
 
   const openNodeDetail = (nodeID: string) => {
     setFocusedNodeId(nodeID);
-    setPage("nodes");
+    setPage("nodeDetail");
   };
 
   if (!tokenState) {
@@ -451,7 +465,7 @@ function App() {
                     onClick={() => setPage(item.id)}
                     className={cx(
                       "flex items-center gap-3 rounded-2xl px-3 py-3 text-left text-sm font-medium transition",
-                      page === item.id
+                      navPage(page) === item.id
                         ? "bg-blue-600 text-white shadow-panel"
                         : "text-slate-600 hover:bg-slate-50 hover:text-coal"
                     )}
@@ -570,6 +584,17 @@ function App() {
                 onChanged={refresh}
                 pushNotice={pushNotice}
                 openCreateToken={datasourceCreateToken}
+                onOpenDatasource={openDatasourceDetail}
+              />
+            ) : page === "datasourceDetail" ? (
+              <DatasourceDetailPage
+                datasources={datasources}
+                tasks={tasks}
+                canManage={canManage}
+                onChanged={refresh}
+                pushNotice={pushNotice}
+                datasourceId={focusedDatasourceId}
+                onBack={() => setPage("datasources")}
               />
             ) : page === "tasks" ? (
               <TasksPage
@@ -577,26 +602,52 @@ function App() {
                 tasks={tasks}
                 capabilityJobs={capabilityJobs}
                 errors={errors}
-                cluster={cluster}
                 canManage={canManage}
                 onChanged={refresh}
                 pushNotice={pushNotice}
                 openCreateToken={taskCreateToken}
                 onCreateDatasource={openDatasourceCreator}
+                onOpenTask={openTaskDetail}
+                onOpenCapabilityJob={openCapabilityJobDetail}
+              />
+            ) : page === "taskDetail" ? (
+              <TaskDetailPage
+                taskId={focusedTaskId}
+                tasks={tasks}
+                capabilityJobs={capabilityJobs}
+                errors={errors}
+                cluster={cluster}
+                canManage={canManage}
                 onOpenNode={openNodeDetail}
-                focusedTaskId={focusedTaskId}
+                onChanged={refresh}
+                pushNotice={pushNotice}
+                onBack={() => setPage("tasks")}
+              />
+            ) : page === "capabilityJobDetail" ? (
+              <CapabilityJobDetailPage
+                jobId={focusedCapabilityJobId}
+                tasks={tasks}
+                capabilityJobs={capabilityJobs}
+                onBack={() => setPage("tasks")}
               />
             ) : page === "nodes" ? (
               <NodesPage
                 cluster={cluster}
                 tasks={tasks}
-                logs={logs}
                 canManage={canManage}
                 onChanged={refresh}
                 pushNotice={pushNotice}
                 openCreateToken={nodeCreateToken}
-                focusedNodeId={focusedNodeId}
+                onOpenNode={openNodeDetail}
+              />
+            ) : page === "nodeDetail" ? (
+              <NodeDetailPage
+                nodeId={focusedNodeId}
+                cluster={cluster}
+                tasks={tasks}
+                logs={logs}
                 onOpenTask={openTaskDetail}
+                onBack={() => setPage("nodes")}
               />
             ) : (
               <SettingsPage
@@ -779,7 +830,8 @@ function DatasourcePage({
   canManage,
   onChanged,
   pushNotice,
-  openCreateToken
+  openCreateToken,
+  onOpenDatasource
 }: {
   datasources: Datasource[];
   tasks: SyncTask[];
@@ -787,11 +839,11 @@ function DatasourcePage({
   onChanged: (quiet?: boolean) => Promise<void>;
   pushNotice: (notice: Notice) => void;
   openCreateToken: number;
+  onOpenDatasource: (datasourceId: string) => void;
 }) {
   const [keyword, setKeyword] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | DatasourceStatus>("all");
   const [purposeFilter, setPurposeFilter] = useState<"all" | DatasourcePurpose>("all");
-  const [selectedId, setSelectedId] = useState<string | null>(datasources[0]?.id ?? null);
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState({ ...emptyDatasourceForm });
@@ -805,16 +857,6 @@ function DatasourcePage({
     setForm({ ...emptyDatasourceForm });
   }, [openCreateToken]);
 
-  useEffect(() => {
-    if (datasources.length === 0) {
-      setSelectedId(null);
-      return;
-    }
-    if (!selectedId || !datasources.some((item) => item.id === selectedId)) {
-      setSelectedId(datasources[0].id);
-    }
-  }, [datasources, selectedId]);
-
   const visibleDatasources = datasources
     .filter((item) => {
       const matchesKeyword = !keyword.trim() || datasourceSearchText(item).includes(keyword.trim().toLowerCase());
@@ -823,8 +865,6 @@ function DatasourcePage({
       return matchesKeyword && matchesStatus && matchesPurpose;
     })
     .sort((left, right) => left.name.localeCompare(right.name, "zh-Hans-CN"));
-
-  const selected = visibleDatasources.find((item) => item.id === selectedId) ?? visibleDatasources[0];
 
   const openCreate = () => {
     setEditingId(null);
@@ -910,7 +950,7 @@ function DatasourcePage({
   const bothCount = datasources.filter((item) => item.purpose === "both").length;
 
   return (
-    <div className="grid gap-5 xl:grid-cols-[1.08fr_0.92fr]">
+    <div className="space-y-5">
       <section className="surface min-w-0 p-6">
         <SectionHeader
           title="数据源列表"
@@ -985,7 +1025,7 @@ function DatasourcePage({
                 {visibleDatasources.map((item) => (
                   <tr key={item.id} className="table-row hover:bg-slate-50/70">
                     <td className="px-4 py-4">
-                      <button onClick={() => setSelectedId(item.id)} className="text-left">
+                      <button onClick={() => onOpenDatasource(item.id)} className="text-left">
                         <div className="font-medium text-coal">{item.name}</div>
                         <div className="mt-1 text-xs text-slate-500">{item.defaultSchema || "未设置默认库"}</div>
                       </button>
@@ -1034,32 +1074,6 @@ function DatasourcePage({
           </div>
         )}
       </section>
-
-      <div className="space-y-5">
-        <section className="surface p-6">
-          <SectionHeader title="当前数据源" />
-          {selected ? (
-            <div className="mt-5 grid gap-3">
-              <DetailCard label="名称" value={selected.name} />
-              <DetailCard label="用途" value={purposeText(selected.purpose)} />
-              <DetailCard label="连接状态" value={datasourceStatusText(selected.connectionStatus)} />
-              <DetailCard label="地址" value={`${selected.host}:${selected.port}`} mono />
-              <DetailCard label="默认库" value={selected.defaultSchema || "未设置"} mono />
-              <DetailCard label="最近测试" value={`${formatDateTime(selected.lastTestedAt)}${selected.lastTestMessage ? ` · ${selected.lastTestMessage}` : ""}`} />
-              <DetailCard label="关联任务" value={`${usageCount(selected)} 条`} />
-            </div>
-          ) : (
-            <div className="mt-5 text-sm text-slate-500">选择一条数据源查看详情。</div>
-          )}
-        </section>
-
-        {!canManage && (
-          <PermissionNotice
-            compact
-            description="当前角色只能查看和测试连接。"
-          />
-        )}
-      </div>
 
       <Modal
         open={editorOpen}
@@ -1117,32 +1131,221 @@ function DatasourcePage({
   );
 }
 
+function DatasourceDetailPage({
+  datasources,
+  tasks,
+  canManage,
+  onChanged,
+  pushNotice,
+  datasourceId,
+  onBack
+}: {
+  datasources: Datasource[];
+  tasks: SyncTask[];
+  canManage: boolean;
+  onChanged: (quiet?: boolean) => Promise<void>;
+  pushNotice: (notice: Notice) => void;
+  datasourceId: string | null;
+  onBack: () => void;
+}) {
+  const selected = datasources.find((item) => item.id === datasourceId) || null;
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [form, setForm] = useState({ ...emptyDatasourceForm });
+  const [submitting, setSubmitting] = useState(false);
+  const [testing, setTesting] = useState(false);
+
+  useEffect(() => {
+    if (!selected) return;
+    setForm({
+      name: selected.name,
+      purpose: selected.purpose,
+      host: selected.host,
+      port: selected.port,
+      username: selected.username,
+      password: "",
+      defaultSchema: selected.defaultSchema || ""
+    });
+  }, [selected]);
+
+  const usageCount = selected
+    ? tasks.filter((task) => task.sourceDatasourceId === selected.id || task.targetDatasourceId === selected.id).length
+    : 0;
+
+  const saveDatasource = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!selected || !canManage) return;
+    setSubmitting(true);
+    try {
+      await api.updateDatasource(selected.id, form);
+      pushNotice({ tone: "success", message: "数据源已保存" });
+      setEditorOpen(false);
+      await onChanged();
+    } catch (requestError) {
+      pushNotice({ tone: "error", message: requestError instanceof Error ? requestError.message : "保存失败" });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const testConnection = async () => {
+    if (!selected) return;
+    setTesting(true);
+    try {
+      const tested = await api.testDatasource(selected.id);
+      pushNotice({
+        tone: tested.connectionStatus === "online" ? "success" : "warning",
+        message: tested.lastTestMessage || `${selected.name} 已完成连接测试`
+      });
+      await onChanged(true);
+    } catch (requestError) {
+      pushNotice({ tone: "error", message: requestError instanceof Error ? requestError.message : "连接测试失败" });
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  const removeDatasource = async () => {
+    if (!selected || !canManage) return;
+    if (!window.confirm(`确认删除数据源“${selected.name}”吗？`)) return;
+    try {
+      await api.deleteDatasource(selected.id);
+      pushNotice({ tone: "success", message: "数据源已删除" });
+      onBack();
+      await onChanged();
+    } catch (requestError) {
+      pushNotice({ tone: "error", message: requestError instanceof Error ? requestError.message : "删除失败" });
+    }
+  };
+
+  if (!selected) {
+    return (
+      <section className="surface p-6">
+        <DetailPageHeader title="数据源详情" onBack={onBack} />
+        <div className="mt-5 text-sm text-slate-500">当前数据源不存在或已被删除。</div>
+      </section>
+    );
+  }
+
+  return (
+    <div className="space-y-5">
+      <section className="surface p-6">
+        <DetailPageHeader
+          title={selected.name}
+          subtitle="数据源详情"
+          onBack={onBack}
+          actions={(
+            <div className="flex flex-wrap gap-2">
+              <button onClick={() => void testConnection()} disabled={testing} className="btn-secondary">
+                {testing ? <ArrowsClockwise size={16} /> : <ShieldCheck size={16} />}
+                {testing ? "测试中" : "测试连接"}
+              </button>
+              {canManage && (
+                <>
+                  <button onClick={() => setEditorOpen(true)} className="btn-secondary">
+                    编辑
+                  </button>
+                  <button onClick={() => void removeDatasource()} className="btn-danger">
+                    删除
+                  </button>
+                </>
+              )}
+            </div>
+          )}
+        />
+        <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          <DetailCard label="用途" value={purposeText(selected.purpose)} />
+          <DetailCard label="连接状态" value={datasourceStatusText(selected.connectionStatus)} />
+          <DetailCard label="地址" value={`${selected.host}:${selected.port}`} mono />
+          <DetailCard label="账号" value={selected.username} mono />
+          <DetailCard label="默认库" value={selected.defaultSchema || "未设置"} mono />
+          <DetailCard label="关联任务" value={`${usageCount} 条`} />
+        </div>
+        <div className="mt-4 rounded-2xl border border-line bg-slate-50/70 px-4 py-4 text-sm text-slate-500">
+          {selected.lastTestMessage
+            ? `最近测试：${formatDateTime(selected.lastTestedAt)} · ${selected.lastTestMessage}`
+            : "当前还没有测试记录。"}
+        </div>
+      </section>
+
+      <Modal
+        open={editorOpen}
+        title="编辑数据源"
+        description="只保留任务需要的信息。"
+        onClose={() => setEditorOpen(false)}
+      >
+        <form onSubmit={saveDatasource} className="grid gap-4">
+          <Field label="名称">
+            <input className="input" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} required />
+          </Field>
+          <Field label="用途">
+            <select className="select" value={form.purpose} onChange={(event) => setForm({ ...form, purpose: event.target.value as DatasourcePurpose })}>
+              <option value="source">源端</option>
+              <option value="target">目标端</option>
+              <option value="both">源端和目标端</option>
+            </select>
+          </Field>
+          <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_130px]">
+            <Field label="主机地址">
+              <input className="input" value={form.host} onChange={(event) => setForm({ ...form, host: event.target.value })} required />
+            </Field>
+            <Field label="端口">
+              <input className="input" type="number" value={form.port} onChange={(event) => setForm({ ...form, port: Number(event.target.value) })} required />
+            </Field>
+          </div>
+          <Field label="账号">
+            <input className="input" value={form.username} onChange={(event) => setForm({ ...form, username: event.target.value })} required />
+          </Field>
+          <Field label="密码">
+            <input
+              className="input"
+              type="password"
+              value={form.password}
+              onChange={(event) => setForm({ ...form, password: event.target.value })}
+              placeholder="留空表示不修改"
+            />
+          </Field>
+          <Field label="默认库">
+            <input className="input" value={form.defaultSchema} onChange={(event) => setForm({ ...form, defaultSchema: event.target.value })} />
+          </Field>
+          <div className="flex justify-end gap-3 pt-2">
+            <button type="button" onClick={() => setEditorOpen(false)} className="btn-secondary">
+              取消
+            </button>
+            <button disabled={submitting} className="btn-primary">
+              {submitting ? <ArrowsClockwise size={16} /> : <CheckCircle size={16} />}
+              {submitting ? "保存中" : "保存"}
+            </button>
+          </div>
+        </form>
+      </Modal>
+    </div>
+  );
+}
+
 function TasksPage({
   datasources,
   tasks,
   capabilityJobs,
   errors,
-  cluster,
   canManage,
   onChanged,
   pushNotice,
   openCreateToken,
   onCreateDatasource,
-  onOpenNode,
-  focusedTaskId
+  onOpenTask,
+  onOpenCapabilityJob
 }: {
   datasources: Datasource[];
   tasks: SyncTask[];
   capabilityJobs: CapabilityJob[];
   errors: ErrorEvent[];
-  cluster: ClusterSnapshot | null;
   canManage: boolean;
   onChanged: (quiet?: boolean) => Promise<void>;
   pushNotice: (notice: Notice) => void;
   openCreateToken: number;
   onCreateDatasource: () => void;
-  onOpenNode: (nodeID: string) => void;
-  focusedTaskId: string | null;
+  onOpenTask: (taskID: string) => void;
+  onOpenCapabilityJob: (jobId: string) => void;
 }) {
   const visibleCapabilityJobs = capabilityJobs.filter((job) => job.type !== "subscription");
   const [keyword, setKeyword] = useState("");
@@ -1150,11 +1353,8 @@ function TasksPage({
   const [stateFilter, setStateFilter] = useState<TaskStateFilter>("all");
   const [hostingFilter, setHostingFilter] = useState<"all" | "local" | "remote" | "unassigned">("all");
   const [showCapabilityJobs, setShowCapabilityJobs] = useState(false);
-  const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [creatorOpen, setCreatorOpen] = useState(false);
   const [busyKey, setBusyKey] = useState<string | null>(null);
-  const [qualityDiffs, setQualityDiffs] = useState<Array<{ id: string; sourceTable: string; targetTable: string; fieldName: string; status: string; severity: string }>>([]);
-  const [structureItems, setStructureItems] = useState<Array<{ id: string; sourceObject: string; targetObject: string; changeType: string; status: string; riskLevel: string }>>([]);
 
   useEffect(() => {
     if (openCreateToken === 0) return;
@@ -1181,64 +1381,6 @@ function TasksPage({
       : hostingFilter === "all";
     return matchesKeyword && matchesType && matchesState && matchesHosting;
   });
-  const selected = filtered.find((item) => item.key === selectedKey) ?? filtered[0];
-
-  useEffect(() => {
-    if (!focusedTaskId) return;
-    setSelectedKey(`sync:${focusedTaskId}`);
-  }, [focusedTaskId]);
-
-  useEffect(() => {
-    if (filtered.length === 0) {
-      setSelectedKey(null);
-      return;
-    }
-    if (!selectedKey || !filtered.some((item) => item.key === selectedKey)) {
-      setSelectedKey(filtered[0].key);
-    }
-  }, [filtered, selectedKey]);
-
-  useEffect(() => {
-    if (!selected?.rawJob) {
-      setQualityDiffs([]);
-      setStructureItems([]);
-      return;
-    }
-    if (selected.rawJob.type === "quality") {
-      api.qualityDiffs(selected.rawJob.id)
-        .then((items) => {
-          setQualityDiffs(items.slice(0, 6).map((item) => ({
-            id: item.id,
-            sourceTable: item.sourceTable,
-            targetTable: item.targetTable,
-            fieldName: item.fieldName,
-            status: item.status,
-            severity: item.severity
-          })));
-        })
-        .catch(() => setQualityDiffs([]));
-      setStructureItems([]);
-      return;
-    }
-    if (selected.rawJob.type === "structure") {
-      api.structureDDLs(selected.rawJob.id)
-        .then((items) => {
-          setStructureItems(items.slice(0, 6).map((item) => ({
-            id: item.id,
-            sourceObject: item.sourceObject,
-            targetObject: item.targetObject,
-            changeType: item.changeType,
-            status: item.status,
-            riskLevel: item.riskLevel
-          })));
-        })
-        .catch(() => setStructureItems([]));
-      setQualityDiffs([]);
-      return;
-    }
-    setQualityDiffs([]);
-    setStructureItems([]);
-  }, [selected]);
 
   const runTaskAction = async (task: SyncTask, action: "start" | "pause" | "resume" | "stop") => {
     setBusyKey(`${task.id}:${action}`);
@@ -1300,7 +1442,7 @@ function TasksPage({
   const awaitingTasks = tasks.filter(taskAwaitingNode).length;
   const typeCounts = filteredTypeCounts(workloads);
   return (
-    <div className="grid gap-5 xl:grid-cols-[0.88fr_1.12fr]">
+    <div className="space-y-5">
       <section className="surface min-w-0 p-6">
         <SectionHeader
           title="同步任务"
@@ -1406,7 +1548,16 @@ function TasksPage({
               const executionNode = task?.runtime?.executionNodeName || task?.runtime?.nodeId;
               return (
                 <div key={item.key} className="grid gap-3 p-4 lg:grid-cols-[1fr_auto] lg:items-center">
-                  <button onClick={() => setSelectedKey(item.key)} className="min-w-0 text-left">
+                  <button
+                    onClick={() => {
+                      if (item.rawTask) {
+                        onOpenTask(item.rawTask.id);
+                      } else if (item.rawJob) {
+                        onOpenCapabilityJob(item.rawJob.id);
+                      }
+                    }}
+                    className="min-w-0 text-left"
+                  >
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="font-medium text-coal">{item.title}</span>
                       <TypeBadge type={item.type} />
@@ -1467,33 +1618,6 @@ function TasksPage({
         )}
       </section>
 
-      <div className="space-y-5">
-        <section className="surface p-6">
-          <SectionHeader title={selected?.rawJob ? "扩展任务详情" : "任务详情"} />
-          {!selected ? (
-            <div className="mt-5 text-sm text-slate-500">选择一条任务查看详情。</div>
-          ) : selected.rawTask ? (
-            <SyncTaskDetail
-              task={selected.rawTask}
-              relatedJobs={visibleCapabilityJobs.filter((job) => job.taskId === selected.rawTask!.id)}
-              errors={errors}
-              cluster={cluster}
-              canManage={canManage}
-              onOpenNode={onOpenNode}
-              onRunJob={(job) => void rerunJob(job)}
-              busyActionKey={busyKey}
-              onChanged={onChanged}
-              pushNotice={pushNotice}
-            />
-          ) : selected.rawJob ? (
-            <CapabilityJobDetail job={selected.rawJob} qualityDiffs={qualityDiffs} structureItems={structureItems} tasks={tasks} />
-          ) : null}
-        </section>
-        {!canManage && (
-          <PermissionNotice compact description="当前角色只能查看运行态和结果。" />
-        )}
-      </div>
-
       <TaskCreatorModal
         open={creatorOpen}
         datasources={datasources}
@@ -1504,6 +1628,147 @@ function TasksPage({
         pushNotice={pushNotice}
       />
     </div>
+  );
+}
+
+function TaskDetailPage({
+  taskId,
+  tasks,
+  capabilityJobs,
+  errors,
+  cluster,
+  canManage,
+  onOpenNode,
+  onChanged,
+  pushNotice,
+  onBack
+}: {
+  taskId: string | null;
+  tasks: SyncTask[];
+  capabilityJobs: CapabilityJob[];
+  errors: ErrorEvent[];
+  cluster: ClusterSnapshot | null;
+  canManage: boolean;
+  onOpenNode: (nodeID: string) => void;
+  onChanged: (quiet?: boolean) => Promise<void>;
+  pushNotice: (notice: Notice) => void;
+  onBack: () => void;
+}) {
+  const task = tasks.find((item) => item.id === taskId) || null;
+  const [busyJobId, setBusyJobId] = useState<string | null>(null);
+
+  const rerunJob = async (job: CapabilityJob) => {
+    setBusyJobId(job.id);
+    try {
+      await api.runCapabilityJob(job.id);
+      pushNotice({ tone: "success", message: "治理任务已启动" });
+      await onChanged();
+    } catch (requestError) {
+      pushNotice({ tone: "error", message: requestError instanceof Error ? requestError.message : "启动失败" });
+    } finally {
+      setBusyJobId(null);
+    }
+  };
+
+  if (!task) {
+    return (
+      <section className="surface p-6">
+        <DetailPageHeader title="任务详情" onBack={onBack} />
+        <div className="mt-5 text-sm text-slate-500">当前任务不存在或已被删除。</div>
+      </section>
+    );
+  }
+
+  return (
+    <section className="surface p-6">
+      <DetailPageHeader title={task.name} subtitle="任务详情" onBack={onBack} />
+      <SyncTaskDetail
+        task={task}
+        relatedJobs={capabilityJobs.filter((job) => job.taskId === task.id && job.type !== "subscription")}
+        errors={errors}
+        cluster={cluster}
+        canManage={canManage}
+        onOpenNode={onOpenNode}
+        onRunJob={(job) => void rerunJob(job)}
+        busyActionKey={busyJobId ? `${busyJobId}:job` : null}
+        onChanged={onChanged}
+        pushNotice={pushNotice}
+      />
+    </section>
+  );
+}
+
+function CapabilityJobDetailPage({
+  jobId,
+  tasks,
+  capabilityJobs,
+  onBack
+}: {
+  jobId: string | null;
+  tasks: SyncTask[];
+  capabilityJobs: CapabilityJob[];
+  onBack: () => void;
+}) {
+  const job = capabilityJobs.find((item) => item.id === jobId) || null;
+  const [qualityDiffs, setQualityDiffs] = useState<Array<{ id: string; sourceTable: string; targetTable: string; fieldName: string; status: string; severity: string }>>([]);
+  const [structureItems, setStructureItems] = useState<Array<{ id: string; sourceObject: string; targetObject: string; changeType: string; status: string; riskLevel: string }>>([]);
+
+  useEffect(() => {
+    if (!job) {
+      setQualityDiffs([]);
+      setStructureItems([]);
+      return;
+    }
+    if (job.type === "quality") {
+      api.qualityDiffs(job.id)
+        .then((items) => {
+          setQualityDiffs(items.slice(0, 6).map((item) => ({
+            id: item.id,
+            sourceTable: item.sourceTable,
+            targetTable: item.targetTable,
+            fieldName: item.fieldName,
+            status: item.status,
+            severity: item.severity
+          })));
+        })
+        .catch(() => setQualityDiffs([]));
+      setStructureItems([]);
+      return;
+    }
+    if (job.type === "structure") {
+      api.structureDDLs(job.id)
+        .then((items) => {
+          setStructureItems(items.slice(0, 6).map((item) => ({
+            id: item.id,
+            sourceObject: item.sourceObject,
+            targetObject: item.targetObject,
+            changeType: item.changeType,
+            status: item.status,
+            riskLevel: item.riskLevel
+          })));
+        })
+        .catch(() => setStructureItems([]));
+      setQualityDiffs([]);
+      return;
+    }
+    setQualityDiffs([]);
+    setStructureItems([]);
+  }, [job]);
+
+  if (!job) {
+    return (
+      <section className="surface p-6">
+        <DetailPageHeader title="扩展任务详情" onBack={onBack} />
+        <div className="mt-5 text-sm text-slate-500">当前扩展任务不存在或已被删除。</div>
+      </section>
+    );
+  }
+
+  return (
+    <section className="surface p-6">
+      <DetailPageHeader title={job.name} subtitle="扩展任务详情" onBack={onBack} />
+      <CapabilityJobDetail job={job} qualityDiffs={qualityDiffs} structureItems={structureItems} tasks={tasks} />
+    </section>
   );
 }
 
@@ -1581,28 +1846,23 @@ function fromNodeStatusChangeResult(report: NodeStatusChangeResult): ClusterHand
 function NodesPage({
   cluster,
   tasks,
-  logs,
   canManage,
   onChanged,
   pushNotice,
   openCreateToken,
-  focusedNodeId,
-  onOpenTask
+  onOpenNode
 }: {
   cluster: ClusterSnapshot | null;
   tasks: SyncTask[];
-  logs: OperationLog[];
   canManage: boolean;
   onChanged: (quiet?: boolean) => Promise<void>;
   pushNotice: (notice: Notice) => void;
   openCreateToken: number;
-  focusedNodeId: string | null;
-  onOpenTask: (taskID: string) => void;
+  onOpenNode: (nodeID: string) => void;
 }) {
   const nodes = cluster?.nodes ?? emptyNodes;
   const [keyword, setKeyword] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | ClusterNode["status"]>("all");
-  const [selectedId, setSelectedId] = useState<string | null>(nodes[0]?.id ?? null);
   const [creatorOpen, setCreatorOpen] = useState(false);
   const [operationResult, setOperationResult] = useState<NodeOperationResult | null>(null);
   const [handoffReport, setHandoffReport] = useState<ClusterHandoffReport | null>(null);
@@ -1617,53 +1877,16 @@ function NodesPage({
     setCreatorOpen(true);
   }, [openCreateToken]);
 
-  useEffect(() => {
-    if (!focusedNodeId) return;
-    setSelectedId(focusedNodeId);
-  }, [focusedNodeId]);
-
   const visibleNodes = nodes.filter((node) => {
     const matchesKeyword = !keyword.trim()
       || `${node.name} ${node.endpoint} ${node.zone} ${node.role} ${node.installDir}`.toLowerCase().includes(keyword.trim().toLowerCase());
     const matchesStatus = statusFilter === "all" || node.status === statusFilter;
     return matchesKeyword && matchesStatus;
   });
-
-  useEffect(() => {
-    if (visibleNodes.length === 0) {
-      setSelectedId(null);
-      return;
-    }
-    if (!selectedId || !visibleNodes.some((item) => item.id === selectedId)) {
-      setSelectedId(visibleNodes[0].id);
-    }
-  }, [selectedId, visibleNodes]);
-
-  const selected = visibleNodes.find((item) => item.id === selectedId) ?? visibleNodes[0];
-  const taskByNodeId = new Map<string, SyncTask[]>();
-  tasks.forEach((task) => {
-    if (!task.runtime?.nodeId) return;
-    const list = taskByNodeId.get(task.runtime.nodeId) || [];
-    list.push(task);
-    taskByNodeId.set(task.runtime.nodeId, list);
-  });
   const nodeName = (nodeID?: string) => {
     if (!nodeID) return "待分配";
     return nodes.find((node) => node.id === nodeID)?.name || nodeID;
   };
-  const nodeEvents = selected
-    ? logs.filter((log) => {
-      if (log.targetType === "cluster_node" && log.targetId === selected.id) {
-        return true;
-      }
-      if (log.targetType === "sync_task") {
-        return log.detail.includes(selected.id) || log.detail.includes(selected.name);
-      }
-      return false;
-    }).slice(0, 4)
-    : [];
-  const selectedNodeTasks = selected ? (taskByNodeId.get(selected.id) || []) : [];
-  const visibleNodeTasks = selectedNodeTasks.slice(0, 4);
 
   const executeQuickAction = async (node: ClusterNode, action: "upgrade" | "uninstall") => {
     if (!canManage) {
@@ -1787,7 +2010,7 @@ function NodesPage({
   };
 
   return (
-    <div className="grid gap-5 xl:grid-cols-[1.08fr_0.92fr]">
+    <div className="space-y-5">
       <section className="surface min-w-0 p-6">
         <SectionHeader
           title="节点列表"
@@ -1848,7 +2071,7 @@ function NodesPage({
               return (
                 <div key={node.id} className="rounded-3xl border border-line bg-white p-4">
                   <div className="grid gap-4 xl:grid-cols-[1fr_auto] xl:items-start">
-                    <button onClick={() => setSelectedId(node.id)} className="min-w-0 text-left">
+                    <button onClick={() => onOpenNode(node.id)} className="min-w-0 text-left">
                       <div className="flex flex-wrap items-center gap-2">
                         <div className="font-medium text-coal">{node.name}</div>
                         <Badge tone={nodeTone(node.status)}>{nodeStatusText(node.status)}</Badge>
@@ -1881,129 +2104,6 @@ function NodesPage({
           </div>
         )}
       </section>
-
-      <div className="space-y-5">
-        <section className="surface p-6">
-          <SectionHeader title="节点详情" />
-          {selected ? (
-            <div className="mt-5 space-y-4">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-lg font-semibold text-coal">{selected.name}</span>
-                <Badge tone={nodeTone(selected.status)}>{nodeStatusText(selected.status)}</Badge>
-                {localNodeId === selected.id && <Badge tone="blue">当前节点</Badge>}
-              </div>
-              <div className="grid gap-3">
-                <DetailCard label="主机地址" value={selected.endpoint} mono />
-                <DetailCard label="SSH" value={`${selected.sshUser}@${selected.sshPort} · ${selected.authMode === "private_key" ? "私钥" : "密码"}`} mono />
-                <DetailCard label="安装目录" value={selected.installDir} mono />
-                <DetailCard label="版本" value={selected.version} mono />
-                <DetailCard label="最近心跳" value={`${formatDateTime(selected.lastHeartbeatAt)} · ${secondsSince(selected.lastHeartbeatAt)} 秒前`} />
-                <DetailCard label="运行任务" value={`${selected.runningTasks}/${selected.capacity}`} />
-                <DetailCard label="控制节点" value={localNodeId === selected.id ? "是" : "否"} />
-              </div>
-              {localNodeId === selected.id && (
-                <div className="rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-700">
-                  当前控制节点不支持自卸载、自下线或故障演练。
-                </div>
-              )}
-              <div className="rounded-3xl border border-line bg-slate-50/70 p-4">
-                <div className="text-sm font-medium text-coal">承载任务</div>
-                {selectedNodeTasks.length > visibleNodeTasks.length && (
-                  <div className="mt-1 text-sm text-slate-500">仅展示最近 {visibleNodeTasks.length} 条。</div>
-                )}
-                <div className="mt-3 grid gap-2">
-                  {selectedNodeTasks.length === 0 ? (
-                    <div className="text-sm text-slate-500">当前没有承载运行中任务。</div>
-                  ) : visibleNodeTasks.map((task) => (
-                    <div key={task.id} className="rounded-2xl border border-line bg-white px-3 py-3">
-                      <div className="flex items-center justify-between gap-3">
-                        <div className="font-medium text-coal">{task.name}</div>
-                        <div className="flex flex-wrap items-center gap-2">
-                          <StatusBadge status={task.status} />
-                          {shouldShowTaskProcessBadge(task) && (
-                            <Badge tone={taskProcessTone(task.runtime?.processStatus)}>{taskProcessStatusText(task.runtime?.processStatus)}</Badge>
-                          )}
-                        </div>
-                      </div>
-                      <div className="mt-1 text-sm text-slate-500">
-                        {(task.sourceDatasource?.name || task.sourceDatasourceId)} to {(task.targetDatasource?.name || task.targetDatasourceId)}
-                      </div>
-                      <div className="mt-2 flex flex-wrap gap-2 text-xs text-slate-500">
-                        <span className="rounded-full border border-line bg-slate-50 px-2 py-1">
-                          {task.runtime?.managedByLocalNode === false ? "远程托管" : "当前节点托管"}
-                        </span>
-                        <span className="rounded-full border border-line bg-slate-50 px-2 py-1">
-                          {task.runtime?.processId ? `PID ${task.runtime.processId}` : "无本地 PID"}
-                        </span>
-                        <span className="rounded-full border border-line bg-slate-50 px-2 py-1">
-                          {task.runtime?.binlogFile ? `${task.runtime.binlogFile}:${task.runtime.binlogPosition}` : "无位点"}
-                        </span>
-                      </div>
-                      {task.runtime?.lastLogMessage && (
-                        <div className="mt-2 rounded-2xl border border-line bg-slate-50/70 px-3 py-3 text-xs text-slate-600">
-                          {task.runtime.lastLogMessage}
-                        </div>
-                      )}
-                      <div className="mt-3 flex justify-end">
-                        <button type="button" onClick={() => onOpenTask(task.id)} className="btn-secondary px-3 py-2 text-xs">
-                          <FlowArrow size={14} />
-                          查看任务
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          ) : (
-            <div className="mt-5 text-sm text-slate-500">选择一个节点查看详情。</div>
-          )}
-        </section>
-        {selected && awaitingTasks.length > 0 && (
-          <section className="surface p-6">
-            <SectionHeader title="待接管任务" />
-            <div className="mt-4 grid gap-3">
-              {awaitingTasks.slice(0, 6).map((task) => (
-                <div key={task.id} className="rounded-2xl border border-line bg-white px-4 py-4">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="font-medium text-coal">{task.name}</div>
-                    <Badge tone="yellow">待接管</Badge>
-                  </div>
-                  <div className="mt-2 text-sm text-slate-500">
-                    {(task.sourceDatasource?.name || task.sourceDatasourceId)} to {(task.targetDatasource?.name || task.targetDatasourceId)}
-                  </div>
-                  <div className="mt-3 flex justify-end">
-                    <button type="button" onClick={() => onOpenTask(task.id)} className="btn-secondary px-3 py-2 text-xs">
-                      <FlowArrow size={14} />
-                      查看任务
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </section>
-        )}
-        {selected && nodeEvents.length > 0 && (
-          <section className="surface p-6">
-            <SectionHeader title="最近运维事件" />
-            <div className="mt-4 grid gap-3">
-              {nodeEvents.map((log) => (
-                <div key={log.id} className="rounded-2xl border border-line bg-white px-4 py-4">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Badge tone={log.targetType === "cluster_node" ? "blue" : "yellow"}>{log.action}</Badge>
-                    <span className="text-xs text-slate-500">{formatDateTime(log.createdAt)}</span>
-                  </div>
-                  <div className="mt-2 text-sm text-coal">{log.detail}</div>
-                  <div className="mt-2 text-xs text-slate-500">{log.actor}</div>
-                </div>
-              ))}
-            </div>
-          </section>
-        )}
-        {!canManage && (
-          <PermissionNotice compact description="当前角色只能查看节点状态。" />
-        )}
-      </div>
 
       <NodeCreatorModal
         open={creatorOpen}
@@ -2180,6 +2280,156 @@ function NodesPage({
           action?.();
         }}
       />
+    </div>
+  );
+}
+
+function NodeDetailPage({
+  nodeId,
+  cluster,
+  tasks,
+  logs,
+  onOpenTask,
+  onBack
+}: {
+  nodeId: string | null;
+  cluster: ClusterSnapshot | null;
+  tasks: SyncTask[];
+  logs: OperationLog[];
+  onOpenTask: (taskID: string) => void;
+  onBack: () => void;
+}) {
+  const nodes = cluster?.nodes ?? emptyNodes;
+  const selected = nodes.find((item) => item.id === nodeId) || null;
+  const localNodeId = cluster?.localNodeId;
+  const taskByNodeId = new Map<string, SyncTask[]>();
+  tasks.forEach((task) => {
+    if (!task.runtime?.nodeId) return;
+    const list = taskByNodeId.get(task.runtime.nodeId) || [];
+    list.push(task);
+    taskByNodeId.set(task.runtime.nodeId, list);
+  });
+  const awaitingTasks = tasks.filter(taskAwaitingNode);
+  const nodeEvents = selected
+    ? logs.filter((log) => {
+      if (log.targetType === "cluster_node" && log.targetId === selected.id) {
+        return true;
+      }
+      if (log.targetType === "sync_task") {
+        return log.detail.includes(selected.id) || log.detail.includes(selected.name);
+      }
+      return false;
+    }).slice(0, 4)
+    : [];
+  const selectedNodeTasks = selected ? (taskByNodeId.get(selected.id) || []) : [];
+  const visibleNodeTasks = selectedNodeTasks.slice(0, 4);
+
+  if (!selected) {
+    return (
+      <section className="surface p-6">
+        <DetailPageHeader title="节点详情" onBack={onBack} />
+        <div className="mt-5 text-sm text-slate-500">当前节点不存在或已被删除。</div>
+      </section>
+    );
+  }
+
+  return (
+    <div className="space-y-5">
+      <section className="surface p-6">
+        <DetailPageHeader title={selected.name} subtitle="节点详情" onBack={onBack} />
+        <div className="mt-5 space-y-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge tone={nodeTone(selected.status)}>{nodeStatusText(selected.status)}</Badge>
+            {localNodeId === selected.id && <Badge tone="blue">当前节点</Badge>}
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            <DetailCard label="主机地址" value={selected.endpoint} mono />
+            <DetailCard label="SSH" value={`${selected.sshUser}@${selected.sshPort} · ${selected.authMode === "private_key" ? "私钥" : "密码"}`} mono />
+            <DetailCard label="安装目录" value={selected.installDir} mono />
+            <DetailCard label="版本" value={selected.version} mono />
+            <DetailCard label="最近心跳" value={`${formatDateTime(selected.lastHeartbeatAt)} · ${secondsSince(selected.lastHeartbeatAt)} 秒前`} />
+            <DetailCard label="运行任务" value={`${selected.runningTasks}/${selected.capacity}`} />
+          </div>
+          {localNodeId === selected.id && (
+            <div className="rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-700">
+              当前控制节点不支持自卸载、自下线或故障演练。
+            </div>
+          )}
+        </div>
+      </section>
+
+      {selectedNodeTasks.length > 0 && (
+        <section className="surface p-6">
+          <SectionHeader title="承载任务" />
+          {selectedNodeTasks.length > visibleNodeTasks.length && (
+            <div className="mt-3 text-sm text-slate-500">仅展示最近 {visibleNodeTasks.length} 条。</div>
+          )}
+          <div className="mt-3 grid gap-3">
+            {visibleNodeTasks.map((task) => (
+              <div key={task.id} className="rounded-2xl border border-line bg-white px-4 py-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="font-medium text-coal">{task.name}</div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <StatusBadge status={task.status} />
+                    {shouldShowTaskProcessBadge(task) && (
+                      <Badge tone={taskProcessTone(task.runtime?.processStatus)}>{taskProcessStatusText(task.runtime?.processStatus)}</Badge>
+                    )}
+                  </div>
+                </div>
+                <div className="mt-2 text-sm text-slate-500">
+                  {(task.sourceDatasource?.name || task.sourceDatasourceId)} to {(task.targetDatasource?.name || task.targetDatasourceId)}
+                </div>
+                <div className="mt-3 flex justify-end">
+                  <button type="button" onClick={() => onOpenTask(task.id)} className="btn-secondary px-3 py-2 text-xs">
+                    查看任务
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {awaitingTasks.length > 0 && (
+        <section className="surface p-6">
+          <SectionHeader title="待接管任务" />
+          <div className="mt-3 grid gap-3">
+            {awaitingTasks.slice(0, 6).map((task) => (
+              <div key={task.id} className="rounded-2xl border border-line bg-white px-4 py-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="font-medium text-coal">{task.name}</div>
+                  <Badge tone="yellow">待接管</Badge>
+                </div>
+                <div className="mt-2 text-sm text-slate-500">
+                  {(task.sourceDatasource?.name || task.sourceDatasourceId)} to {(task.targetDatasource?.name || task.targetDatasourceId)}
+                </div>
+                <div className="mt-3 flex justify-end">
+                  <button type="button" onClick={() => onOpenTask(task.id)} className="btn-secondary px-3 py-2 text-xs">
+                    查看任务
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {nodeEvents.length > 0 && (
+        <section className="surface p-6">
+          <SectionHeader title="最近运维事件" />
+          <div className="mt-3 grid gap-3">
+            {nodeEvents.map((log) => (
+              <div key={log.id} className="rounded-2xl border border-line bg-white px-4 py-4">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge tone={log.targetType === "cluster_node" ? "blue" : "yellow"}>{log.action}</Badge>
+                  <span className="text-xs text-slate-500">{formatDateTime(log.createdAt)}</span>
+                </div>
+                <div className="mt-2 text-sm text-coal">{log.detail}</div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
     </div>
   );
 }
@@ -4180,6 +4430,32 @@ function SectionHeader({
   );
 }
 
+function DetailPageHeader({
+  title,
+  subtitle,
+  onBack,
+  actions
+}: {
+  title: string;
+  subtitle?: string;
+  onBack: () => void;
+  actions?: ReactNode;
+}) {
+  return (
+    <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+      <div>
+        <button type="button" onClick={onBack} className="btn-secondary px-3 py-2 text-xs">
+          <ArrowRight size={14} className="rotate-180" />
+          返回列表
+        </button>
+        {subtitle && <div className="mt-4 text-xs font-medium uppercase tracking-[0.18em] text-slate-500">{subtitle}</div>}
+        <h2 className="mt-2 text-2xl font-semibold tracking-tight text-coal">{title}</h2>
+      </div>
+      {actions}
+    </div>
+  );
+}
+
 function MetricMini({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-2xl border border-line bg-slate-50/70 px-4 py-4">
@@ -4722,11 +4998,22 @@ function filteredTypeCounts(items: WorkloadItem[]) {
   return counts;
 }
 
+function navPage(page: Page): MainPage {
+  if (page === "datasourceDetail") return "datasources";
+  if (page === "taskDetail" || page === "capabilityJobDetail") return "tasks";
+  if (page === "nodeDetail") return "nodes";
+  return page;
+}
+
 function pageTitle(page: Page) {
   if (page === "dashboard") return "总览";
   if (page === "datasources") return "数据源";
   if (page === "tasks") return "任务中心";
   if (page === "nodes") return "节点";
+  if (page === "datasourceDetail") return "数据源详情";
+  if (page === "taskDetail") return "任务详情";
+  if (page === "capabilityJobDetail") return "扩展任务详情";
+  if (page === "nodeDetail") return "节点详情";
   return "系统设置";
 }
 
@@ -4735,6 +5022,10 @@ function pageDescription(page: Page) {
   if (page === "datasources") return "统一管理连接与测试。";
   if (page === "tasks") return "统一处理任务、日志和异常。";
   if (page === "nodes") return "统一处理节点接入与运维。";
+  if (page === "datasourceDetail") return "单独查看数据源详情与操作。";
+  if (page === "taskDetail") return "单独查看任务运行与配置。";
+  if (page === "capabilityJobDetail") return "单独查看扩展任务执行结果。";
+  if (page === "nodeDetail") return "单独查看节点详情与相关任务。";
   return "只保留配置、告警和审计。";
 }
 
