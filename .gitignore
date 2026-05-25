@@ -8,4 +8,5 @@ backend/data/store.json
 backend/data/*.tmp
 backend/bin/
 frontend/dist/
+output/
 *.log

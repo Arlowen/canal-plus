@@ -78,6 +78,19 @@ npm run dev
 - Frontend: [http://localhost:8999](http://localhost:8999)
 - Backend health: [http://localhost:4100/api/health](http://localhost:4100/api/health)
 
+## 打包发布
+
+执行根目录脚本：
+
+```bash
+./all_build.sh
+```
+
+脚本会自动构建并输出两个压缩包到 `output/`：
+
+- `output/canal-plus-frontend.tar.gz`：前端静态资源包
+- `output/canal-plus-backend.tar.gz`：后端可执行程序和运行配置包
+
 ## 环境变量
 
 复制 `backend/.env.example`：
