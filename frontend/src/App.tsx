@@ -1444,40 +1444,14 @@ function TasksPage({
   return (
     <div className="space-y-5">
       <section className="surface min-w-0 p-6">
-        <SectionHeader
-          title="同步任务"
-          description="默认只看同步任务。"
-        />
+        <SectionHeader title="同步任务" />
 
-        <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          <MetricMini label="同步任务" value={`${tasks.length}`} />
-          <MetricMini label="治理任务" value={`${visibleCapabilityJobs.length}`} />
-          <MetricMini label="运行中" value={`${tasks.filter((task) => task.status === "full_syncing" || task.status === "incremental_running").length + visibleCapabilityJobs.filter((job) => job.status === "running").length}`} />
-          <MetricMini label="待处理错误" value={`${pendingErrors}`} />
-        </div>
-
-        <div className="mt-5 flex flex-col gap-3 rounded-3xl border border-line bg-slate-50/70 p-4 xl:flex-row xl:items-center xl:justify-between">
-          <div>
-            <div className="text-sm font-medium text-coal">展示范围</div>
-            <div className="mt-1 text-sm text-slate-500">同步任务 / 扩展任务</div>
-          </div>
+        <div className="mt-5 flex justify-end">
           <div className="flex flex-wrap gap-2">
             <FilterChip active={!showCapabilityJobs} onClick={() => setShowCapabilityJobs(false)} label="只看同步任务" />
             <FilterChip active={showCapabilityJobs} onClick={() => setShowCapabilityJobs(true)} label={`显示扩展任务 ${visibleCapabilityJobs.length}`} />
           </div>
         </div>
-
-        {awaitingTasks > 0 && (
-          <div className="mt-5 rounded-3xl border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-800">
-            当前有 {awaitingTasks} 条任务待接管，先检查节点状态。
-          </div>
-        )}
-
-        {!showCapabilityJobs && visibleCapabilityJobs.length > 0 && (
-          <div className="mt-5 rounded-3xl border border-blue-200 bg-blue-50 px-4 py-4 text-sm text-blue-800">
-            扩展任务已收进详情区。
-          </div>
-        )}
 
         <div className="mt-5 grid gap-3 xl:grid-cols-[minmax(0,1.2fr)_180px_180px_180px]">
           <label className="block">
