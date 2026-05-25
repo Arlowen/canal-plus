@@ -2970,17 +2970,17 @@ function LoginScreen({ onLogin }: { onLogin: (username: string, password: string
     {
       icon: Database,
       label: "链路映射",
-      description: "把源端、目标端和表字段的映射关系收敛在一个入口里开始处理。"
+      description: "集中映射"
     },
     {
       icon: HardDrives,
       label: "节点接管",
-      description: "任务调度、接管、重跑和排空动作全部延续到同一条运维路径。"
+      description: "统一接管"
     },
     {
       icon: ShieldCheck,
       label: "校验闭环",
-      description: "结构对比、数据校验和订正能力紧贴同步任务，不再分散跳转。"
+      description: "就地校验"
     }
   ];
 
@@ -3023,16 +3023,16 @@ function LoginScreen({ onLogin }: { onLogin: (username: string, password: string
           <div className="mt-8 grid gap-8 xl:grid-cols-[1.08fr_0.92fr] xl:items-center">
             <div>
               <p className="max-w-[14rem] text-xs uppercase tracking-[0.3em] text-sky-100/55">
-                Distributed Task Control Plane
+                Task Control Plane
               </p>
               <h1
                 style={{ fontFamily: "var(--font-display)" }}
                 className="mt-4 max-w-[14ch] text-4xl font-semibold tracking-[-0.06em] text-white md:text-6xl"
               >
-                Canal Plus 由蓝白粒子拼接成你的第一眼信号。
+                蓝白粒子，拼出 Canal Plus。
               </h1>
               <p className="mt-5 max-w-[60ch] text-sm leading-7 text-slate-300 md:text-base">
-                进入之后，任务创建、链路校验、节点接管和异常治理都沿着同一条操作路径展开，不需要在多个系统里回跳。
+                任务、校验、节点，同屏处理。
               </p>
               <div className="mt-6 flex flex-wrap gap-3 text-xs text-slate-200">
                 <div className="rounded-full border border-white/10 bg-slate-950/35 px-4 py-2">同步任务</div>
@@ -3046,7 +3046,7 @@ function LoginScreen({ onLogin }: { onLogin: (username: string, password: string
 
           <div className="mt-8 grid gap-4 md:grid-cols-[1.2fr_0.8fr]">
             <div className="rounded-[1.75rem] border border-white/10 bg-slate-950/35 p-5">
-              <div className="text-xs uppercase tracking-[0.3em] text-slate-400">进入后可直接处理</div>
+              <div className="text-xs uppercase tracking-[0.3em] text-slate-400">直接处理</div>
               <div className="mt-4 grid gap-3">
                 {loginSignals.map((signal) => (
                   <LoginSignalCard
@@ -3061,22 +3061,22 @@ function LoginScreen({ onLogin }: { onLogin: (username: string, password: string
 
             <div className="grid gap-4">
               <div className="rounded-[1.75rem] border border-white/10 bg-white/[0.05] p-5">
-                <div className="text-xs uppercase tracking-[0.28em] text-slate-400">Launch Notes</div>
+                <div className="text-xs uppercase tracking-[0.28em] text-slate-400">粒子</div>
                 <div style={{ fontFamily: "var(--font-display)" }} className="mt-3 text-3xl font-semibold tracking-[-0.05em] text-white">
                   Blue + White
                 </div>
                 <p className="mt-2 text-sm leading-6 text-slate-300">
-                  粒子只在字标上聚集，背景保持克制，保证软件入口依旧像控制台，而不是展示页。
+                  只动字标。
                 </p>
               </div>
 
               <div className="rounded-[1.75rem] border border-sky-200/10 bg-[linear-gradient(145deg,rgba(12,22,37,0.92),rgba(20,55,98,0.76))] p-5">
                 <div className="flex items-center gap-3 text-sky-100">
                   <ShieldCheck size={18} />
-                  <span className="text-sm font-medium">入口保持原有登录流程</span>
+                  <span className="text-sm font-medium">流程不变</span>
                 </div>
                 <p className="mt-3 text-sm leading-6 text-sky-50/80">
-                  账号校验、错误提示和成功进入控制台的路径没有变化，只替换了视觉表达层。
+                  只改视觉。
                 </p>
               </div>
             </div>
@@ -3097,10 +3097,10 @@ function LoginScreen({ onLogin }: { onLogin: (username: string, password: string
                   style={{ fontFamily: "var(--font-display)" }}
                   className="mt-3 text-3xl font-semibold tracking-[-0.05em] text-white md:text-4xl"
                 >
-                  进入任务控制台
+                  进入控制台
                 </h2>
                 <p className="mt-3 text-sm leading-7 text-slate-300">
-                  使用管理员或运维账号进入当前环境。粒子视觉只发生在入口页，不影响后续操作效率。
+                  本地环境登录。
                 </p>
               </div>
 
@@ -3112,7 +3112,7 @@ function LoginScreen({ onLogin }: { onLogin: (username: string, password: string
                     value={username}
                     onChange={(event) => setUsername(event.target.value)}
                   />
-                  <p className="mt-2 text-xs text-slate-400">默认可用 `admin` 或 `operator` 账号。</p>
+                  <p className="mt-2 text-xs text-slate-400">`admin` / `operator`</p>
                 </label>
 
                 <label className="block">
@@ -3123,7 +3123,7 @@ function LoginScreen({ onLogin }: { onLogin: (username: string, password: string
                     value={password}
                     onChange={(event) => setPassword(event.target.value)}
                   />
-                  <p className="mt-2 text-xs text-slate-400">登录成功后直接进入任务中心。</p>
+                  <p className="mt-2 text-xs text-slate-400">进入任务中心</p>
                 </label>
 
                 {error && (
@@ -3143,14 +3143,14 @@ function LoginScreen({ onLogin }: { onLogin: (username: string, password: string
 
               <div className="mt-auto grid gap-3 pt-8 sm:grid-cols-2">
                 <div className="rounded-[1.35rem] border border-white/10 bg-white/[0.04] px-4 py-4">
-                  <div className="text-[11px] uppercase tracking-[0.28em] text-slate-500">Environment</div>
-                  <div className="mt-2 text-sm font-medium text-white">Local Console</div>
-                  <div className="mt-1 text-xs text-slate-400">当前浏览器会直接进入本地开发环境。</div>
+                  <div className="text-[11px] uppercase tracking-[0.28em] text-slate-500">环境</div>
+                  <div className="mt-2 text-sm font-medium text-white">本地</div>
+                  <div className="mt-1 text-xs text-slate-400">Local Console</div>
                 </div>
                 <div className="rounded-[1.35rem] border border-white/10 bg-white/[0.04] px-4 py-4">
-                  <div className="text-[11px] uppercase tracking-[0.28em] text-slate-500">Flow</div>
-                  <div className="mt-2 text-sm font-medium text-white">Create · Verify · Handoff</div>
-                  <div className="mt-1 text-xs text-slate-400">创建任务后，预检、启动和节点接管沿同一视角展开。</div>
+                  <div className="text-[11px] uppercase tracking-[0.28em] text-slate-500">流程</div>
+                  <div className="mt-2 text-sm font-medium text-white">创建 · 校验 · 接管</div>
+                  <div className="mt-1 text-xs text-slate-400">同一视角</div>
                 </div>
               </div>
             </div>

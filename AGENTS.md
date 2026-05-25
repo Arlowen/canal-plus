@@ -14,3 +14,9 @@
 - For each small, self-contained change, once the relevant verification passes and the change is confirmed to have no obvious issues, automatically stage only the related files, commit them, and push them to the current remote branch without waiting for an extra confirmation.
 - Never include unrelated local changes in that automatic commit.
 - If verification fails, the change scope is mixed or unclear, or pushing would be risky, stop and report the blocker instead of pushing blindly.
+
+## Copy Minimalism
+
+- UI 文案默认极简，能用一个词就不要写一句话。
+- 按钮、标签、卡片标题、辅助说明优先用短词或短语，避免解释型长句和营销文案。
+- 只有报错、危险操作确认、权限限制这类高风险场景，才允许使用完整句子说明。
