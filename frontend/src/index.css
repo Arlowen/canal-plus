@@ -90,6 +90,14 @@ textarea {
     @apply rounded-3xl border border-line bg-white px-5 py-4 text-left transition hover:border-blue-200 hover:bg-blue-50/40;
   }
 
+  .link-button {
+    @apply text-left text-slate-700 transition hover:text-coal;
+  }
+
+  .panel-link {
+    @apply min-w-0 text-left;
+  }
+
   .auth-input {
     @apply w-full rounded-[1.35rem] border border-white/10 bg-white/[0.05] px-4 py-3.5 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-sky-300/60 focus:bg-white/[0.08] focus:ring-4 focus:ring-sky-500/15;
   }

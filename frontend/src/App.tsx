@@ -128,43 +128,37 @@ const taskBlueprints: Array<{
   type: TaskBlueprintType;
   name: string;
   description: string;
-  scenario: string;
   tag: string;
 }> = [
   {
     type: "full_migration",
     name: "全量迁移",
-    description: "一次性迁移存量数据。",
-    scenario: "适合新库初始化或历史数据搬迁。",
-    tag: "首次上线"
+    description: "存量迁移",
+    tag: "全量"
   },
   {
     type: "incremental_sync",
     name: "增量同步",
-    description: "持续同步变更数据。",
-    scenario: "适合生产链路跟随源端变化。",
-    tag: "常驻任务"
+    description: "持续同步",
+    tag: "增量"
   },
   {
     type: "data_validation",
     name: "数据校验",
-    description: "比对源端和目标端是否一致。",
-    scenario: "适合迁移后核验和周期巡检。",
-    tag: "质量核验"
+    description: "一致性校验",
+    tag: "校验"
   },
   {
     type: "data_correction",
     name: "数据订正",
-    description: "修复源端和目标端差异。",
-    scenario: "适合校验失败后的批量修复。",
-    tag: "自动修复"
+    description: "差异订正",
+    tag: "订正"
   },
   {
     type: "structure_compare",
     name: "结构对比",
-    description: "比较表结构差异。",
-    scenario: "适合迁移前检查和变更评估。",
-    tag: "变更评估"
+    description: "结构差异",
+    tag: "结构"
   }
 ];
 
@@ -1271,7 +1265,7 @@ function DatasourcePage({
                 {visibleDatasources.map((item) => (
                   <tr key={item.id} className="table-row hover:bg-slate-50/70">
                     <td className="px-4 py-4">
-                      <Button onClick={() => onOpenDatasource(item.id)} className="text-left">
+                      <Button onClick={() => onOpenDatasource(item.id)} className="link-button">
                         <div className="font-medium text-coal">{item.name}</div>
                         <div className="mt-1 text-xs text-slate-500">{item.defaultSchema || "未设置默认库"}</div>
                       </Button>
@@ -1825,7 +1819,7 @@ function TasksPage({
                         onOpenCapabilityJob(item.rawJob.id);
                       }
                     }}
-                    className="min-w-0 text-left"
+                    className="panel-link"
                   >
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="font-medium text-coal">{item.title}</span>
@@ -2354,7 +2348,7 @@ function NodesPage({
               return (
                 <div key={node.id} className="rounded-3xl border border-line bg-white p-4">
                   <div className="grid gap-4 xl:grid-cols-[1fr_auto] xl:items-start">
-                    <Button onClick={() => onOpenNode(node.id)} className="min-w-0 text-left">
+                    <Button onClick={() => onOpenNode(node.id)} className="panel-link">
                       <div className="flex flex-wrap items-center gap-2">
                         <div className="font-medium text-coal">{node.name}</div>
                         <Badge tone={nodeTone(node.status)}>{nodeStatusText(node.status)}</Badge>
@@ -3511,7 +3505,7 @@ function TaskCreatorModal({
     <Modal
       open={open}
       title="创建任务"
-      description="按任务类型逐步配置。"
+      description="按类型配置。"
       onClose={onClose}
     >
       <div className="grid gap-4">
@@ -3537,7 +3531,6 @@ function TaskCreatorModal({
                 <div className="chip border-slate-200 bg-white text-slate-600">{item.tag}</div>
                 <div className="mt-4 text-lg font-semibold text-coal">{item.name}</div>
                 <div className="mt-2 text-sm text-slate-500">{item.description}</div>
-                <div className="mt-2 text-sm text-slate-500">{item.scenario}</div>
               </Button>
             ))}
           </div>
