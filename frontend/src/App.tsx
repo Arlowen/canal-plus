@@ -387,7 +387,6 @@ function App() {
     setTokenState(response.token);
     setUser(response.user);
     setPage("tasks");
-    pushNotice({ tone: "success", message: "已进入任务中心" });
   };
 
   const handleLogout = () => {
@@ -490,8 +489,7 @@ function App() {
           <main className="min-w-0">
             <div className="mb-5 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
               <div>
-                <div className="text-xs font-medium uppercase tracking-[0.22em] text-slate-500">当前页面</div>
-                <h1 className="mt-2 text-3xl font-semibold tracking-tight text-coal md:text-4xl">
+                <h1 className="text-3xl font-semibold tracking-tight text-coal md:text-4xl">
                   {pageTitle(page)}
                 </h1>
                 <p className="mt-2 text-sm text-slate-500">
@@ -534,7 +532,7 @@ function App() {
                   </button>
                 )}
               >
-                后端暂时不可用，当前页面、筛选和弹窗状态会保留；服务恢复后再继续同步数据。
+                后端暂时不可用，当前界面会保留；恢复后再重试。
               </NoticeBanner>
             )}
 
@@ -562,7 +560,6 @@ function App() {
                 cluster={cluster}
                 onCreateDatasource={openDatasourceCreator}
                 onCreateTask={openTaskCreator}
-                onCreateNode={openNodeCreator}
                 onOpenTasks={() => setPage("tasks")}
                 onOpenTask={openTaskDetail}
                 onOpenNodes={() => setPage("nodes")}
@@ -633,7 +630,6 @@ function DashboardPage({
   cluster,
   onCreateDatasource,
   onCreateTask,
-  onCreateNode,
   onOpenTasks,
   onOpenTask,
   onOpenNodes
@@ -646,7 +642,6 @@ function DashboardPage({
   cluster: ClusterSnapshot | null;
   onCreateDatasource: () => void;
   onCreateTask: () => void;
-  onCreateNode: () => void;
   onOpenTasks: () => void;
   onOpenTask: (taskID: string) => void;
   onOpenNodes: () => void;
@@ -673,7 +668,7 @@ function DashboardPage({
   if (datasources.length < 2) {
     overviewActions.push({
       title: "先补齐数据源",
-      description: "至少保留一个源端和一个目标端，并完成连接测试后再建链路。",
+      description: "至少保留一个源端和一个目标端。",
       actionLabel: "管理数据源",
       onClick: onCreateDatasource
     });
@@ -681,7 +676,7 @@ function DashboardPage({
   if (onlineNodes === 0) {
     overviewActions.push({
       title: "当前没有在线节点",
-      description: "任务无法启动或接管时，先恢复节点在线状态和容量。",
+      description: "先恢复节点在线状态和容量。",
       actionLabel: "查看节点",
       onClick: onOpenNodes
     });
@@ -689,7 +684,7 @@ function DashboardPage({
   if (awaitingTasks > 0) {
     overviewActions.push({
       title: "存在待接管任务",
-      description: `当前有 ${awaitingTasks} 条任务没有执行节点，应该先消掉这类阻塞。`,
+      description: `当前有 ${awaitingTasks} 条任务没有执行节点。`,
       actionLabel: "进入任务中心",
       onClick: onOpenTasks
     });
@@ -697,7 +692,7 @@ function DashboardPage({
   if (failedTasks + pendingErrors > 0) {
     overviewActions.push({
       title: "异常需要处理",
-      description: `${failedTasks} 条任务异常，${pendingErrors} 条错误事件待处理。`,
+      description: `${failedTasks} 条任务异常，${pendingErrors} 条错误待处理。`,
       actionLabel: "查看任务",
       onClick: onOpenTasks
     });
@@ -706,8 +701,8 @@ function DashboardPage({
     overviewActions.push({
       title: hasCreatedTasks ? "主链路稳定" : "可以开始建第一条链路",
       description: hasCreatedTasks
-        ? "总览不再重复展示任务列表，后续操作直接进入任务中心处理。"
-        : "先补齐数据源和节点，再创建第一条同步任务。",
+        ? "直接进入任务中心继续处理。"
+        : "先补齐数据源和节点。",
       actionLabel: hasCreatedTasks ? "进入任务中心" : "创建任务",
       onClick: hasCreatedTasks ? onOpenTasks : onCreateTask
     });
@@ -718,12 +713,11 @@ function DashboardPage({
       <section className="surface overflow-hidden p-6">
         <div className="grid gap-5 xl:grid-cols-[1.12fr_0.88fr]">
           <div>
-            <div className="chip border-blue-200 bg-blue-50 text-blue-700">总览</div>
-            <h2 className="mt-4 max-w-2xl text-3xl font-semibold tracking-tight text-coal md:text-4xl">
-              任务是主入口，总览只保留全局状态。
+            <h2 className="max-w-2xl text-3xl font-semibold tracking-tight text-coal md:text-4xl">
+              总览只看关键状态。
             </h2>
             <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-500">
-              总览不再重复承载任务列表和配置入口，只回答三个问题：链路能不能跑、现在卡在哪里、下一步该去哪个页面处理。
+              需要操作的事项放在下面，不在这里重复铺开。
             </p>
             <div className="mt-5 flex flex-wrap gap-3">
               <button onClick={onOpenTasks} className="btn-primary">
@@ -734,31 +728,13 @@ function DashboardPage({
                 <HardDrives size={16} />
                 查看节点
               </button>
-              {!hasCreatedTasks && (
-                <button onClick={onCreateTask} className="btn-secondary">
-                  <Plus size={16} />
-                  创建任务
-                </button>
-              )}
-              {datasources.length < 2 && (
-                <button onClick={onCreateDatasource} className="btn-secondary">
-                  <Database size={16} />
-                  添加数据源
-                </button>
-              )}
-              {onlineNodes === 0 && (
-                <button onClick={onCreateNode} className="btn-secondary">
-                  <Plus size={16} />
-                  添加节点
-                </button>
-              )}
             </div>
           </div>
           <div className="surface-muted p-5">
             <div className="flex items-center justify-between gap-3">
               <div>
                 <div className="text-sm font-medium text-coal">当前重点</div>
-                <div className="mt-1 text-sm text-slate-500">把真正会阻塞主链路的事项单独拎出来。</div>
+                <div className="mt-1 text-sm text-slate-500">只保留会阻塞主链路的项目。</div>
               </div>
               {hasCreatedTasks ? <WarningCircle size={20} className="text-blue-600" /> : <RocketLaunch size={20} className="text-blue-600" />}
             </div>
@@ -773,22 +749,17 @@ function DashboardPage({
       </section>
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <MetricCard label="同步任务" value={tasks.length} detail="只保留主链路，不再把派生能力拆成独立列表项" tone="neutral" icon={FlowArrow} />
-        <MetricCard label="扩展任务" value={visibleCapabilityJobs.length} detail="校验、订正、结构对比会挂到对应同步任务下" tone="blue" icon={ClipboardText} />
-        <MetricCard label="运行中" value={(summary?.runningTasks ?? 0) + runningGovernance} detail="同步与治理任务合计" tone="blue" icon={Play} />
-        <MetricCard label="异常" value={failedTasks + pendingErrors} detail={`${failedTasks} 条任务异常，${pendingErrors} 条待处理错误`} tone={failedTasks + pendingErrors > 0 ? "red" : "green"} icon={WarningCircle} />
+        <MetricCard label="同步任务" value={tasks.length} detail="主链路数量" tone="neutral" icon={FlowArrow} />
+        <MetricCard label="扩展任务" value={visibleCapabilityJobs.length} detail="挂在同步任务下" tone="blue" icon={ClipboardText} />
+        <MetricCard label="运行中" value={(summary?.runningTasks ?? 0) + runningGovernance} detail="同步与治理合计" tone="blue" icon={Play} />
+        <MetricCard label="异常" value={failedTasks + pendingErrors} detail="任务异常 + 错误事件" tone={failedTasks + pendingErrors > 0 ? "red" : "green"} icon={WarningCircle} />
       </div>
 
       <div className="grid gap-5 xl:grid-cols-[1.08fr_0.92fr]">
         <section className="surface p-6">
           <SectionHeader
             title="当前阻塞"
-            description="这里只保留会影响主链路推进的事项。"
-            action={hasCreatedTasks ? (
-              <button onClick={onOpenTasks} className="btn-secondary">
-                进入任务中心
-              </button>
-            ) : undefined}
+            description="只保留需要立刻处理的事项。"
           />
           <div className="mt-5 grid gap-3">
             {overviewActions.map((item) => (
@@ -804,7 +775,7 @@ function DashboardPage({
         </section>
 
         <section className="surface p-6">
-          <SectionHeader title="资源准备度" description="总览只看链路是否具备开工条件。" />
+          <SectionHeader title="资源准备度" description="看链路是否具备开工条件。" />
           <div className="mt-5 grid gap-3 sm:grid-cols-2">
             <MetricMini label="数据源就绪" value={`${readyDatasources}/${datasources.length || 0}`} />
             <MetricMini label="在线节点" value={`${onlineNodes}/${totalNodes}`} />
@@ -823,12 +794,12 @@ function DashboardPage({
       </div>
 
       <section className="surface p-6">
-        <SectionHeader title="需要关注的任务" description="总览不展开列表，只点出异常、待接管和高延迟任务。" />
+        <SectionHeader title="需要关注的任务" description="只点出异常、待接管和高延迟任务。" />
         {attentionTasks.length === 0 ? (
           <EmptyPanel
             icon={ShieldCheck}
             title="当前没有高优先级风险任务"
-            description="后续操作直接进入任务中心处理即可。"
+            description="直接进入任务中心继续处理即可。"
             action={
               <button onClick={onOpenTasks} className="btn-primary">
                 <FlowArrow size={16} />
@@ -1002,13 +973,7 @@ function DatasourcePage({
       <section className="surface min-w-0 p-6">
         <SectionHeader
           title="数据源列表"
-          description="常用操作保留在主路径。"
-          action={canManage ? (
-            <button onClick={openCreate} className="btn-primary">
-              <Plus size={16} />
-              添加数据源
-            </button>
-          ) : undefined}
+          description="连接与用途。"
         />
 
         <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -1062,7 +1027,7 @@ function DatasourcePage({
           <EmptyPanel
             icon={Database}
             title="暂无数据源"
-            description="添加数据源后，即可创建迁移、同步、校验等任务。"
+            description="先补齐源端和目标端。"
             action={canManage ? (
               <button onClick={openCreate} className="btn-primary">
                 <Plus size={16} />
@@ -1142,7 +1107,7 @@ function DatasourcePage({
 
       <div className="space-y-5">
         <section className="surface p-6">
-          <SectionHeader title="当前数据源" description="连接状态和使用范围。" />
+          <SectionHeader title="当前数据源" description="状态与范围。" />
           {selected ? (
             <div className="mt-5 grid gap-3">
               <DetailCard label="名称" value={selected.name} />
@@ -1161,7 +1126,7 @@ function DatasourcePage({
         {!canManage && (
           <PermissionNotice
             compact
-            description="当前角色可查看和测试连接；新增、编辑、删除数据源需要管理员权限。"
+            description="当前角色只能查看和测试连接。"
           />
         )}
       </div>
@@ -1169,7 +1134,7 @@ function DatasourcePage({
       <Modal
         open={editorOpen}
         title={editingId ? "编辑数据源" : "添加数据源"}
-        description={editingId ? "保持字段简洁，只保留任务创建必需信息。" : "添加数据源后，即可创建迁移、同步、校验等任务。"}
+        description={editingId ? "只保留任务需要的信息。" : "补齐连接信息即可。"}
         onClose={() => setEditorOpen(false)}
       >
         <form onSubmit={saveDatasource} className="grid gap-4">
@@ -1417,13 +1382,7 @@ function TasksPage({
       <section className="surface min-w-0 p-6">
         <SectionHeader
           title="同步任务"
-          description="同步任务是主线，校验、订正和结构对比默认挂在对应同步任务下。"
-          action={canManage ? (
-            <button onClick={() => setCreatorOpen(true)} className="btn-primary">
-              <Plus size={16} />
-              创建任务
-            </button>
-          ) : undefined}
+          description="默认只看同步任务。"
         />
 
         <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -1435,10 +1394,8 @@ function TasksPage({
 
         <div className="mt-5 flex flex-col gap-3 rounded-3xl border border-line bg-slate-50/70 p-4 xl:flex-row xl:items-center xl:justify-between">
           <div>
-            <div className="text-sm font-medium text-coal">列表视角</div>
-            <div className="mt-1 text-sm text-slate-500">
-              默认只展示同步任务，避免一条链路拆成多条重复列表项。
-            </div>
+            <div className="text-sm font-medium text-coal">展示范围</div>
+            <div className="mt-1 text-sm text-slate-500">同步任务 / 扩展任务</div>
           </div>
           <div className="flex flex-wrap gap-2">
             <FilterChip active={!showCapabilityJobs} onClick={() => setShowCapabilityJobs(false)} label="只看同步任务" />
@@ -1448,13 +1405,13 @@ function TasksPage({
 
         {awaitingTasks > 0 && (
           <div className="mt-5 rounded-3xl border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-800">
-            当前有 {awaitingTasks} 条任务等待节点接管。优先检查节点在线状态、容量和排空中的任务迁移结果。
+            当前有 {awaitingTasks} 条任务待接管，先检查节点状态。
           </div>
         )}
 
         {!showCapabilityJobs && visibleCapabilityJobs.length > 0 && (
           <div className="mt-5 rounded-3xl border border-blue-200 bg-blue-50 px-4 py-4 text-sm text-blue-800">
-            已将 {visibleCapabilityJobs.length} 条扩展任务收进对应同步任务详情，主列表只保留真正需要操作的同步链路。
+            扩展任务已收进详情区。
           </div>
         )}
 
@@ -1511,7 +1468,7 @@ function TasksPage({
           <EmptyPanel
             icon={Database}
             title="先添加数据源"
-            description="没有数据源时，不展示空表格。先准备源端和目标端，再创建任务。"
+            description="先准备源端和目标端。"
             action={
               <button onClick={onCreateDatasource} className="btn-primary">
                 <Plus size={16} />
@@ -1523,7 +1480,7 @@ function TasksPage({
           <EmptyPanel
             icon={ClipboardText}
             title="暂无任务"
-            description="创建一个任务开始使用。"
+            description="创建一条任务开始使用。"
             action={canManage ? (
               <button onClick={() => setCreatorOpen(true)} className="btn-primary">
                 <Plus size={16} />
@@ -1605,7 +1562,7 @@ function TasksPage({
 
       <div className="space-y-5">
         <section className="surface p-6">
-          <SectionHeader title={selected?.rawJob ? "扩展任务详情" : "任务详情"} description="运行日志默认置顶，配置和轨迹放到后面。" />
+          <SectionHeader title={selected?.rawJob ? "扩展任务详情" : "任务详情"} description="日志在前，其余信息收后。" />
           {!selected ? (
             <div className="mt-5 text-sm text-slate-500">选择一条任务查看详情。</div>
           ) : selected.rawTask ? (
@@ -1626,7 +1583,7 @@ function TasksPage({
           ) : null}
         </section>
         {!canManage && (
-          <PermissionNotice compact description="当前角色可查看运行态和执行结果；新建、删除和修改任务需要管理员权限。" />
+          <PermissionNotice compact description="当前角色只能查看运行态和结果。" />
         )}
       </div>
 
@@ -1925,18 +1882,12 @@ function NodesPage({
       <section className="surface min-w-0 p-6">
         <SectionHeader
           title="节点列表"
-          description={localNodeName ? `当前控制节点：${localNodeName}` : "部署、升级、卸载都在页面完成。"}
+          description={localNodeName ? `当前控制节点：${localNodeName}` : "部署与运维入口。"}
           action={canManage ? (
-            <div className="flex flex-wrap gap-2">
-              <button onClick={requestRebalanceCluster} disabled={busyKey === "rebalance"} className="btn-secondary">
-                <ArrowsClockwise size={16} />
-                {busyKey === "rebalance" ? "均衡中" : "重新均衡"}
-              </button>
-              <button onClick={() => setCreatorOpen(true)} className="btn-primary">
-                <Plus size={16} />
-                添加节点
-              </button>
-            </div>
+            <button onClick={requestRebalanceCluster} disabled={busyKey === "rebalance"} className="btn-secondary">
+              <ArrowsClockwise size={16} />
+              {busyKey === "rebalance" ? "均衡中" : "重新均衡"}
+            </button>
           ) : undefined}
         />
 
@@ -1981,7 +1932,7 @@ function NodesPage({
           <EmptyPanel
             icon={HardDrives}
             title="暂无节点"
-            description="填写机器信息并测试连接后，即可部署第一个节点。"
+            description="先补一台可用节点。"
             action={canManage ? (
               <button onClick={() => setCreatorOpen(true)} className="btn-primary">
                 <Plus size={16} />
@@ -2010,11 +1961,6 @@ function NodesPage({
                         <span>CPU {node.cpuPercent}%</span>
                         <span>内存 {node.memoryPercent}%</span>
                       </div>
-                      {isCurrentNode && (
-                        <div className="mt-3 text-xs text-slate-500">
-                          当前控制节点支持查看、升级和排空，不支持从本机控制台执行下线、卸载或故障演练。
-                        </div>
-                      )}
                     </button>
                     <div className="flex flex-wrap justify-end gap-2">
                       <button
@@ -2051,7 +1997,7 @@ function NodesPage({
 
       <div className="space-y-5">
         <section className="surface p-6">
-          <SectionHeader title="节点详情" description="查看版本、SSH 与承载任务。" />
+          <SectionHeader title="节点详情" description="版本、连接与承载任务。" />
           {selected ? (
             <div className="mt-5 space-y-4">
               <div className="flex flex-wrap items-center gap-2">
@@ -2070,7 +2016,7 @@ function NodesPage({
               </div>
               {localNodeId === selected.id && (
                 <div className="rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-700">
-                  当前控制节点负责提供 Web UI、API 和本地任务进程管理。请在其他节点控制台执行本节点卸载、下线或故障演练。
+                  当前控制节点不支持自卸载、自下线或故障演练。
                 </div>
               )}
               <div className="rounded-3xl border border-line bg-slate-50/70 p-4">
@@ -2123,7 +2069,7 @@ function NodesPage({
         </section>
         {selected && (
           <section className="surface p-6">
-            <SectionHeader title="待接管任务" description="当前没有承载节点、需要重新接管的任务。" />
+            <SectionHeader title="待接管任务" description="等待重新接管的任务。" />
             <div className="mt-4 grid gap-3">
               {awaitingTasks.length === 0 ? (
                 <div className="rounded-2xl border border-dashed border-line bg-slate-50/70 px-4 py-6 text-sm text-slate-500">
@@ -2151,7 +2097,7 @@ function NodesPage({
         )}
         {selected && (
           <section className="surface p-6">
-            <SectionHeader title="最近运维事件" description="围绕当前节点的操作和任务迁移。" />
+            <SectionHeader title="最近运维事件" description="当前节点相关操作。" />
             <div className="mt-4 grid gap-3">
               {nodeEvents.length === 0 ? (
                 <div className="rounded-2xl border border-dashed border-line bg-slate-50/70 px-4 py-6 text-sm text-slate-500">
@@ -2171,7 +2117,7 @@ function NodesPage({
           </section>
         )}
         {!canManage && (
-          <PermissionNotice compact description="当前角色可查看节点状态；部署、升级、卸载节点需要管理员权限。" />
+          <PermissionNotice compact description="当前角色只能查看节点状态。" />
         )}
       </div>
 
@@ -2452,16 +2398,15 @@ function SettingsPage({
     <div className="grid gap-5 xl:grid-cols-[0.98fr_1.02fr]">
       <div className="space-y-5">
         <section className="surface p-6">
-          <SectionHeader title="用户配置" description="当前登录用户与基础运行范围。" />
+          <SectionHeader title="用户配置" description="当前用户与基础范围。" />
           <div className="mt-5 grid gap-3">
             <DetailCard label="当前用户" value={`${user?.name || "-"} · ${roleLabel(user?.role)}`} />
             <DetailCard label="任务数量" value={`${tasks.length} 条`} />
-            <DetailCard label="默认策略" value="优先使用短文案、少步骤和蓝白灰主题。" />
           </div>
         </section>
 
         <section className="surface p-6">
-          <SectionHeader title="部署配置" description="当前节点、端口和运行巡检参数。" />
+          <SectionHeader title="部署配置" description="节点、端口和巡检参数。" />
           <div className="mt-5 grid gap-3">
             <DetailCard label="当前节点" value={runtimeConfig?.localNodeId || "-"} mono />
             <DetailCard label="后端端口" value={runtimeConfig?.backendPort || "-"} mono />
@@ -2475,7 +2420,7 @@ function SettingsPage({
         </section>
 
         <section className="surface p-6">
-          <SectionHeader title="最近操作" description="保留关键审计，不再单独占用主导航。" />
+          <SectionHeader title="最近操作" description="关键审计记录。" />
           <div className="mt-5 grid gap-3">
             {logs.slice(0, 6).map((log) => (
               <div key={log.id} className="rounded-2xl border border-line bg-slate-50/70 p-4">
@@ -2494,7 +2439,7 @@ function SettingsPage({
       <section className="surface p-6">
         <SectionHeader
           title="告警规则"
-          description="把系统配置收敛在同一页。"
+          description="规则与事件。"
           action={canManage ? (
             <button onClick={() => setEditingId(null)} className="btn-secondary">
               <Plus size={16} />
@@ -2531,7 +2476,7 @@ function SettingsPage({
 
           <div>
             {!canManage && (
-              <PermissionNotice compact description="当前角色可查看规则与事件；创建、编辑、删除告警规则需要管理员权限。" />
+              <PermissionNotice compact description="当前角色只能查看规则与事件。" />
             )}
             <form onSubmit={saveRule} className="mt-4 grid gap-4 xl:mt-0">
               <Field label="规则名称">
@@ -2622,12 +2567,11 @@ function LoginScreen({ onLogin }: { onLogin: (username: string, password: string
     <div className="min-h-[100dvh] bg-mist px-4 py-8 text-ink">
       <div className="mx-auto grid min-h-[calc(100dvh-4rem)] max-w-6xl items-center gap-8 lg:grid-cols-[1.12fr_0.88fr]">
         <section className="surface overflow-hidden p-8 md:p-10">
-          <div className="chip border-blue-200 bg-blue-50 text-blue-700">Developer Data Platform</div>
-          <h1 className="mt-5 max-w-3xl text-5xl font-semibold tracking-tight text-coal md:text-6xl">
+          <h1 className="max-w-3xl text-5xl font-semibold tracking-tight text-coal md:text-6xl">
             canal-plus
           </h1>
           <p className="mt-4 max-w-2xl text-base leading-7 text-slate-500">
-            面向数据迁移、同步、校验、订正和结构对比的分布式任务平台。入口更少，流程更清晰，适合开发者和数据工程师直接上手。
+            统一处理迁移、同步、校验、订正和结构对比。
           </p>
         </section>
 
@@ -3092,7 +3036,7 @@ function TaskCreatorModal({
     <Modal
       open={open}
       title="创建任务"
-      description="按任务类型逐步配置，不再把所有参数堆在同一页。"
+      description="按任务类型逐步配置。"
       onClose={onClose}
     >
       <div className="grid gap-4">
@@ -3475,7 +3419,7 @@ function NodeCreatorModal({
     <Modal
       open={open}
       title="添加节点"
-      description="填写机器信息，先测试连接，再一键部署。"
+      description="先测试，再部署。"
       onClose={onClose}
     >
       <div className="grid gap-4">
@@ -4948,11 +4892,11 @@ function pageTitle(page: Page) {
 }
 
 function pageDescription(page: Page) {
-  if (page === "dashboard") return "只看全局状态、阻塞项和下一步去哪个页面处理。";
-  if (page === "datasources") return "把连接资产收敛到一个入口，先配置，再测试。";
-  if (page === "tasks") return "同步任务是主入口，日志、状态和派生能力都围绕任务展开。";
-  if (page === "nodes") return "围绕机器接入、部署、升级和卸载组织节点管理流程。";
-  return "保留必要的系统配置、告警规则和审计记录。";
+  if (page === "dashboard") return "只看状态、阻塞和下一步。";
+  if (page === "datasources") return "统一管理连接与测试。";
+  if (page === "tasks") return "统一处理任务、日志和异常。";
+  if (page === "nodes") return "统一处理节点接入与运维。";
+  return "只保留配置、告警和审计。";
 }
 
 function purposeText(value: DatasourcePurpose) {
