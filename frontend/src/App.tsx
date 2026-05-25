@@ -223,9 +223,15 @@ type ParticlePoint = {
   y: number;
   size: number;
   opacity: number;
-  delay: number;
-  duration: number;
+  seed: number;
   tint: "blue" | "white";
+};
+
+type AnimatedParticle = ParticlePoint & {
+  currentX: number;
+  currentY: number;
+  velocityX: number;
+  velocityY: number;
 };
 
 const loginDisplayFont = "\"Avenir Next\", \"Segoe UI Variable Display\", \"PingFang SC\", \"Helvetica Neue\", sans-serif";
@@ -235,27 +241,59 @@ function particleNoise(x: number, y: number) {
   return value - Math.floor(value);
 }
 
-function createWordmarkParticles(width: number, height: number, compact: boolean) {
-  const columns = compact ? 54 : 76;
-  const rows = compact ? 28 : 18;
-  const limit = compact ? 520 : 640;
-  const paddingX = compact ? 34 : 42;
-  const paddingY = compact ? 44 : 52;
-  const samples: ParticlePoint[] = [];
+function createWordmarkParticles(wordmark: string, width: number, height: number) {
+  if (typeof document === "undefined") return [];
+  const compact = width < 760;
+  const lines = compact ? wordmark.split(" ") : [wordmark];
+  const canvas = document.createElement("canvas");
+  const context = canvas.getContext("2d");
+  if (!context) return [];
+  canvas.width = width;
+  canvas.height = height;
 
-  for (let row = 0; row < rows; row += 1) {
-    for (let column = 0; column < columns; column += 1) {
-      const seed = particleNoise(column * 3.1, row * 7.7);
-      if (seed < 0.24) continue;
-      const x = paddingX + (column / Math.max(1, columns - 1)) * (width - paddingX * 2);
-      const y = paddingY + (row / Math.max(1, rows - 1)) * (height - paddingY * 2);
+  let fontSize = compact ? Math.max(74, Math.round(width * 0.16)) : Math.max(118, Math.round(width * 0.17));
+  context.font = `900 ${fontSize}px ${loginDisplayFont}`;
+  const availableWidth = width - (compact ? 72 : 96);
+  const maxLineWidth = Math.max(...lines.map((line) => context.measureText(line).width));
+  if (maxLineWidth > availableWidth) {
+    fontSize = Math.max(66, Math.floor(fontSize * (availableWidth / maxLineWidth)));
+  }
+
+  const lineHeight = Math.round(fontSize * 0.9);
+  const firstY = compact ? height * 0.38 : height * 0.54;
+  const totalHeight = compact ? lineHeight * (lines.length - 1) : 0;
+
+  context.clearRect(0, 0, width, height);
+  context.font = `900 ${fontSize}px ${loginDisplayFont}`;
+  context.textBaseline = "middle";
+  context.fillStyle = "#ffffff";
+
+  lines.forEach((line, index) => {
+    const metrics = context.measureText(line);
+    const offsetX = (width - metrics.width) / 2;
+    const offsetY = compact
+      ? firstY + index * lineHeight - totalHeight / 2
+      : firstY;
+    context.fillText(line, offsetX, offsetY);
+  });
+
+  const step = compact ? 6 : 7;
+  const limit = compact ? 900 : 980;
+  const samples: ParticlePoint[] = [];
+  const pixels = context.getImageData(0, 0, width, height).data;
+
+  for (let y = 0; y < height; y += step) {
+    for (let x = 0; x < width; x += step) {
+      const alpha = pixels[(y * width + x) * 4 + 3];
+      if (alpha < 32) continue;
+      const seed = particleNoise(x * 0.37, y * 0.41);
+      if (seed < 0.14) continue;
       samples.push({
-        x: x + (seed - 0.5) * 4,
-        y: y + (0.5 - seed) * 3,
-        size: seed > 0.76 ? 3.5 : seed > 0.42 ? 2.8 : 2.1,
+        x: x + (seed - 0.5) * 2.8,
+        y: y + (0.5 - seed) * 2.8,
+        size: seed > 0.76 ? 2.6 : seed > 0.42 ? 2.1 : 1.7,
         opacity: seed > 0.72 ? 0.92 : seed > 0.48 ? 0.76 : 0.56,
-        delay: seed * 3.4,
-        duration: 3.6 + seed * 2.8,
+        seed,
         tint: seed > 0.55 ? "white" : "blue"
       });
     }
@@ -267,180 +305,155 @@ function createWordmarkParticles(width: number, height: number, compact: boolean
 
 function ParticleWordmark({ wordmark }: { wordmark: string }) {
   const frameRef = useRef<HTMLDivElement | null>(null);
-  const maskId = useId().replace(/:/g, "");
-  const [compact, setCompact] = useState(false);
-  const [particles, setParticles] = useState<ParticlePoint[]>([]);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const particlesRef = useRef<AnimatedParticle[]>([]);
+  const phaseRef = useRef<"merge" | "hold" | "explode">("merge");
+  const phaseStartedAtRef = useRef(0);
+  const frameIdRef = useRef(0);
+  const lastFrameAtRef = useRef(0);
+  const sizeRef = useRef({ width: 0, height: 0 });
 
-  useEffect(() => {
-    const renderParticles = () => {
-      const width = Math.max(320, Math.round(frameRef.current?.getBoundingClientRect().width || 720));
-      const nextCompact = width < 860;
-      const viewWidth = nextCompact ? 620 : 760;
-      const viewHeight = nextCompact ? 300 : 260;
-      setCompact(nextCompact);
-      setParticles(createWordmarkParticles(viewWidth, viewHeight, nextCompact));
-    };
-
-    renderParticles();
-    let frame = 0;
-    const handleResize = () => {
-      window.cancelAnimationFrame(frame);
-      frame = window.requestAnimationFrame(renderParticles);
-    };
-    window.addEventListener("resize", handleResize);
-    return () => {
-      window.cancelAnimationFrame(frame);
-      window.removeEventListener("resize", handleResize);
-    };
+  const createAnimatedParticles = useCallback((width: number, height: number) => {
+    const centerX = width / 2;
+    const centerY = height / 2;
+    return createWordmarkParticles(wordmark, width, height).map((point) => {
+      const angle = point.seed * Math.PI * 2;
+      const burstRadius = Math.max(width, height) * (0.48 + point.seed * 0.44);
+      const startX = centerX + Math.cos(angle) * burstRadius;
+      const startY = centerY + Math.sin(angle) * burstRadius;
+      return {
+        ...point,
+        currentX: startX,
+        currentY: startY,
+        velocityX: Math.cos(angle) * (2.4 + point.seed * 3.8),
+        velocityY: Math.sin(angle) * (2.4 + point.seed * 3.8)
+      };
+    });
   }, [wordmark]);
 
+  useEffect(() => {
+    const resizeCanvas = () => {
+      const canvas = canvasRef.current;
+      const frame = frameRef.current;
+      if (!canvas || !frame) return;
+      const rect = frame.getBoundingClientRect();
+      const width = Math.max(320, Math.round(rect.width));
+      const height = Math.max(240, Math.round(rect.height));
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width = width * dpr;
+      canvas.height = height * dpr;
+      canvas.style.width = `${width}px`;
+      canvas.style.height = `${height}px`;
+      const context = canvas.getContext("2d");
+      if (!context) return;
+      context.setTransform(dpr, 0, 0, dpr, 0, 0);
+      sizeRef.current = { width, height };
+      particlesRef.current = createAnimatedParticles(width, height);
+      phaseRef.current = "merge";
+      phaseStartedAtRef.current = performance.now();
+      lastFrameAtRef.current = 0;
+    };
+
+    const explodeParticles = () => {
+      const { width, height } = sizeRef.current;
+      const centerX = width / 2;
+      const centerY = height / 2;
+      particlesRef.current = particlesRef.current.map((particle) => {
+        const angle = Math.atan2(particle.currentY - centerY, particle.currentX - centerX) + (particle.seed - 0.5) * 1.6;
+        const speed = 4 + particle.seed * 8;
+        return {
+          ...particle,
+          velocityX: Math.cos(angle) * speed,
+          velocityY: Math.sin(angle) * speed
+        };
+      });
+    };
+
+    const drawFrame = (now: number) => {
+      const canvas = canvasRef.current;
+      const context = canvas?.getContext("2d");
+      if (!canvas || !context) return;
+      const { width, height } = sizeRef.current;
+      const delta = lastFrameAtRef.current ? Math.min(2, (now - lastFrameAtRef.current) / 16.6667) : 1;
+      lastFrameAtRef.current = now;
+      const elapsed = now - phaseStartedAtRef.current;
+
+      context.clearRect(0, 0, width, height);
+
+      const halo = context.createRadialGradient(width * 0.28, height * 0.32, 0, width * 0.28, height * 0.32, width * 0.42);
+      halo.addColorStop(0, "rgba(125, 211, 252, 0.16)");
+      halo.addColorStop(1, "rgba(125, 211, 252, 0)");
+      context.fillStyle = halo;
+      context.fillRect(0, 0, width, height);
+
+      let maxDistance = 0;
+      particlesRef.current.forEach((particle, index) => {
+        if (phaseRef.current === "explode") {
+          particle.currentX += particle.velocityX * delta;
+          particle.currentY += particle.velocityY * delta;
+          particle.velocityX *= 0.988;
+          particle.velocityY *= 0.988;
+        } else {
+          const spring = 0.04 + particle.seed * 0.05;
+          particle.velocityX += (particle.x - particle.currentX) * spring * delta;
+          particle.velocityY += (particle.y - particle.currentY) * spring * delta;
+          particle.velocityX *= 0.84;
+          particle.velocityY *= 0.84;
+          particle.currentX += particle.velocityX * delta;
+          particle.currentY += particle.velocityY * delta;
+          const distance = Math.hypot(particle.x - particle.currentX, particle.y - particle.currentY);
+          if (distance > maxDistance) maxDistance = distance;
+        }
+
+        const pulse = phaseRef.current === "hold" ? 0.9 + Math.sin(now / 320 + index * 0.45) * 0.12 : 1;
+        context.globalAlpha = particle.opacity * 0.22;
+        context.fillStyle = particle.tint === "white" ? "#ffffff" : "#7dd3fc";
+        context.beginPath();
+        context.arc(particle.currentX, particle.currentY, particle.size * 2.4 * pulse, 0, Math.PI * 2);
+        context.fill();
+
+        context.globalAlpha = particle.opacity;
+        context.fillStyle = particle.tint === "white" ? "#ffffff" : "#93c5fd";
+        context.beginPath();
+        context.arc(particle.currentX, particle.currentY, particle.size * pulse, 0, Math.PI * 2);
+        context.fill();
+      });
+
+      context.globalAlpha = 1;
+
+      if (phaseRef.current === "merge" && elapsed > 1200 && maxDistance < 5.5) {
+        phaseRef.current = "hold";
+        phaseStartedAtRef.current = now;
+      } else if (phaseRef.current === "hold" && elapsed > 820) {
+        phaseRef.current = "explode";
+        phaseStartedAtRef.current = now;
+        explodeParticles();
+      } else if (phaseRef.current === "explode" && elapsed > 880) {
+        phaseRef.current = "merge";
+        phaseStartedAtRef.current = now;
+      }
+
+      frameIdRef.current = window.requestAnimationFrame(drawFrame);
+    };
+
+    resizeCanvas();
+    const handleResize = () => {
+      window.cancelAnimationFrame(frameIdRef.current);
+      resizeCanvas();
+      frameIdRef.current = window.requestAnimationFrame(drawFrame);
+    };
+    frameIdRef.current = window.requestAnimationFrame(drawFrame);
+    window.addEventListener("resize", handleResize);
+    return () => {
+      window.cancelAnimationFrame(frameIdRef.current);
+      window.removeEventListener("resize", handleResize);
+    };
+  }, [createAnimatedParticles]);
+
   return (
-    <div ref={frameRef} className="relative mx-auto h-[220px] w-full md:h-[300px]">
-      <div className="absolute inset-0 rounded-[2rem] border border-white/12 bg-[radial-gradient(circle_at_18%_18%,rgba(125,211,252,0.2),transparent_28%),linear-gradient(140deg,rgba(255,255,255,0.1),rgba(255,255,255,0.02)_40%,rgba(255,255,255,0.01))] shadow-[inset_0_1px_0_rgba(255,255,255,0.12),0_24px_60px_-28px_rgba(8,15,30,0.85)]" />
-      <div className="absolute left-6 top-6 h-16 w-16 rounded-full bg-sky-300/20 blur-2xl" />
-      <div className="absolute right-10 top-8 h-12 w-12 rounded-full bg-white/14 blur-2xl" />
-      <div className="absolute inset-0 overflow-hidden rounded-[2rem]" aria-hidden="true">
-        <svg
-          viewBox={compact ? "0 0 620 300" : "0 0 760 260"}
-          preserveAspectRatio="xMidYMid meet"
-          className="absolute inset-0 h-full w-full"
-        >
-          <defs>
-            <mask id={maskId}>
-              <rect width="100%" height="100%" fill="black" />
-              {compact ? (
-                <>
-                  <text
-                    x="50%"
-                    y="42%"
-                    textAnchor="middle"
-                    fill="white"
-                    fontFamily={loginDisplayFont}
-                    fontWeight="900"
-                    fontSize="116"
-                    letterSpacing="-7"
-                  >
-                    {wordmark.split(" ")[0]}
-                  </text>
-                  <text
-                    x="50%"
-                    y="74%"
-                    textAnchor="middle"
-                    fill="white"
-                    fontFamily={loginDisplayFont}
-                    fontWeight="900"
-                    fontSize="110"
-                    letterSpacing="-6"
-                  >
-                    {wordmark.split(" ")[1]}
-                  </text>
-                </>
-              ) : (
-                <text
-                  x="50%"
-                  y="58%"
-                  textAnchor="middle"
-                  fill="white"
-                  fontFamily={loginDisplayFont}
-                  fontWeight="900"
-                  fontSize="126"
-                  letterSpacing="-8"
-                >
-                  {wordmark}
-                </text>
-              )}
-            </mask>
-          </defs>
-
-          <g opacity="0.08">
-            {compact ? (
-              <>
-                <text
-                  x="50%"
-                  y="42%"
-                  textAnchor="middle"
-                  fill="white"
-                  fontFamily={loginDisplayFont}
-                  fontWeight="900"
-                  fontSize="116"
-                  letterSpacing="-7"
-                >
-                  {wordmark.split(" ")[0]}
-                </text>
-                <text
-                  x="50%"
-                  y="74%"
-                  textAnchor="middle"
-                  fill="white"
-                  fontFamily={loginDisplayFont}
-                  fontWeight="900"
-                  fontSize="110"
-                  letterSpacing="-6"
-                >
-                  {wordmark.split(" ")[1]}
-                </text>
-              </>
-            ) : (
-              <text
-                x="50%"
-                y="58%"
-                textAnchor="middle"
-                fill="white"
-                fontFamily={loginDisplayFont}
-                fontWeight="900"
-                fontSize="126"
-                letterSpacing="-8"
-              >
-                {wordmark}
-              </text>
-            )}
-          </g>
-
-          <g mask={`url(#${maskId})`}>
-            {particles.map((particle, index) => (
-              <circle
-                key={`${particle.x}-${particle.y}-${index}`}
-                className="particle-node"
-                cx={particle.x}
-                cy={particle.y}
-                r={particle.size / 2}
-                fill={particle.tint === "white" ? "#ffffff" : "#93c5fd"}
-                opacity={particle.opacity}
-                style={{
-                  animationDelay: `${particle.delay}s`,
-                  animationDuration: `${particle.duration}s`
-                }}
-              />
-            ))}
-          </g>
-        </svg>
-        <div className="absolute inset-x-[8%] bottom-8 h-px bg-gradient-to-r from-transparent via-sky-100/40 to-transparent" />
-      </div>
-      <div className="absolute bottom-5 left-5 rounded-full border border-white/10 bg-slate-950/45 px-4 py-2 text-[11px] uppercase tracking-[0.28em] text-sky-100/75 backdrop-blur">
-        Canal Plus Signal Mesh
-      </div>
-    </div>
-  );
-}
-
-function LoginSignalCard({
-  icon: Icon,
-  label,
-  description
-}: {
-  icon: typeof Database;
-  label: string;
-  description: string;
-}) {
-  return (
-    <div className="rounded-[1.5rem] border border-white/10 bg-white/[0.04] px-4 py-4">
-      <div className="flex items-center gap-3 text-sky-100">
-        <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-slate-950/35">
-          <Icon size={18} />
-        </div>
-        <div className="text-sm font-medium text-white">{label}</div>
-      </div>
-      <p className="mt-3 text-sm leading-6 text-slate-300">{description}</p>
+    <div ref={frameRef} className="relative mx-auto aspect-[1.18/1] w-full max-w-[760px]">
+      <div className="absolute inset-0 rounded-[2.25rem] border border-white/12 bg-[linear-gradient(155deg,rgba(255,255,255,0.04),rgba(255,255,255,0.01)_42%,rgba(255,255,255,0))] shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_30px_90px_-40px_rgba(2,6,23,0.98)]" />
+      <canvas ref={canvasRef} className="absolute inset-0 h-full w-full rounded-[2.25rem]" />
     </div>
   );
 }
@@ -2966,23 +2979,6 @@ function LoginScreen({ onLogin }: { onLogin: (username: string, password: string
   const [password, setPassword] = useState("admin123");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const loginSignals = [
-    {
-      icon: Database,
-      label: "链路映射",
-      description: "集中映射"
-    },
-    {
-      icon: HardDrives,
-      label: "节点接管",
-      description: "统一接管"
-    },
-    {
-      icon: ShieldCheck,
-      label: "校验闭环",
-      description: "就地校验"
-    }
-  ];
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -3009,148 +3005,56 @@ function LoginScreen({ onLogin }: { onLogin: (username: string, password: string
         <div className="absolute inset-0 bg-[linear-gradient(rgba(148,163,184,0.08)_1px,transparent_1px),linear-gradient(90deg,rgba(148,163,184,0.08)_1px,transparent_1px)] bg-[size:36px_36px]" />
       </div>
 
-      <div className="relative mx-auto grid min-h-[calc(100dvh-2.5rem)] max-w-[1400px] items-stretch gap-6 lg:grid-cols-[1.15fr_0.85fr]">
-        <section className="order-2 overflow-hidden rounded-[2.25rem] border border-white/10 bg-white/[0.04] p-5 shadow-[0_30px_90px_-40px_rgba(2,6,23,0.95)] backdrop-blur-xl md:p-8 lg:order-1">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="rounded-full border border-white/12 bg-white/[0.06] px-4 py-2 text-[11px] uppercase tracking-[0.32em] text-sky-100/75">
-              Canal Plus Console
-            </div>
-            <div className="rounded-full border border-sky-200/15 bg-slate-950/35 px-4 py-2 text-xs text-slate-300">
-              蓝白粒子入口页
-            </div>
-          </div>
-
-          <div className="mt-8 grid gap-8 xl:grid-cols-[1.08fr_0.92fr] xl:items-center">
-            <div>
-              <p className="max-w-[14rem] text-xs uppercase tracking-[0.3em] text-sky-100/55">
-                Task Control Plane
-              </p>
-              <h1
-                style={{ fontFamily: "var(--font-display)" }}
-                className="mt-4 max-w-[14ch] text-4xl font-semibold tracking-[-0.06em] text-white md:text-6xl"
-              >
-                蓝白粒子，拼出 Canal Plus。
-              </h1>
-              <p className="mt-5 max-w-[60ch] text-sm leading-7 text-slate-300 md:text-base">
-                任务、校验、节点，同屏处理。
-              </p>
-              <div className="mt-6 flex flex-wrap gap-3 text-xs text-slate-200">
-                <div className="rounded-full border border-white/10 bg-slate-950/35 px-4 py-2">同步任务</div>
-                <div className="rounded-full border border-white/10 bg-slate-950/35 px-4 py-2">数据校验</div>
-                <div className="rounded-full border border-white/10 bg-slate-950/35 px-4 py-2">节点治理</div>
-              </div>
-            </div>
-
-            <ParticleWordmark wordmark="CANAL PLUS" />
-          </div>
-
-          <div className="mt-8 grid gap-4 md:grid-cols-[1.2fr_0.8fr]">
-            <div className="rounded-[1.75rem] border border-white/10 bg-slate-950/35 p-5">
-              <div className="text-xs uppercase tracking-[0.3em] text-slate-400">直接处理</div>
-              <div className="mt-4 grid gap-3">
-                {loginSignals.map((signal) => (
-                  <LoginSignalCard
-                    key={signal.label}
-                    icon={signal.icon}
-                    label={signal.label}
-                    description={signal.description}
-                  />
-                ))}
-              </div>
-            </div>
-
-            <div className="grid gap-4">
-              <div className="rounded-[1.75rem] border border-white/10 bg-white/[0.05] p-5">
-                <div className="text-xs uppercase tracking-[0.28em] text-slate-400">粒子</div>
-                <div style={{ fontFamily: "var(--font-display)" }} className="mt-3 text-3xl font-semibold tracking-[-0.05em] text-white">
-                  Blue + White
-                </div>
-                <p className="mt-2 text-sm leading-6 text-slate-300">
-                  只动字标。
-                </p>
-              </div>
-
-              <div className="rounded-[1.75rem] border border-sky-200/10 bg-[linear-gradient(145deg,rgba(12,22,37,0.92),rgba(20,55,98,0.76))] p-5">
-                <div className="flex items-center gap-3 text-sky-100">
-                  <ShieldCheck size={18} />
-                  <span className="text-sm font-medium">流程不变</span>
-                </div>
-                <p className="mt-3 text-sm leading-6 text-sky-50/80">
-                  只改视觉。
-                </p>
-              </div>
-            </div>
-          </div>
+      <div className="relative mx-auto grid min-h-[calc(100dvh-2.5rem)] max-w-[1400px] items-center gap-6 lg:grid-cols-[1.18fr_0.82fr]">
+        <section className="order-2 flex items-center justify-center overflow-hidden rounded-[2.5rem] border border-white/10 bg-white/[0.03] p-5 shadow-[0_30px_90px_-40px_rgba(2,6,23,0.95)] backdrop-blur-xl md:p-8 lg:order-1 lg:min-h-[720px]">
+          <ParticleWordmark wordmark="CANAL PLUS" />
         </section>
 
         <form onSubmit={submit} className="order-1 flex lg:order-2">
-          <div className="relative flex w-full overflow-hidden rounded-[2.25rem] border border-white/12 bg-slate-950/72 p-6 shadow-[0_30px_90px_-40px_rgba(2,6,23,1)] backdrop-blur-xl md:p-8 lg:p-10">
+          <div className="relative flex w-full overflow-hidden rounded-[2.5rem] border border-white/12 bg-slate-950/78 p-6 shadow-[0_30px_90px_-40px_rgba(2,6,23,1)] backdrop-blur-xl md:p-8 lg:min-h-[720px] lg:p-10">
             <div className="absolute inset-0 bg-[linear-gradient(165deg,rgba(255,255,255,0.09),rgba(255,255,255,0.03)_35%,rgba(255,255,255,0))]" />
-            <div className="relative flex h-full w-full flex-col">
-              <div className="rounded-full border border-white/10 bg-white/[0.05] px-4 py-2 text-[11px] uppercase tracking-[0.32em] text-sky-100/70 w-fit">
-                Secure Entry
-              </div>
-
-              <div className="mt-8">
-                <div className="text-sm uppercase tracking-[0.3em] text-slate-400">登录</div>
+            <div className="relative flex h-full w-full items-center">
+              <div className="mx-auto w-full max-w-[360px]">
                 <h2
                   style={{ fontFamily: "var(--font-display)" }}
-                  className="mt-3 text-3xl font-semibold tracking-[-0.05em] text-white md:text-4xl"
+                  className="mt-3 text-4xl font-semibold tracking-[-0.05em] text-white"
                 >
-                  进入控制台
+                  登录
                 </h2>
-                <p className="mt-3 text-sm leading-7 text-slate-300">
-                  本地环境登录。
-                </p>
-              </div>
 
-              <div className="mt-8 grid gap-5">
-                <label className="block">
-                  <span className="mb-2 block text-xs font-medium uppercase tracking-[0.18em] text-slate-400">账号</span>
-                  <TextInput
-                    className="w-full rounded-[1.35rem] border border-white/10 bg-white/[0.05] px-4 py-3.5 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-sky-300/60 focus:bg-white/[0.08] focus:ring-4 focus:ring-sky-500/15"
-                    value={username}
-                    onChange={(event) => setUsername(event.target.value)}
-                  />
-                  <p className="mt-2 text-xs text-slate-400">`admin` / `operator`</p>
-                </label>
+                <div className="mt-8 grid gap-5">
+                  <label className="block">
+                    <span className="mb-2 block text-xs font-medium uppercase tracking-[0.18em] text-slate-400">账号</span>
+                    <TextInput
+                      className="auth-input"
+                      value={username}
+                      onChange={(event) => setUsername(event.target.value)}
+                    />
+                  </label>
 
-                <label className="block">
-                  <span className="mb-2 block text-xs font-medium uppercase tracking-[0.18em] text-slate-400">密码</span>
-                  <TextInput
-                    className="w-full rounded-[1.35rem] border border-white/10 bg-white/[0.05] px-4 py-3.5 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-sky-300/60 focus:bg-white/[0.08] focus:ring-4 focus:ring-sky-500/15"
-                    type="password"
-                    value={password}
-                    onChange={(event) => setPassword(event.target.value)}
-                  />
-                  <p className="mt-2 text-xs text-slate-400">进入任务中心</p>
-                </label>
+                  <label className="block">
+                    <span className="mb-2 block text-xs font-medium uppercase tracking-[0.18em] text-slate-400">密码</span>
+                    <TextInput
+                      className="auth-input"
+                      type="password"
+                      value={password}
+                      onChange={(event) => setPassword(event.target.value)}
+                    />
+                  </label>
 
-                {error && (
-                  <div className="rounded-[1.4rem] border border-red-400/20 bg-red-500/10 px-4 py-3 text-sm text-red-100">
-                    {error}
-                  </div>
-                )}
+                  {error && (
+                    <div className="rounded-[1.4rem] border border-red-400/20 bg-red-500/10 px-4 py-3 text-sm text-red-100">
+                      {error}
+                    </div>
+                  )}
 
-                <Button
-                  disabled={loading}
-                  className="btn w-full justify-center rounded-[1.35rem] border border-sky-200/20 bg-[linear-gradient(135deg,#f8fdff,#8fd2ff_38%,#3b82f6_70%,#1638b5)] py-3.5 text-slate-950 shadow-[0_18px_40px_-24px_rgba(96,165,250,0.85)] hover:brightness-105"
-                >
-                  {loading ? <ArrowsClockwise size={16} /> : <ArrowRight size={16} />}
-                  {loading ? "登录中" : "进入控制台"}
-                </Button>
-              </div>
-
-              <div className="mt-auto grid gap-3 pt-8 sm:grid-cols-2">
-                <div className="rounded-[1.35rem] border border-white/10 bg-white/[0.04] px-4 py-4">
-                  <div className="text-[11px] uppercase tracking-[0.28em] text-slate-500">环境</div>
-                  <div className="mt-2 text-sm font-medium text-white">本地</div>
-                  <div className="mt-1 text-xs text-slate-400">Local Console</div>
-                </div>
-                <div className="rounded-[1.35rem] border border-white/10 bg-white/[0.04] px-4 py-4">
-                  <div className="text-[11px] uppercase tracking-[0.28em] text-slate-500">流程</div>
-                  <div className="mt-2 text-sm font-medium text-white">创建 · 校验 · 接管</div>
-                  <div className="mt-1 text-xs text-slate-400">同一视角</div>
+                  <Button
+                    disabled={loading}
+                    className="auth-button"
+                  >
+                    {loading ? <ArrowsClockwise size={16} /> : <ArrowRight size={16} />}
+                    {loading ? "登录中" : "登录"}
+                  </Button>
                 </div>
               </div>
             </div>

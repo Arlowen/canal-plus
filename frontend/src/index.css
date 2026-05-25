@@ -82,6 +82,15 @@ textarea {
     @apply btn border-red-200 bg-red-50 text-red-700 hover:bg-red-100;
   }
 
+  .auth-input {
+    @apply w-full rounded-[1.35rem] border border-white/10 bg-white/[0.05] px-4 py-3.5 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-sky-300/60 focus:bg-white/[0.08] focus:ring-4 focus:ring-sky-500/15;
+  }
+
+  .auth-button {
+    @apply btn w-full justify-center rounded-[1.35rem] border border-sky-200/20 py-3.5 text-slate-950 shadow-[0_18px_40px_-24px_rgba(96,165,250,0.85)] hover:brightness-105;
+    background-image: linear-gradient(135deg, #f8fdff, #8fd2ff 38%, #3b82f6 70%, #1638b5);
+  }
+
   .chip {
     @apply inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium;
   }
@@ -110,13 +119,6 @@ textarea {
   will-change: transform, opacity;
 }
 
-.particle-node {
-  transform-box: fill-box;
-  transform-origin: center;
-  animation: particle-float 4.8s ease-in-out infinite;
-  will-change: transform, opacity;
-}
-
 @keyframes shimmer {
   0% {
     background-position: 100% 0;
@@ -136,16 +138,5 @@ textarea {
   100% {
     transform: translate3d(2.5%, -3%, 0) scale(1.08);
     opacity: 1;
-  }
-}
-
-@keyframes particle-float {
-  0%,
-  100% {
-    transform: translateY(0) scale(1);
-  }
-
-  50% {
-    transform: translateY(-6px) scale(1.24);
   }
 }
