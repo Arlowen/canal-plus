@@ -11,7 +11,6 @@ import {
   HardDrives,
   MagnifyingGlass,
   Pause,
-  PencilSimple,
   Play,
   Plus,
   RocketLaunch,
@@ -601,7 +600,6 @@ function App() {
               />
             ) : (
               <SettingsPage
-                user={user}
                 tasks={tasks}
                 logs={logs}
                 runtimeConfig={runtimeConfig}
@@ -705,27 +703,6 @@ function DashboardPage({
 
   return (
     <div className="space-y-5">
-      <section className="surface overflow-hidden p-6">
-        <div>
-          <h2 className="max-w-2xl text-3xl font-semibold tracking-tight text-coal md:text-4xl">
-            总览只看关键状态。
-          </h2>
-          <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-500">
-            需要操作的事项放在下面，不在这里重复铺开。
-          </p>
-          <div className="mt-5 flex flex-wrap gap-3">
-            <button onClick={onOpenTasks} className="btn-primary">
-              <FlowArrow size={16} />
-              进入任务中心
-            </button>
-            <button onClick={onOpenNodes} className="btn-secondary">
-              <HardDrives size={16} />
-              查看节点
-            </button>
-          </div>
-        </div>
-      </section>
-
       <div className="grid gap-5 xl:grid-cols-[1.08fr_0.92fr]">
         <section className="surface p-6">
           <SectionHeader
@@ -1047,16 +1024,13 @@ function DatasourcePage({
                           {testingId === item.id ? <ArrowsClockwise size={14} /> : <ShieldCheck size={14} />}
                           {testingId === item.id ? "测试中" : "测试连接"}
                         </button>
-                        <button
-                          onClick={() => openEdit(item)}
-                          disabled={!canManage}
-                          className="btn-secondary px-3 py-2 text-xs"
-                        >
-                          <PencilSimple size={14} />
-                          编辑
-                        </button>
                         <ActionMenu
                           items={[
+                            {
+                              label: "编辑",
+                              disabled: !canManage,
+                              onSelect: () => openEdit(item)
+                            },
                             {
                               label: "删除",
                               danger: true,
@@ -1705,8 +1679,10 @@ function NodesPage({
         return log.detail.includes(selected.id) || log.detail.includes(selected.name);
       }
       return false;
-    }).slice(0, 8)
+    }).slice(0, 4)
     : [];
+  const selectedNodeTasks = selected ? (taskByNodeId.get(selected.id) || []) : [];
+  const visibleNodeTasks = selectedNodeTasks.slice(0, 4);
 
   const executeQuickAction = async (node: ClusterNode, action: "upgrade" | "uninstall") => {
     if (!canManage) {
@@ -1912,24 +1888,10 @@ function NodesPage({
                       </div>
                     </button>
                     <div className="flex flex-wrap justify-end gap-2">
-                      <button
-                        onClick={() => requestQuickAction(node, "upgrade")}
-                        disabled={!canManage || busyKey === `${node.id}:upgrade`}
-                        className="btn-secondary px-3 py-2 text-xs"
-                      >
-                        <ArrowsClockwise size={14} />
-                        升级
-                      </button>
-                      <button
-                        onClick={() => requestQuickAction(node, "uninstall")}
-                        disabled={!canManage || isCurrentNode || busyKey === `${node.id}:uninstall`}
-                        className="btn-danger px-3 py-2 text-xs"
-                      >
-                        <Trash size={14} />
-                        卸载
-                      </button>
                       <ActionMenu
                         items={[
+                          { label: "升级", onSelect: () => requestQuickAction(node, "upgrade"), disabled: !canManage },
+                          { label: "卸载", onSelect: () => requestQuickAction(node, "uninstall"), danger: true, disabled: !canManage || isCurrentNode },
                           { label: "维护排空", onSelect: () => requestMoreAction(node, "drain"), disabled: !canManage || node.status === "offline" },
                           { label: node.status === "online" ? "手动下线" : "恢复上线", onSelect: () => requestMoreAction(node, node.status === "online" ? "offline" : "online"), disabled: !canManage || (isCurrentNode && node.status === "online") },
                           { label: "故障演练", onSelect: () => requestMoreAction(node, "drill"), disabled: !canManage || node.status !== "online" || isCurrentNode }
@@ -1970,10 +1932,13 @@ function NodesPage({
               )}
               <div className="rounded-3xl border border-line bg-slate-50/70 p-4">
                 <div className="text-sm font-medium text-coal">承载任务</div>
+                {selectedNodeTasks.length > visibleNodeTasks.length && (
+                  <div className="mt-1 text-sm text-slate-500">仅展示最近 {visibleNodeTasks.length} 条。</div>
+                )}
                 <div className="mt-3 grid gap-2">
-                  {(taskByNodeId.get(selected.id) || []).length === 0 ? (
+                  {selectedNodeTasks.length === 0 ? (
                     <div className="text-sm text-slate-500">当前没有承载运行中任务。</div>
-                  ) : (taskByNodeId.get(selected.id) || []).map((task) => (
+                  ) : visibleNodeTasks.map((task) => (
                     <div key={task.id} className="rounded-2xl border border-line bg-white px-3 py-3">
                       <div className="flex items-center justify-between gap-3">
                         <div className="font-medium text-coal">{task.name}</div>
@@ -2018,15 +1983,11 @@ function NodesPage({
             <div className="mt-5 text-sm text-slate-500">选择一个节点查看详情。</div>
           )}
         </section>
-        {selected && (
+        {selected && awaitingTasks.length > 0 && (
           <section className="surface p-6">
             <SectionHeader title="待接管任务" description="等待重新接管的任务。" />
             <div className="mt-4 grid gap-3">
-              {awaitingTasks.length === 0 ? (
-                <div className="rounded-2xl border border-dashed border-line bg-slate-50/70 px-4 py-6 text-sm text-slate-500">
-                  当前没有待接管任务。
-                </div>
-              ) : awaitingTasks.slice(0, 6).map((task) => (
+              {awaitingTasks.slice(0, 6).map((task) => (
                 <div key={task.id} className="rounded-2xl border border-line bg-white px-4 py-4">
                   <div className="flex items-center justify-between gap-3">
                     <div className="font-medium text-coal">{task.name}</div>
@@ -2046,15 +2007,11 @@ function NodesPage({
             </div>
           </section>
         )}
-        {selected && (
+        {selected && nodeEvents.length > 0 && (
           <section className="surface p-6">
             <SectionHeader title="最近运维事件" description="当前节点相关操作。" />
             <div className="mt-4 grid gap-3">
-              {nodeEvents.length === 0 ? (
-                <div className="rounded-2xl border border-dashed border-line bg-slate-50/70 px-4 py-6 text-sm text-slate-500">
-                  当前没有可展示的节点运维事件。
-                </div>
-              ) : nodeEvents.map((log) => (
+              {nodeEvents.map((log) => (
                 <div key={log.id} className="rounded-2xl border border-line bg-white px-4 py-4">
                   <div className="flex flex-wrap items-center gap-2">
                     <Badge tone={log.targetType === "cluster_node" ? "blue" : "yellow"}>{log.action}</Badge>
@@ -2252,7 +2209,6 @@ function NodesPage({
 }
 
 function SettingsPage({
-  user,
   tasks,
   logs,
   runtimeConfig,
@@ -2263,7 +2219,6 @@ function SettingsPage({
   onChanged,
   pushNotice
 }: {
-  user: User | null;
   tasks: SyncTask[];
   logs: OperationLog[];
   runtimeConfig: RuntimeConfig | null;
@@ -2349,14 +2304,6 @@ function SettingsPage({
     <div className="grid gap-5 xl:grid-cols-[0.98fr_1.02fr]">
       <div className="space-y-5">
         <section className="surface p-6">
-          <SectionHeader title="用户配置" description="当前用户与基础范围。" />
-          <div className="mt-5 grid gap-3">
-            <DetailCard label="当前用户" value={`${user?.name || "-"} · ${roleLabel(user?.role)}`} />
-            <DetailCard label="任务数量" value={`${tasks.length} 条`} />
-          </div>
-        </section>
-
-        <section className="surface p-6">
           <SectionHeader title="部署配置" description="节点、端口和巡检参数。" />
           <div className="mt-5 grid gap-3">
             <DetailCard label="当前节点" value={runtimeConfig?.localNodeId || "-"} mono />
@@ -2373,7 +2320,7 @@ function SettingsPage({
         <section className="surface p-6">
           <SectionHeader title="最近操作" description="关键审计记录。" />
           <div className="mt-5 grid gap-3">
-            {logs.slice(0, 6).map((log) => (
+            {logs.slice(0, 4).map((log) => (
               <div key={log.id} className="rounded-2xl border border-line bg-slate-50/70 p-4">
                 <div className="flex flex-wrap items-center gap-2">
                   <Badge tone="neutral">{log.targetType}</Badge>
@@ -2471,7 +2418,7 @@ function SettingsPage({
             <div className="mt-6 rounded-3xl border border-line bg-slate-50/70 p-4">
               <div className="text-sm font-medium text-coal">最近告警事件</div>
               <div className="mt-3 grid gap-3">
-                {alertEvents.slice(0, 4).map((event) => (
+                {alertEvents.slice(0, 3).map((event) => (
                   <div key={event.id} className="rounded-2xl border border-line bg-white px-4 py-3">
                     <div className="flex flex-wrap items-center gap-2">
                       <Badge tone={event.status === "triggered" ? "red" : "green"}>
@@ -3520,6 +3467,9 @@ function SyncTaskDetail({
     : remoteManaged
       ? runtime?.logAccessMessage || "执行节点可查看"
       : "当前节点可查看";
+  const sortedRelatedJobs = [...relatedJobs].sort((left, right) => new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime());
+  const visibleRelatedJobs = sortedRelatedJobs.slice(0, 3);
+  const visibleTableMappings = task.tableMappings.slice(0, 3);
 
   useEffect(() => {
     setRuntime(task.runtime);
@@ -3813,11 +3763,11 @@ function SyncTaskDetail({
                 </div>
                 <Badge tone="blue">{`${relatedJobs.length} 条`}</Badge>
               </div>
+              {sortedRelatedJobs.length > visibleRelatedJobs.length && (
+                <div className="mt-3 text-sm text-slate-500">仅展示最近 {visibleRelatedJobs.length} 条。</div>
+              )}
               <div className="mt-3 grid gap-3">
-                {relatedJobs
-                  .slice()
-                  .sort((left, right) => new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime())
-                  .map((job) => (
+                {visibleRelatedJobs.map((job) => (
                     <div key={job.id} className="rounded-2xl border border-line bg-white p-4">
                       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                         <div className="min-w-0">
@@ -3863,8 +3813,11 @@ function SyncTaskDetail({
       <div className="grid gap-5 2xl:grid-cols-2">
         <section className="rounded-3xl border border-line bg-slate-50/70 p-4">
           <div className="font-medium text-coal">表映射</div>
+          {task.tableMappings.length > visibleTableMappings.length && (
+            <div className="mt-1 text-sm text-slate-500">仅展示前 {visibleTableMappings.length} 条。</div>
+          )}
           <div className="mt-3 grid gap-3">
-            {task.tableMappings.map((mapping) => (
+            {visibleTableMappings.map((mapping) => (
               <div key={`${mapping.sourceSchema}.${mapping.sourceTable}.${mapping.targetTable}`} className="rounded-2xl border border-line bg-white px-4 py-3">
                 <div className="font-medium text-coal">
                   {mapping.sourceSchema}.{mapping.sourceTable}
@@ -3878,24 +3831,22 @@ function SyncTaskDetail({
           </div>
         </section>
 
-        <section className="rounded-3xl border border-line bg-slate-50/70 p-4">
-          <div className="font-medium text-coal">最近异常</div>
-          <div className="mt-3 grid gap-3">
-            {taskErrors.length === 0 ? (
-              <div className="rounded-2xl border border-dashed border-line bg-white px-4 py-6 text-sm text-slate-500">
-                当前没有待展示的错误事件。
-              </div>
-            ) : taskErrors.map((item) => (
-              <div key={item.id} className="rounded-2xl border border-line bg-white px-4 py-3">
-                <div className="flex flex-wrap items-center gap-2">
-                  <Badge tone="red">{item.eventType.toUpperCase()}</Badge>
-                  <span className="font-medium text-coal">{item.sourceTable}</span>
+        {taskErrors.length > 0 && (
+          <section className="rounded-3xl border border-line bg-slate-50/70 p-4">
+            <div className="font-medium text-coal">最近异常</div>
+            <div className="mt-3 grid gap-3">
+              {taskErrors.map((item) => (
+                <div key={item.id} className="rounded-2xl border border-line bg-white px-4 py-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge tone="red">{item.eventType.toUpperCase()}</Badge>
+                    <span className="font-medium text-coal">{item.sourceTable}</span>
+                  </div>
+                  <div className="mt-2 text-sm text-slate-500">{item.reason}</div>
                 </div>
-                <div className="mt-2 text-sm text-slate-500">{item.reason}</div>
-              </div>
-            ))}
-          </div>
-        </section>
+              ))}
+            </div>
+          </section>
+        )}
       </div>
 
       {canManage && (
@@ -3961,86 +3912,82 @@ function SyncTaskDetail({
         </div>
       )}
 
-      <section className="rounded-3xl border border-line bg-slate-50/70 p-4">
-        <div className="font-medium text-coal">配置版本</div>
-        <div className="mt-3 grid gap-3">
-          {revisions.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-line bg-white px-4 py-6 text-sm text-slate-500">
-              当前没有可展示的版本历史。
-            </div>
-          ) : revisions.map((revision) => (
-            <div key={revision.id} className="rounded-2xl border border-line bg-white p-4">
-              <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Badge tone={revision.version === task.configVersion ? "blue" : "neutral"}>{`v${revision.version}`}</Badge>
-                    <span className="text-sm font-medium text-coal">{revision.summary}</span>
+      {revisions.length > 0 && (
+        <section className="rounded-3xl border border-line bg-slate-50/70 p-4">
+          <div className="font-medium text-coal">配置版本</div>
+          <div className="mt-3 grid gap-3">
+            {revisions.map((revision) => (
+              <div key={revision.id} className="rounded-2xl border border-line bg-white p-4">
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge tone={revision.version === task.configVersion ? "blue" : "neutral"}>{`v${revision.version}`}</Badge>
+                      <span className="text-sm font-medium text-coal">{revision.summary}</span>
+                    </div>
+                    <div className="mt-2 flex flex-wrap gap-2 text-xs text-slate-500">
+                      <span>{revision.actor}</span>
+                      <span>{revision.changeType}</span>
+                      <span>{formatDateTime(revision.createdAt)}</span>
+                    </div>
                   </div>
-                  <div className="mt-2 flex flex-wrap gap-2 text-xs text-slate-500">
-                    <span>{revision.actor}</span>
-                    <span>{revision.changeType}</span>
-                    <span>{formatDateTime(revision.createdAt)}</span>
-                  </div>
+                  {canManage && revision.version !== task.configVersion && (
+                    <button
+                      type="button"
+                      onClick={() => requestRollbackRevision(revision.version)}
+                      disabled={rollingBackVersion === revision.version}
+                      className="btn-secondary px-3 py-2 text-xs"
+                    >
+                      {rollingBackVersion === revision.version ? <ArrowsClockwise size={14} /> : <ArrowRight size={14} />}
+                      {rollingBackVersion === revision.version ? "回滚中" : "回滚到此版本"}
+                    </button>
+                  )}
                 </div>
-                {canManage && revision.version !== task.configVersion && (
-                  <button
-                    type="button"
-                    onClick={() => requestRollbackRevision(revision.version)}
-                    disabled={rollingBackVersion === revision.version}
-                    className="btn-secondary px-3 py-2 text-xs"
-                  >
-                    {rollingBackVersion === revision.version ? <ArrowsClockwise size={14} /> : <ArrowRight size={14} />}
-                    {rollingBackVersion === revision.version ? "回滚中" : "回滚到此版本"}
-                  </button>
-                )}
               </div>
-            </div>
-          ))}
-        </div>
-      </section>
+            ))}
+          </div>
+        </section>
+      )}
 
-      <section className="rounded-3xl border border-line bg-slate-50/70 p-4">
-        <div className="font-medium text-coal">运行轨迹</div>
-        <div className="mt-3 grid gap-3">
-          {checkpoints.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-line bg-white px-4 py-6 text-sm text-slate-500">
-              当前没有可展示的运行轨迹。
-            </div>
-          ) : checkpoints.map((checkpoint) => (
-            <div key={checkpoint.id} className="rounded-2xl border border-line bg-white p-4">
-              <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Badge tone={checkpointReasonTone(checkpoint.reason)}>{checkpointReasonText(checkpoint.reason)}</Badge>
-                    <span className="text-sm font-medium text-coal">{taskRuntimePhaseText(checkpoint.phase)}</span>
-                  </div>
-                  <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-500">
-                    {checkpoint.previousNodeId && checkpoint.previousNodeId !== checkpoint.nodeId ? (
-                      <>
-                        <span className="rounded-full border border-line bg-slate-50 px-2 py-1">{checkpointNodeName(checkpoint.previousNodeId)}</span>
-                        <ArrowRight size={14} className="text-slate-400" />
+      {checkpoints.length > 0 && (
+        <section className="rounded-3xl border border-line bg-slate-50/70 p-4">
+          <div className="font-medium text-coal">运行轨迹</div>
+          <div className="mt-3 grid gap-3">
+            {checkpoints.map((checkpoint) => (
+              <div key={checkpoint.id} className="rounded-2xl border border-line bg-white p-4">
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge tone={checkpointReasonTone(checkpoint.reason)}>{checkpointReasonText(checkpoint.reason)}</Badge>
+                      <span className="text-sm font-medium text-coal">{taskRuntimePhaseText(checkpoint.phase)}</span>
+                    </div>
+                    <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                      {checkpoint.previousNodeId && checkpoint.previousNodeId !== checkpoint.nodeId ? (
+                        <>
+                          <span className="rounded-full border border-line bg-slate-50 px-2 py-1">{checkpointNodeName(checkpoint.previousNodeId)}</span>
+                          <ArrowRight size={14} className="text-slate-400" />
+                          <span className="rounded-full border border-line bg-slate-50 px-2 py-1">{checkpointNodeName(checkpoint.nodeId)}</span>
+                        </>
+                      ) : (
                         <span className="rounded-full border border-line bg-slate-50 px-2 py-1">{checkpointNodeName(checkpoint.nodeId)}</span>
-                      </>
-                    ) : (
-                      <span className="rounded-full border border-line bg-slate-50 px-2 py-1">{checkpointNodeName(checkpoint.nodeId)}</span>
-                    )}
-                    <span>{formatDateTime(checkpoint.createdAt)}</span>
+                      )}
+                      <span>{formatDateTime(checkpoint.createdAt)}</span>
+                    </div>
+                  </div>
+                  <div className="rounded-2xl border border-line bg-slate-50/70 px-4 py-3">
+                    <div className="text-xs uppercase tracking-[0.18em] text-slate-500">位点</div>
+                    <div className="mt-2 mono text-coal">{checkpoint.binlogFile}:{checkpoint.binlogPosition}</div>
                   </div>
                 </div>
-                <div className="rounded-2xl border border-line bg-slate-50/70 px-4 py-3">
-                  <div className="text-xs uppercase tracking-[0.18em] text-slate-500">位点</div>
-                  <div className="mt-2 mono text-coal">{checkpoint.binlogFile}:{checkpoint.binlogPosition}</div>
+                <div className="mt-3 grid gap-3 sm:grid-cols-3">
+                  <DetailCard label="Lease Epoch" value={`${checkpoint.leaseEpoch}`} mono />
+                  <DetailCard label="延迟" value={`${checkpoint.delaySeconds}s`} />
+                  <DetailCard label="吞吐" value={`${checkpoint.eventsPerSecond} eps`} />
                 </div>
               </div>
-              <div className="mt-3 grid gap-3 sm:grid-cols-3">
-                <DetailCard label="Lease Epoch" value={`${checkpoint.leaseEpoch}`} mono />
-                <DetailCard label="延迟" value={`${checkpoint.delaySeconds}s`} />
-                <DetailCard label="吞吐" value={`${checkpoint.eventsPerSecond} eps`} />
-              </div>
-            </div>
-          ))}
-        </div>
-      </section>
+            ))}
+          </div>
+        </section>
+      )}
 
       <ConfirmDialog
         open={Boolean(confirmation)}
