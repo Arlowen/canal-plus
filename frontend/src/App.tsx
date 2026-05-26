@@ -237,7 +237,7 @@ type AnimatedParticle = ParticlePoint & {
   velocityY: number;
 };
 
-const loginDisplayFont = "\"Avenir Next\", \"Segoe UI Variable Display\", \"PingFang SC\", \"Helvetica Neue\", sans-serif";
+const loginDisplayFont = "\"Arial Black\", \"Avenir Next\", \"Segoe UI Variable Display\", \"PingFang SC\", \"Helvetica Neue\", sans-serif";
 
 function particleNoise(x: number, y: number) {
   const value = Math.sin(x * 12.9898 + y * 78.233) * 43758.5453;
@@ -253,12 +253,12 @@ function createWordmarkParticles(wordmark: string, width: number, height: number
   canvas.width = width;
   canvas.height = height;
 
-  let fontSize = Math.min(Math.max(66, Math.round(width * 0.15)), Math.round(height * 0.32));
+  let fontSize = Math.min(Math.max(92, Math.round(width * 0.19)), Math.round(height * 0.42));
   context.font = `900 ${fontSize}px ${loginDisplayFont}`;
-  const availableWidth = Math.max(260, width - 56);
+  const availableWidth = Math.max(280, width - 24);
   const maxLineWidth = context.measureText(label).width;
   if (maxLineWidth > availableWidth) {
-    fontSize = Math.max(46, Math.floor(fontSize * (availableWidth / maxLineWidth)));
+    fontSize = Math.max(58, Math.floor(fontSize * (availableWidth / maxLineWidth)));
   }
 
   context.clearRect(0, 0, width, height);
@@ -268,8 +268,8 @@ function createWordmarkParticles(wordmark: string, width: number, height: number
   const metrics = context.measureText(label);
   context.fillText(label, (width - metrics.width) / 2, height * 0.5);
 
-  const step = width < 640 ? 5 : 6;
-  const limit = width < 640 ? 1320 : 1580;
+  const step = width < 640 ? 3 : 3;
+  const limit = width < 640 ? 3600 : 5200;
   const samples: ParticlePoint[] = [];
   const pixels = context.getImageData(0, 0, width, height).data;
 
@@ -278,12 +278,12 @@ function createWordmarkParticles(wordmark: string, width: number, height: number
       const alpha = pixels[(y * width + x) * 4 + 3];
       if (alpha < 32) continue;
       const seed = particleNoise(x * 0.37, y * 0.41);
-      if (seed < 0.14) continue;
+      if (seed < 0.04) continue;
       samples.push({
-        x: x + (seed - 0.5) * 2.2,
-        y: y + (0.5 - seed) * 2.2,
-        size: seed > 0.76 ? 3 : seed > 0.42 ? 2.35 : 1.85,
-        opacity: seed > 0.72 ? 0.96 : seed > 0.48 ? 0.84 : 0.68,
+        x: x + (seed - 0.5) * 0.9,
+        y: y + (0.5 - seed) * 0.9,
+        size: seed > 0.76 ? 2.15 : seed > 0.42 ? 1.85 : 1.55,
+        opacity: seed > 0.72 ? 1 : seed > 0.48 ? 0.92 : 0.82,
         seed
       });
     }
