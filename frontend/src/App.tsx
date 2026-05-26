@@ -1699,7 +1699,7 @@ function TasksPage({
   const typeCounts = filteredTypeCounts(workloads);
   return (
     <div className="space-y-5">
-      <section className="surface min-w-0 p-6">
+      <section className="min-w-0">
         <SectionHeader
           title="同步任务"
           action={visibleCapabilityJobs.length > 0 ? (
@@ -1767,14 +1767,14 @@ function TasksPage({
             ) : <PermissionNotice compact description="仅管理员可新增任务。" />}
           />
         ) : (
-          <div className="mt-5 divide-y divide-line overflow-hidden rounded-2xl border border-line bg-white">
+          <div className="mt-5 divide-y divide-line">
             {filtered.map((item) => {
               const task = item.rawTask;
               const job = item.rawJob;
               const primaryAction = task ? taskPrimaryAction(task) : null;
               const taskHasException = Boolean(task && (task.status === "failed" || taskAwaitingNode(task) || task.runtime?.processStatus === "failed"));
               return (
-                <div key={item.key} className="grid gap-3 p-4 lg:grid-cols-[1fr_auto] lg:items-center">
+                <div key={item.key} className="grid gap-3 py-4 lg:grid-cols-[1fr_auto] lg:items-center">
                   <Button
                     onClick={() => {
                       if (item.rawTask) {
