@@ -69,7 +69,6 @@ import type {
   NodeOperationResult,
   NodeStatusChangeResult,
   OperationLog,
-  RuntimeConfig,
   SyncStrategy,
   SyncTask,
   TableColumn,
@@ -476,7 +475,6 @@ function App() {
   const [user, setUser] = useState<User | null>(null);
   const [page, setPage] = useState<Page>("tasks");
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
-  const [runtimeConfig, setRuntimeConfig] = useState<RuntimeConfig | null>(null);
   const [datasources, setDatasources] = useState<Datasource[]>([]);
   const [tasks, setTasks] = useState<SyncTask[]>([]);
   const [errors, setErrors] = useState<ErrorEvent[]>([]);
@@ -512,7 +510,6 @@ function App() {
     try {
       const [
         nextSummary,
-        nextRuntimeConfig,
         nextDatasources,
         nextTasks,
         nextErrors,
@@ -524,7 +521,6 @@ function App() {
         nextAlertEvents
       ] = await Promise.all([
         api.summary(),
-        api.runtimeConfig(),
         api.datasources(),
         api.tasks(),
         api.errors(),
@@ -536,7 +532,6 @@ function App() {
         api.alertEvents()
       ]);
       setSummary(nextSummary);
-      setRuntimeConfig(nextRuntimeConfig);
       setDatasources(nextDatasources);
       setTasks(nextTasks);
       setErrors(nextErrors);
@@ -893,7 +888,6 @@ function App() {
               <SettingsPage
                 tasks={tasks}
                 logs={logs}
-                runtimeConfig={runtimeConfig}
                 alertRules={alertRules}
                 alertEvents={alertEvents}
                 evaluations={alertEvaluations}
@@ -2683,7 +2677,6 @@ function NodeDetailPage({
 function SettingsPage({
   tasks,
   logs,
-  runtimeConfig,
   alertRules,
   alertEvents,
   evaluations,
@@ -2693,7 +2686,6 @@ function SettingsPage({
 }: {
   tasks: SyncTask[];
   logs: OperationLog[];
-  runtimeConfig: RuntimeConfig | null;
   alertRules: AlertRule[];
   alertEvents: AlertEvent[];
   evaluations: AlertRuleEvaluation[];
@@ -2788,20 +2780,6 @@ function SettingsPage({
   return (
     <div className="grid gap-5 xl:grid-cols-[0.98fr_1.02fr]">
       <div className="space-y-5">
-        <section className="surface p-6">
-          <SectionHeader title="运行配置" />
-          <div className="mt-5 grid gap-3">
-            <DetailCard label="本机节点" value={runtimeConfig?.localNodeId || "-"} mono />
-            <DetailCard label="后端端口" value={runtimeConfig?.backendPort || "-"} mono />
-            <DetailCard label="前端来源" value={runtimeConfig?.frontendOrigins.join(", ") || "-"} />
-            <DetailCard label="存储后端" value={runtimeConfig?.storageBackend || "-"} mono />
-            <DetailCard label="存储位置" value={runtimeConfig?.storageLocation || "-"} mono />
-            <DetailCard label="集群巡检" value={runtimeConfig ? `${runtimeConfig.clusterSupervisorEnabled ? "开启" : "关闭"} · ${runtimeConfig.clusterSupervisorIntervalSeconds}s` : "-"} />
-            <DetailCard label="节点心跳" value={runtimeConfig ? `${runtimeConfig.embeddedHeartbeatEnabled ? "开启" : "关闭"} · ${runtimeConfig.embeddedHeartbeatIntervalSeconds}s` : "-"} />
-            <DetailCard label="任务检查" value={runtimeConfig ? `${runtimeConfig.taskProcessSupervisorIntervalSeconds}s` : "-"} />
-          </div>
-        </section>
-
         <section className="surface p-6">
           <SectionHeader title="最近操作" />
           <div className="mt-5 grid gap-3">
@@ -5428,7 +5406,7 @@ function pageDescription(page: Page) {
   if (page === "datasources") return "连接与状态";
   if (page === "tasks") return "同步任务";
   if (page === "nodes") return "运维区";
-  if (page === "settings") return "告警与运行配置";
+  if (page === "settings") return "告警与操作";
   return "";
 }
 

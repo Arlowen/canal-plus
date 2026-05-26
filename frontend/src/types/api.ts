@@ -426,19 +426,6 @@ export interface DashboardSummary {
   failoverCount: number;
 }
 
-export interface RuntimeConfig {
-  backendPort: string;
-  frontendOrigins: string[];
-  storageBackend: string;
-  storageLocation: string;
-  localNodeId: string;
-  clusterSupervisorEnabled: boolean;
-  clusterSupervisorIntervalSeconds: number;
-  embeddedHeartbeatEnabled: boolean;
-  embeddedHeartbeatIntervalSeconds: number;
-  taskProcessSupervisorIntervalSeconds: number;
-}
-
 export type NodeStatus = "online" | "offline" | "draining";
 export type NodeAuthMode = "password" | "private_key";
 
