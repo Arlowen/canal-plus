@@ -218,7 +218,7 @@ type ParticlePoint = {
   size: number;
   opacity: number;
   seed: number;
-  tint: "blue" | "white";
+  tint: "blue" | "ink";
 };
 
 type AnimatedParticle = ParticlePoint & {
@@ -237,7 +237,7 @@ function particleNoise(x: number, y: number) {
 
 function createWordmarkParticles(wordmark: string, width: number, height: number) {
   if (typeof document === "undefined") return [];
-  const compact = width < 760;
+  const compact = width < 680;
   const lines = compact ? wordmark.split(" ") : [wordmark];
   const canvas = document.createElement("canvas");
   const context = canvas.getContext("2d");
@@ -245,7 +245,7 @@ function createWordmarkParticles(wordmark: string, width: number, height: number
   canvas.width = width;
   canvas.height = height;
 
-  let fontSize = compact ? Math.max(74, Math.round(width * 0.16)) : Math.max(118, Math.round(width * 0.17));
+  let fontSize = compact ? Math.max(78, Math.round(width * 0.17)) : Math.max(112, Math.round(width * 0.15));
   context.font = `900 ${fontSize}px ${loginDisplayFont}`;
   const availableWidth = width - (compact ? 72 : 96);
   const maxLineWidth = Math.max(...lines.map((line) => context.measureText(line).width));
@@ -253,8 +253,8 @@ function createWordmarkParticles(wordmark: string, width: number, height: number
     fontSize = Math.max(66, Math.floor(fontSize * (availableWidth / maxLineWidth)));
   }
 
-  const lineHeight = Math.round(fontSize * 0.9);
-  const firstY = compact ? height * 0.38 : height * 0.54;
+  const lineHeight = Math.round(fontSize * 0.92);
+  const firstY = compact ? height * 0.42 : height * 0.5;
   const totalHeight = compact ? lineHeight * (lines.length - 1) : 0;
 
   context.clearRect(0, 0, width, height);
@@ -271,8 +271,8 @@ function createWordmarkParticles(wordmark: string, width: number, height: number
     context.fillText(line, offsetX, offsetY);
   });
 
-  const step = compact ? 6 : 7;
-  const limit = compact ? 900 : 980;
+  const step = compact ? 5 : 5;
+  const limit = compact ? 1320 : 1480;
   const samples: ParticlePoint[] = [];
   const pixels = context.getImageData(0, 0, width, height).data;
 
@@ -283,12 +283,12 @@ function createWordmarkParticles(wordmark: string, width: number, height: number
       const seed = particleNoise(x * 0.37, y * 0.41);
       if (seed < 0.14) continue;
       samples.push({
-        x: x + (seed - 0.5) * 2.8,
-        y: y + (0.5 - seed) * 2.8,
-        size: seed > 0.76 ? 2.6 : seed > 0.42 ? 2.1 : 1.7,
-        opacity: seed > 0.72 ? 0.92 : seed > 0.48 ? 0.76 : 0.56,
+        x: x + (seed - 0.5) * 2.2,
+        y: y + (0.5 - seed) * 2.2,
+        size: seed > 0.76 ? 3.1 : seed > 0.42 ? 2.45 : 1.95,
+        opacity: seed > 0.72 ? 0.98 : seed > 0.48 ? 0.86 : 0.7,
         seed,
-        tint: seed > 0.55 ? "white" : "blue"
+        tint: seed > 0.68 ? "ink" : "blue"
       });
     }
   }
@@ -374,9 +374,10 @@ function ParticleWordmark({ wordmark }: { wordmark: string }) {
 
       context.clearRect(0, 0, width, height);
 
-      const halo = context.createRadialGradient(width * 0.28, height * 0.32, 0, width * 0.28, height * 0.32, width * 0.42);
-      halo.addColorStop(0, "rgba(125, 211, 252, 0.16)");
-      halo.addColorStop(1, "rgba(125, 211, 252, 0)");
+      const halo = context.createLinearGradient(width * 0.18, height * 0.2, width * 0.82, height * 0.8);
+      halo.addColorStop(0, "rgba(37, 99, 235, 0.08)");
+      halo.addColorStop(0.52, "rgba(56, 189, 248, 0.05)");
+      halo.addColorStop(1, "rgba(255, 255, 255, 0)");
       context.fillStyle = halo;
       context.fillRect(0, 0, width, height);
 
@@ -400,14 +401,14 @@ function ParticleWordmark({ wordmark }: { wordmark: string }) {
         }
 
         const pulse = phaseRef.current === "hold" ? 0.9 + Math.sin(now / 320 + index * 0.45) * 0.12 : 1;
-        context.globalAlpha = particle.opacity * 0.22;
-        context.fillStyle = particle.tint === "white" ? "#ffffff" : "#7dd3fc";
+        context.globalAlpha = particle.opacity * 0.2;
+        context.fillStyle = particle.tint === "ink" ? "#1e3a8a" : "#60a5fa";
         context.beginPath();
-        context.arc(particle.currentX, particle.currentY, particle.size * 2.4 * pulse, 0, Math.PI * 2);
+        context.arc(particle.currentX, particle.currentY, particle.size * 2.15 * pulse, 0, Math.PI * 2);
         context.fill();
 
         context.globalAlpha = particle.opacity;
-        context.fillStyle = particle.tint === "white" ? "#ffffff" : "#93c5fd";
+        context.fillStyle = particle.tint === "ink" ? "#0f274f" : "#2f80ed";
         context.beginPath();
         context.arc(particle.currentX, particle.currentY, particle.size * pulse, 0, Math.PI * 2);
         context.fill();
@@ -418,11 +419,11 @@ function ParticleWordmark({ wordmark }: { wordmark: string }) {
       if (phaseRef.current === "merge" && elapsed > 1200 && maxDistance < 5.5) {
         phaseRef.current = "hold";
         phaseStartedAtRef.current = now;
-      } else if (phaseRef.current === "hold" && elapsed > 820) {
+      } else if (phaseRef.current === "hold" && elapsed > 2600) {
         phaseRef.current = "explode";
         phaseStartedAtRef.current = now;
         explodeParticles();
-      } else if (phaseRef.current === "explode" && elapsed > 880) {
+      } else if (phaseRef.current === "explode" && elapsed > 620) {
         phaseRef.current = "merge";
         phaseStartedAtRef.current = now;
       }
@@ -445,9 +446,8 @@ function ParticleWordmark({ wordmark }: { wordmark: string }) {
   }, [createAnimatedParticles]);
 
   return (
-    <div ref={frameRef} className="relative mx-auto aspect-[1.18/1] w-full max-w-[760px]">
-      <div className="absolute inset-0 rounded-[2.25rem] border border-white/12 bg-[linear-gradient(155deg,rgba(255,255,255,0.04),rgba(255,255,255,0.01)_42%,rgba(255,255,255,0))] shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_30px_90px_-40px_rgba(2,6,23,0.98)]" />
-      <canvas ref={canvasRef} className="absolute inset-0 h-full w-full rounded-[2.25rem]" />
+    <div ref={frameRef} className="relative mx-auto aspect-[1.25/1] w-full max-w-[880px] overflow-hidden rounded-[2rem] bg-[linear-gradient(145deg,rgba(255,255,255,0.92),rgba(239,246,255,0.72)_48%,rgba(255,255,255,0.96))]">
+      <canvas ref={canvasRef} className="absolute inset-0 h-full w-full" />
     </div>
   );
 }
@@ -2983,12 +2983,12 @@ function LoginScreen({ onLogin }: { onLogin: (username: string, password: string
     <div className="min-h-[100dvh] bg-mist text-ink">
       <div className="page-shell">
         <div className="mx-auto grid min-h-[calc(100dvh-2rem)] max-w-[1400px] items-center gap-6 lg:grid-cols-[1.18fr_0.82fr]">
-        <section className="order-2 surface flex items-center justify-center overflow-hidden p-5 md:p-8 lg:order-1 lg:min-h-[720px]">
+        <section className="order-2 flex min-h-[420px] items-center justify-center overflow-hidden rounded-[2rem] bg-white/55 p-4 md:min-h-[560px] md:p-8 lg:order-1 lg:min-h-[720px]">
           <ParticleWordmark wordmark="CANAL PLUS" />
         </section>
 
         <form onSubmit={submit} className="order-1 flex lg:order-2">
-          <div className="surface flex w-full items-center p-6 md:p-8 lg:min-h-[720px] lg:p-10">
+          <div className="flex w-full items-center rounded-[2rem] bg-white/80 p-6 shadow-panel md:p-8 lg:min-h-[720px] lg:p-10">
             <div className="flex h-full w-full items-center">
               <div className="mx-auto w-full max-w-[360px]">
                 <h2
