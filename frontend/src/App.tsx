@@ -5,7 +5,6 @@ import {
   useRef,
   useState,
   type FormEvent,
-  type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
   type ReactNode
 } from "react";
@@ -247,6 +246,10 @@ function particleNoise(x: number, y: number) {
 function createWordmarkParticles(wordmark: string, width: number, height: number) {
   if (typeof document === "undefined") return [];
   const label = wordmark.replace(/\s+/g, " ").trim();
+  const desktop = width >= 900;
+  const centerX = desktop ? width * 0.29 : width * 0.5;
+  const centerY = desktop ? height * 0.5 : height * 0.67;
+  const availableWidth = desktop ? Math.max(420, width * 0.55) : Math.max(280, width - 24);
   const canvas = document.createElement("canvas");
   const context = canvas.getContext("2d");
   if (!context) return [];
@@ -255,7 +258,6 @@ function createWordmarkParticles(wordmark: string, width: number, height: number
 
   let fontSize = Math.min(Math.max(92, Math.round(width * 0.19)), Math.round(height * 0.42));
   context.font = `900 ${fontSize}px ${loginDisplayFont}`;
-  const availableWidth = Math.max(280, width - 24);
   const maxLineWidth = context.measureText(label).width;
   if (maxLineWidth > availableWidth) {
     fontSize = Math.max(58, Math.floor(fontSize * (availableWidth / maxLineWidth)));
@@ -266,7 +268,7 @@ function createWordmarkParticles(wordmark: string, width: number, height: number
   context.textBaseline = "middle";
   context.fillStyle = "#ffffff";
   const metrics = context.measureText(label);
-  context.fillText(label, (width - metrics.width) / 2, height * 0.5);
+  context.fillText(label, centerX - metrics.width / 2, centerY);
 
   const step = width < 640 ? 3 : 3;
   const limit = width < 640 ? 3600 : 5200;
@@ -353,13 +355,6 @@ function ParticleWordmark({ wordmark }: { wordmark: string }) {
   const handleClick = useCallback((event: ReactMouseEvent<HTMLDivElement>) => {
     const rect = frameRef.current?.getBoundingClientRect();
     explodeParticles(rect ? event.clientX - rect.left : undefined, rect ? event.clientY - rect.top : undefined);
-  }, [explodeParticles]);
-
-  const handleKeyDown = useCallback((event: ReactKeyboardEvent<HTMLDivElement>) => {
-    if (event.key === "Enter" || event.key === " ") {
-      event.preventDefault();
-      explodeParticles();
-    }
   }, [explodeParticles]);
 
   useEffect(() => {
@@ -459,18 +454,19 @@ function ParticleWordmark({ wordmark }: { wordmark: string }) {
   return (
     <div
       ref={frameRef}
-      role="button"
-      tabIndex={0}
-      aria-label="Canal Plus 粒子"
-      onClick={handleClick}
-      onKeyDown={handleKeyDown}
-      onMouseEnter={markPointerInside}
-      onMouseLeave={mergeParticles}
-      onPointerEnter={markPointerInside}
-      onPointerLeave={mergeParticles}
-      className="relative mx-auto aspect-[2.05/1] w-full max-w-[940px] cursor-pointer outline-none"
+      aria-hidden="true"
+      className="pointer-events-none absolute inset-0 select-none"
     >
-      <canvas ref={canvasRef} className="absolute inset-0 h-full w-full" />
+      <canvas ref={canvasRef} className="absolute inset-0 h-full w-full select-none" />
+      <div
+        onClick={handleClick}
+        onMouseDown={(event) => event.preventDefault()}
+        onMouseEnter={markPointerInside}
+        onMouseLeave={mergeParticles}
+        onPointerEnter={markPointerInside}
+        onPointerLeave={mergeParticles}
+        className="pointer-events-auto absolute left-0 top-[54%] h-[32%] w-full -translate-y-1/2 cursor-default select-none md:top-[55%] lg:top-1/2 lg:w-[58%]"
+      />
     </div>
   );
 }
@@ -3003,13 +2999,12 @@ function LoginScreen({ onLogin }: { onLogin: (username: string, password: string
   };
 
   return (
-    <div className="min-h-[100dvh] overflow-hidden bg-[radial-gradient(circle_at_18%_22%,rgba(96,165,250,0.34),transparent_34%),radial-gradient(circle_at_78%_76%,rgba(191,219,254,0.58),transparent_38%),linear-gradient(135deg,#dbeafe_0%,#eff6ff_44%,#cfe6ff_100%)] text-ink">
-      <div className="mx-auto grid min-h-[100dvh] max-w-[1400px] items-center gap-8 px-5 py-6 md:px-8 lg:grid-cols-[1.2fr_0.8fr] lg:gap-10">
-        <section className="order-2 flex min-h-[340px] items-center justify-center overflow-hidden py-8 md:min-h-[480px] lg:order-1 lg:min-h-[640px]">
-          <ParticleWordmark wordmark="Canal Plus" />
-        </section>
+    <div className="relative min-h-[100dvh] overflow-hidden bg-[radial-gradient(circle_at_18%_22%,rgba(96,165,250,0.34),transparent_34%),radial-gradient(circle_at_78%_76%,rgba(191,219,254,0.58),transparent_38%),linear-gradient(135deg,#dbeafe_0%,#eff6ff_44%,#cfe6ff_100%)] text-ink">
+      <ParticleWordmark wordmark="Canal Plus" />
+      <div className="pointer-events-none relative grid min-h-[100dvh] max-w-[1400px] items-center gap-8 px-5 py-6 md:px-8 lg:mx-auto lg:grid-cols-[1.2fr_0.8fr] lg:gap-10">
+        <section aria-hidden="true" className="order-2 min-h-[340px] py-8 md:min-h-[480px] lg:order-1 lg:min-h-[640px]" />
 
-        <form onSubmit={submit} className="order-1 flex items-center lg:order-2 lg:min-h-[640px]">
+        <form onSubmit={submit} className="pointer-events-auto order-1 flex items-center lg:order-2 lg:min-h-[640px]">
           <div className="mx-auto w-full max-w-[390px] px-1 py-10 md:px-0">
             <h2
               style={{ fontFamily: "var(--font-display)" }}
