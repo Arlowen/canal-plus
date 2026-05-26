@@ -15,6 +15,12 @@
 - Never include unrelated local changes in that automatic commit.
 - If verification fails, the change scope is mixed or unclear, or pushing would be risky, stop and report the blocker instead of pushing blindly.
 
+## Post-change Startup
+
+- 每次完成代码、资源、UI、文档或项目规则变更后，都需要启动或确认项目已经启动。
+- 如果项目已经在运行，确认前后端端口和健康状态即可，不要重复启动冲突进程。
+- 最终回复必须提供可访问的项目链接，优先提供前端地址；必要时同时提供后端健康检查地址。
+
 ## Copy Minimalism
 
 - UI 文案默认极简，能用一个词就不要写一句话。
