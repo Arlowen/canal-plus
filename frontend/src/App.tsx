@@ -417,13 +417,13 @@ function ParticleWordmark({ wordmark }: { wordmark: string }) {
 
         const pulse = phaseRef.current === "hold" ? 0.9 + Math.sin(now / 320 + index * 0.45) * 0.12 : 1;
         context.globalAlpha = particle.opacity * 0.2;
-        context.fillStyle = particle.seed > 0.56 ? "#60a5fa" : "#bfdbfe";
+        context.fillStyle = "#bfdbfe";
         context.beginPath();
         context.arc(particle.currentX, particle.currentY, particle.size * 2.1 * pulse, 0, Math.PI * 2);
         context.fill();
 
         context.globalAlpha = particle.opacity;
-        context.fillStyle = particle.seed > 0.66 ? "#1d4ed8" : particle.seed > 0.36 ? "#2563eb" : "#38bdf8";
+        context.fillStyle = "#60a5fa";
         context.beginPath();
         context.arc(particle.currentX, particle.currentY, particle.size * pulse, 0, Math.PI * 2);
         context.fill();
