@@ -494,7 +494,7 @@ func (s *Server) handleSyncTasks(response http.ResponseWriter, request *http.Req
 		s.updateTask(response, request, parts[1])
 	case len(parts) == 2 && request.Method == http.MethodDelete:
 		if s.processes != nil {
-			s.processes.EnsureTaskStopped(parts[1], "任务删除，进程已回收")
+			s.processes.EnsureTaskStopped(parts[1], "Task deleted; process reclaimed")
 		}
 		deleted, err := s.store.DeleteTask(parts[1])
 		if err != nil {
@@ -642,10 +642,10 @@ func (s *Server) transitionTask(response http.ResponseWriter, id string, action 
 		}
 	}
 	if action == "pause" && s.processes != nil {
-		_ = s.processes.StopTask(id, "任务已暂停")
+		_ = s.processes.StopTask(id, "Task paused")
 	}
 	if action == "stop" && s.processes != nil {
-		_ = s.processes.StopTask(id, "任务已停止")
+		_ = s.processes.StopTask(id, "Task stopped")
 	}
 	if refreshed, exists := s.store.GetTask(id); exists {
 		task = refreshed

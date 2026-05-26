@@ -1,6 +1,9 @@
 package app
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestResolveLocalNodeIDPrefersConfiguredValue(t *testing.T) {
 	store := newTestStore(t)
@@ -64,7 +67,8 @@ func TestMarkProcessDetachedDoesNotForceStoppedStatus(t *testing.T) {
 	if err != nil {
 		t.Fatalf("MarkProcessDetached() error = %v", err)
 	}
-	if entry.Message != stopReasonMigrated {
+	if !strings.Contains(entry.Message, "][info][sync-task:"+task.ID+"]") ||
+		!strings.HasSuffix(entry.Message, stopReasonMigrated) {
 		t.Fatalf("unexpected detached log entry: %#v", entry)
 	}
 	runtimeAfter, ok := store.Runtime(task.ID)
@@ -76,5 +80,38 @@ func TestMarkProcessDetachedDoesNotForceStoppedStatus(t *testing.T) {
 	}
 	if runtimeAfter.ProcessID != 0 {
 		t.Fatalf("detached process should clear pid: %#v", runtimeAfter)
+	}
+}
+
+func TestEnsureTaskLogsFormatsLegacyMessages(t *testing.T) {
+	store := newTestStore(t)
+	snapshot := store.Snapshot()
+	task := snapshot.SyncTasks[0]
+
+	store.mu.Lock()
+	store.data.TaskLogs = []TaskLogEntry{
+		{
+			ID:        "legacy-log",
+			TaskID:    task.ID,
+			Level:     "warning",
+			Phase:     "paused",
+			Message:   "任务已暂停",
+			CreatedAt: "2026-01-02T03:04:05Z",
+		},
+	}
+	runtime := store.ensureRuntimeLocked(task.ID)
+	runtime.LastLogAt = "2026-01-02T03:04:05Z"
+	runtime.LastLogMessage = "任务已暂停"
+	store.ensureTaskLogsLocked()
+	entry := store.data.TaskLogs[0]
+	runtimeAfter := *runtime
+	store.mu.Unlock()
+
+	expected := "[2026-01-02T03:04:05Z][warn][sync-task:" + task.ID + "]Task paused"
+	if entry.Level != "warn" || entry.Message != expected {
+		t.Fatalf("legacy task log was not formatted: %#v", entry)
+	}
+	if runtimeAfter.LastLogMessage != "[2026-01-02T03:04:05Z][info][sync-task:"+task.ID+"]Task paused" {
+		t.Fatalf("legacy runtime log was not formatted: %#v", runtimeAfter)
 	}
 }

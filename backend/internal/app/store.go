@@ -36,6 +36,7 @@ func NewStore() (*Store, error) {
 		store.ensureStructureDDLsLocked()
 		store.ensureQualityDiffsLocked()
 		store.ensureSubscriptionChangesLocked()
+		store.ensureTaskLogsLocked()
 		if err := store.saveLocked(); err != nil {
 			return nil, err
 		}
@@ -307,10 +308,12 @@ func (s *Store) CreateTask(input SyncTask) (SyncTask, error) {
 	s.data.RuntimeStates = append([]TaskRuntimeState{runtime}, s.data.RuntimeStates...)
 	s.recordTaskCheckpointLocked(runtime, "create", "")
 	if input.Status == TaskPending && runtime.NodeID == "" {
+		loggedAt := now()
 		runtime.ProcessStatus = "awaiting_takeover"
-		runtime.LastLogMessage = "任务已创建，等待节点接管"
+		runtime.LastLogAt = loggedAt
+		runtime.LastLogMessage = formatRuntimeLogMessage(runtime, loggedAt, "info", "Task created; waiting for node takeover")
 	}
-	s.appendTaskLogLocked(input.ID, runtime.NodeID, 0, "info", runtime.Phase, "任务已创建，等待启动")
+	s.appendTaskLogLocked(input.ID, runtime.NodeID, 0, "info", runtime.Phase, "Task created; waiting to start")
 	s.logLocked("admin", "create", "sync_task", input.ID, "创建同步任务 "+input.Name)
 	if err := s.saveLocked(); err != nil {
 		return SyncTask{}, err
@@ -367,7 +370,7 @@ func (s *Store) UpdateTask(id string, patch SyncTask) (SyncTask, bool, error) {
 		updated := *task
 		if changedConfig {
 			s.recordTaskRevisionLocked(updated, "update", "更新同步任务配置", "admin")
-			s.appendTaskLogLocked(id, s.ensureRuntimeLocked(id).NodeID, 0, "info", s.ensureRuntimeLocked(id).Phase, "任务配置已更新")
+			s.appendTaskLogLocked(id, s.ensureRuntimeLocked(id).NodeID, 0, "info", s.ensureRuntimeLocked(id).Phase, "Task configuration updated")
 		}
 		s.logLocked("admin", "update", "sync_task", id, "更新同步任务 "+updated.Name)
 		return cloneJSON(updated), true, s.saveLocked()
@@ -530,7 +533,7 @@ func (s *Store) RerunTask(id string) (SyncTask, bool, error) {
 			runtime.Phase = "full"
 		}
 		if node := s.selectNodeLocked(""); node != nil {
-			s.assignTaskToNodeLocked(runtime, node.ID, "任务重跑分配", false)
+			s.assignTaskToNodeLocked(runtime, node.ID, "rerun assignment", false)
 		} else {
 			task.Status = TaskPending
 			runtime.Phase = "idle"
@@ -538,7 +541,7 @@ func (s *Store) RerunTask(id string) (SyncTask, bool, error) {
 		}
 		task.UpdatedAt = timestamp
 		s.recordTaskCheckpointLocked(*runtime, "rerun", "")
-		s.appendTaskLogLocked(id, runtime.NodeID, 0, "info", runtime.Phase, "任务已重跑，运行态已重置")
+		s.appendTaskLogLocked(id, runtime.NodeID, 0, "info", runtime.Phase, "Task rerun requested; runtime state reset")
 		s.recountNodeTasksLocked()
 		s.logLocked("admin", "rerun", "sync_task", id, "重跑同步任务 "+task.Name)
 		return cloneJSON(*task), true, s.saveLocked()
@@ -589,7 +592,7 @@ func (s *Store) TransitionTask(id string, action string) (SyncTask, bool, error)
 		}
 		if leaseRequired(task.Status) && runtime.NodeID == "" {
 			if node := s.selectNodeLocked(""); node != nil {
-				s.assignTaskToNodeLocked(runtime, node.ID, "任务状态恢复分配", false)
+				s.assignTaskToNodeLocked(runtime, node.ID, "lifecycle recovery assignment", false)
 			}
 		}
 		if (action == "start" || action == "resume") && runtime.NodeID == "" {
@@ -670,7 +673,7 @@ func (s *Store) UpdateTaskParameters(id string, patch TaskParameterPatch) (SyncT
 			task.ConfigVersion++
 			task.UpdatedAt = now()
 			s.recordTaskRevisionLocked(*task, "params", "修改任务运行参数", "admin")
-			s.appendTaskLogLocked(id, s.ensureRuntimeLocked(id).NodeID, 0, "info", s.ensureRuntimeLocked(id).Phase, "任务运行参数已更新")
+			s.appendTaskLogLocked(id, s.ensureRuntimeLocked(id).NodeID, 0, "info", s.ensureRuntimeLocked(id).Phase, "Task runtime parameters updated")
 			s.logLocked("admin", "params", "sync_task", id, "修改任务参数 "+task.Name)
 			return cloneJSON(*task), true, s.saveLocked()
 		}
@@ -701,9 +704,9 @@ func (s *Store) ResetTaskPosition(id string, input PositionResetInput) (SyncTask
 		runtime.UpdatedAt = now()
 		task.UpdatedAt = now()
 		s.recordTaskCheckpointLocked(*runtime, "manual_reset", "")
-		detail := "重置任务位点 " + task.Name + " 到 " + input.BinlogFile + ":" + intToString(int(input.BinlogPosition))
+		detail := "Task position reset to " + input.BinlogFile + ":" + intToString(int(input.BinlogPosition))
 		if input.ServerID != "" {
-			detail += " serverId=" + input.ServerID
+			detail += " server_id=" + input.ServerID
 		}
 		s.appendTaskLogLocked(id, runtime.NodeID, 0, "info", runtime.Phase, detail)
 		s.logLocked("admin", "reset_position", "sync_task", id, detail)
@@ -1121,7 +1124,7 @@ func (s *Store) BringNodeOnline(id string) (NodeStatusChangeResult, bool, error)
 	node.UpdatedAt = timestamp
 	s.logLocked("admin", "node_online", "cluster_node", id, "节点恢复上线："+node.Name)
 	s.reconcileClusterLocked()
-	s.rebalanceAssignmentsLocked("节点恢复上线重新分配", id)
+	s.rebalanceAssignmentsLocked("node recovery assignment", id)
 	after := s.clusterSnapshotLocked()
 	movedBefore = movedLeases(before.Leases, after.Leases)
 	handoffs, success := s.buildClusterHandoffsLocked(movedBefore, after.Leases, tasksByID, "")
@@ -1330,7 +1333,7 @@ func (s *Store) RebalanceCluster() (ClusterRebalanceReport, error) {
 	s.markStaleNodesLocked()
 	before := s.clusterSnapshotLocked()
 	tasksByID := s.tasksByIDLocked()
-	s.rebalanceAssignmentsLocked("任务重新均衡", "")
+	s.rebalanceAssignmentsLocked("cluster rebalance", "")
 	if err := s.saveLocked(); err != nil {
 		return ClusterRebalanceReport{}, err
 	}
@@ -1370,11 +1373,13 @@ func (s *Store) rebalanceAssignmentsLocked(reason string, preferredNodeID string
 		currentNode := s.getNodeLocked(runtime.NodeID)
 		targetNode := s.selectNodeForLoadLocked(plannedLoads, preferredNodeID)
 		if targetNode == nil {
+			loggedAt := now()
 			runtime.NodeID = ""
 			runtime.LeaseExpiresAt = ""
 			runtime.ProcessStatus = "awaiting_takeover"
-			runtime.LastLogMessage = "当前没有可用在线节点，任务等待接管"
-			runtime.UpdatedAt = now()
+			runtime.LastLogAt = loggedAt
+			runtime.LastLogMessage = formatRuntimeLogMessage(*runtime, loggedAt, "warn", "No online node is available; task is waiting for takeover")
+			runtime.UpdatedAt = loggedAt
 			s.removeLeaseLocked(runtime.TaskID)
 			s.recordTaskCheckpointLocked(*runtime, "lease_unassigned", "")
 			continue
@@ -2006,7 +2011,7 @@ func (s *Store) ensureClusterLocked() {
 		runtime := s.ensureRuntimeLocked(s.data.SyncTasks[taskIndex].ID)
 		if runtime.NodeID == "" {
 			if node := s.selectNodeLocked(""); node != nil {
-				s.assignTaskToNodeLocked(runtime, node.ID, "lease_assign", false)
+				s.assignTaskToNodeLocked(runtime, node.ID, "lease assignment", false)
 			}
 		}
 		if runtime.NodeID != "" {
@@ -2039,16 +2044,18 @@ func (s *Store) reconcileClusterLocked() {
 			if runtime.NodeID != "" {
 				s.logLocked("system", "lease_unassigned", "sync_task", runtime.TaskID, "无可用在线节点，任务等待接管："+runtime.TaskID)
 			}
+			loggedAt := now()
 			runtime.NodeID = ""
 			runtime.LeaseExpiresAt = ""
 			runtime.ProcessStatus = "awaiting_takeover"
-			runtime.LastLogMessage = "当前没有可用在线节点，任务等待接管"
-			runtime.UpdatedAt = now()
+			runtime.LastLogAt = loggedAt
+			runtime.LastLogMessage = formatRuntimeLogMessage(*runtime, loggedAt, "warn", "No online node is available; task is waiting for takeover")
+			runtime.UpdatedAt = loggedAt
 			s.removeLeaseLocked(task.ID)
 			s.recordTaskCheckpointLocked(*runtime, "lease_unassigned", "")
 			continue
 		}
-		s.assignTaskToNodeLocked(runtime, target.ID, "节点故障自动接管", true)
+		s.assignTaskToNodeLocked(runtime, target.ID, "node failover takeover", true)
 	}
 	s.recountNodeTasksLocked()
 }
@@ -2086,9 +2093,7 @@ func (s *Store) assignTaskToNodeLocked(runtime *TaskRuntimeState, nodeID string,
 	} else {
 		s.recordTaskCheckpointLocked(*runtime, "lease_assign", previousNodeID)
 	}
-	detail := reason + "：" + runtime.TaskID + " 从 " + valueOr(previousNodeID, "unassigned") + " 切换到 " + nodeID
-	runtime.LastLogAt = now()
-	runtime.LastLogMessage = detail
+	detail := reason + ": task " + runtime.TaskID + " moved from " + valueOr(previousNodeID, "unassigned") + " to " + nodeID
 	s.appendTaskLogLocked(runtime.TaskID, runtime.NodeID, 0, "info", runtime.Phase, detail)
 	if takeover && lease.TakeoverCount > 0 {
 		s.logLocked("system", "failover", "sync_task", runtime.TaskID, detail)
@@ -2558,15 +2563,15 @@ func (s *Store) removeTaskLogsLocked(taskID string) {
 func lifecycleActionMessage(action string, status TaskStatus) string {
 	switch action {
 	case "start":
-		return "任务已启动"
+		return "Task started"
 	case "resume":
-		return "任务已恢复"
+		return "Task resumed"
 	case "pause":
-		return "任务已暂停"
+		return "Task paused"
 	case "stop":
-		return "任务已停止"
+		return "Task stopped"
 	default:
-		return "任务状态已更新为 " + string(status)
+		return "Task status changed to " + string(status)
 	}
 }
 

@@ -20,8 +20,8 @@ import (
 const (
 	taskProcessSpecEnv  = "CANAL_PLUS_TASK_PROCESS_SPEC"
 	taskLogLimitPerTask = 300
-	stopReasonMigrated  = "任务已从当前节点迁移"
-	stopReasonStopped   = "任务已停止，进程已回收"
+	stopReasonMigrated  = "Task migrated away from this node"
+	stopReasonStopped   = "Task stopped and process reclaimed"
 )
 
 type TaskLogService struct {
@@ -109,7 +109,7 @@ func (s *TaskStatusService) MarkProcessLaunching(taskID string) (TaskLogEntry, e
 	runtime.ProcessID = 0
 	runtime.ExitCode = nil
 	runtime.UpdatedAt = now()
-	entry := s.store.appendTaskLogLocked(taskID, runtime.NodeID, 0, "info", runtime.Phase, "任务进程启动中")
+	entry := s.store.appendTaskLogLocked(taskID, runtime.NodeID, 0, "info", runtime.Phase, "Task process is starting")
 	return entry, s.store.saveLocked()
 }
 
@@ -124,13 +124,13 @@ func (s *TaskStatusService) MarkProcessStarted(taskID string, pid int) (TaskLogE
 	runtime.ProcessStoppedAt = ""
 	runtime.LastHeartbeatAt = timestamp
 	runtime.LastLogAt = timestamp
-	runtime.LastLogMessage = "任务进程已启动"
+	runtime.LastLogMessage = "Task process started"
 	runtime.ExitCode = nil
 	if runtime.StartedAt == "" {
 		runtime.StartedAt = timestamp
 	}
 	runtime.UpdatedAt = timestamp
-	entry := s.store.appendTaskLogLocked(taskID, runtime.NodeID, pid, "info", runtime.Phase, fmt.Sprintf("任务进程已启动，PID %d", pid))
+	entry := s.store.appendTaskLogLocked(taskID, runtime.NodeID, pid, "info", runtime.Phase, fmt.Sprintf("Task process started with pid=%d", pid))
 	return entry, s.store.saveLocked()
 }
 
@@ -473,7 +473,7 @@ func (m *TaskProcessManager) StartTask(taskID string) error {
 	}
 	if err := command.Start(); err != nil {
 		exitCode := -1
-		failedEntry, markErr := m.status.MarkProcessFailed(taskID, exitCode, "任务进程启动失败："+err.Error())
+		failedEntry, markErr := m.status.MarkProcessFailed(taskID, exitCode, "Task process failed to start: "+err.Error())
 		if markErr == nil {
 			m.logs.Broadcast(failedEntry)
 		}
@@ -518,7 +518,7 @@ func (m *TaskProcessManager) StopTask(taskID string, message string) error {
 		return err
 	}
 
-	entry, err := m.status.markProcessEnded(taskID, "stopping", nil, valueOr(message, "任务进程停止中"), false)
+	entry, err := m.status.markProcessEnded(taskID, "stopping", nil, valueOr(message, "Task process is stopping"), false)
 	if err == nil {
 		m.logs.Broadcast(entry)
 	}
@@ -607,7 +607,7 @@ func (m *TaskProcessManager) waitProcess(process *managedTaskProcess) {
 		if stopMessage == stopReasonMigrated {
 			entry, statusErr = m.status.MarkProcessDetached(process.taskID, stopMessage)
 		} else {
-			entry, statusErr = m.status.MarkProcessStopped(process.taskID, valueOr(stopMessage, "任务进程已停止"))
+			entry, statusErr = m.status.MarkProcessStopped(process.taskID, valueOr(stopMessage, "Task process stopped"))
 		}
 		if statusErr == nil {
 			m.logs.Broadcast(entry)
@@ -616,14 +616,14 @@ func (m *TaskProcessManager) waitProcess(process *managedTaskProcess) {
 	}
 
 	if exitCode == 0 && initMode == "full_only" {
-		entry, statusErr := m.status.MarkProcessCompleted(process.taskID, "全量迁移完成")
+		entry, statusErr := m.status.MarkProcessCompleted(process.taskID, "Full migration completed")
 		if statusErr == nil {
 			m.logs.Broadcast(entry)
 		}
 		return
 	}
 
-	entry, statusErr := m.status.MarkProcessFailed(process.taskID, exitCode, fmt.Sprintf("任务进程意外退出，exit code %d", exitCode))
+	entry, statusErr := m.status.MarkProcessFailed(process.taskID, exitCode, fmt.Sprintf("Task process exited unexpectedly with exit_code=%d", exitCode))
 	if statusErr == nil {
 		m.logs.Broadcast(entry)
 	}
@@ -698,7 +698,7 @@ func runTaskProcess(spec taskProcessSpec) error {
 		Timestamp:       now(),
 		Level:           "info",
 		Phase:           phase,
-		Message:         "任务进程已接管执行",
+		Message:         "Task process accepted execution",
 		FullTotalRows:   fullTotalRows,
 		FullSyncedRows:  fullSyncedRows,
 		DelaySeconds:    0,
@@ -717,7 +717,7 @@ func runTaskProcess(spec taskProcessSpec) error {
 				Timestamp: now(),
 				Level:     "info",
 				Phase:     phase,
-				Message:   "收到停止信号，任务进程退出",
+				Message:   "Stop signal received; task process exiting",
 			})
 			return nil
 		case <-ticker.C:
@@ -731,7 +731,7 @@ func runTaskProcess(spec taskProcessSpec) error {
 					Timestamp:       now(),
 					Level:           "info",
 					Phase:           "full",
-					Message:         fmt.Sprintf("全量迁移推进到 %d/%d", fullSyncedRows, fullTotalRows),
+					Message:         fmt.Sprintf("Full migration progressed to %d/%d", fullSyncedRows, fullTotalRows),
 					FullTotalRows:   fullTotalRows,
 					FullSyncedRows:  fullSyncedRows,
 					DelaySeconds:    0,
@@ -745,7 +745,7 @@ func runTaskProcess(spec taskProcessSpec) error {
 							Timestamp:       now(),
 							Level:           "info",
 							Phase:           "stopped",
-							Message:         "全量迁移已完成",
+							Message:         "Full migration completed",
 							FullTotalRows:   fullTotalRows,
 							FullSyncedRows:  fullSyncedRows,
 							DelaySeconds:    0,
@@ -760,7 +760,7 @@ func runTaskProcess(spec taskProcessSpec) error {
 						Timestamp: now(),
 						Level:     "info",
 						Phase:     phase,
-						Message:   "全量阶段完成，切换到增量同步",
+						Message:   "Full phase completed; switching to incremental sync",
 					})
 				}
 				continue
@@ -774,7 +774,7 @@ func runTaskProcess(spec taskProcessSpec) error {
 				Timestamp:       now(),
 				Level:           "info",
 				Phase:           phase,
-				Message:         fmt.Sprintf("增量同步正常，位点推进到 %s:%d", binlogFile, binlogPosition),
+				Message:         fmt.Sprintf("Incremental sync healthy; position advanced to %s:%d", binlogFile, binlogPosition),
 				FullTotalRows:   fullTotalRows,
 				FullSyncedRows:  fullTotalRows,
 				DelaySeconds:    delaySeconds,
@@ -792,19 +792,206 @@ func writeTaskProcessEvent(event taskProcessEvent) {
 }
 
 func (s *Store) appendTaskLogLocked(taskID string, nodeID string, processID int, level string, phase string, message string) TaskLogEntry {
+	timestamp := now()
+	normalizedLevel := normalizeTaskLogLevel(level)
+	formattedMessage := formatTaskLogMessage(timestamp, normalizedLevel, taskLogThreadName(taskID, nodeID, processID), message)
 	entry := TaskLogEntry{
 		ID:        newID(),
 		TaskID:    taskID,
 		NodeID:    nodeID,
 		ProcessID: processID,
-		Level:     valueOr(level, "info"),
+		Level:     normalizedLevel,
 		Phase:     phase,
-		Message:   message,
-		CreatedAt: now(),
+		Message:   formattedMessage,
+		CreatedAt: timestamp,
 	}
 	s.data.TaskLogs = append(s.data.TaskLogs, entry)
+	s.updateRuntimeLastLogLocked(taskID, timestamp, formattedMessage)
 	s.pruneTaskLogsLocked(taskID)
 	return cloneJSON(entry)
+}
+
+func normalizeTaskLogLevel(level string) string {
+	switch strings.ToLower(strings.TrimSpace(level)) {
+	case "warn", "warning":
+		return "warn"
+	case "error":
+		return "error"
+	default:
+		return "info"
+	}
+}
+
+func (s *Store) ensureTaskLogsLocked() {
+	for index := range s.data.TaskLogs {
+		entry := &s.data.TaskLogs[index]
+		timestamp := valueOr(entry.CreatedAt, now())
+		entry.Level = normalizeTaskLogLevel(entry.Level)
+		if entry.CreatedAt == "" {
+			entry.CreatedAt = timestamp
+		}
+		if !isFormattedTaskLogMessage(entry.Message) {
+			entry.Message = formatTaskLogMessage(timestamp, entry.Level, taskLogThreadName(entry.TaskID, entry.NodeID, entry.ProcessID), normalizeLegacyTaskLogMessage(entry.Message))
+		}
+	}
+	for index := range s.data.RuntimeStates {
+		runtime := &s.data.RuntimeStates[index]
+		if strings.TrimSpace(runtime.LastLogMessage) == "" || isFormattedTaskLogMessage(runtime.LastLogMessage) {
+			continue
+		}
+		timestamp := valueOr(runtime.LastLogAt, valueOr(runtime.UpdatedAt, now()))
+		runtime.LastLogAt = timestamp
+		runtime.LastLogMessage = formatRuntimeLogMessage(*runtime, timestamp, "info", normalizeLegacyTaskLogMessage(runtime.LastLogMessage))
+	}
+}
+
+func isFormattedTaskLogMessage(message string) bool {
+	trimmed := strings.TrimSpace(message)
+	return strings.HasPrefix(trimmed, "[") &&
+		(strings.Contains(trimmed, "][info][") ||
+			strings.Contains(trimmed, "][warn][") ||
+			strings.Contains(trimmed, "][error]["))
+}
+
+func normalizeLegacyTaskLogMessage(message string) string {
+	trimmed := strings.TrimSpace(message)
+	switch trimmed {
+	case "":
+		return "No log message"
+	case "任务已从当前节点迁移":
+		return stopReasonMigrated
+	case "任务已停止，进程已回收":
+		return stopReasonStopped
+	case "任务进程启动中":
+		return "Task process is starting"
+	case "任务进程已启动":
+		return "Task process started"
+	case "任务进程停止中":
+		return "Task process is stopping"
+	case "任务进程已停止":
+		return "Task process stopped"
+	case "全量迁移完成", "全量迁移已完成":
+		return "Full migration completed"
+	case "任务进程已接管执行":
+		return "Task process accepted execution"
+	case "收到停止信号，任务进程退出":
+		return "Stop signal received; task process exiting"
+	case "全量阶段完成，切换到增量同步":
+		return "Full phase completed; switching to incremental sync"
+	case "任务已创建，等待节点接管":
+		return "Task created; waiting for node takeover"
+	case "任务已创建，等待启动":
+		return "Task created; waiting to start"
+	case "任务配置已更新":
+		return "Task configuration updated"
+	case "任务已重跑，运行态已重置":
+		return "Task rerun requested; runtime state reset"
+	case "任务已启动":
+		return "Task started"
+	case "任务已恢复":
+		return "Task resumed"
+	case "任务已暂停":
+		return "Task paused"
+	case "任务已停止":
+		return "Task stopped"
+	case "任务运行参数已更新":
+		return "Task runtime parameters updated"
+	case "当前没有可用在线节点，任务等待接管":
+		return "No online node is available; task is waiting for takeover"
+	}
+	if strings.HasPrefix(trimmed, "任务进程已启动，PID ") {
+		return "Task process started with pid=" + strings.TrimPrefix(trimmed, "任务进程已启动，PID ")
+	}
+	if strings.HasPrefix(trimmed, "任务进程启动失败：") {
+		return "Task process failed to start: " + strings.TrimPrefix(trimmed, "任务进程启动失败：")
+	}
+	if strings.HasPrefix(trimmed, "任务进程意外退出，exit code ") {
+		return "Task process exited unexpectedly with exit_code=" + strings.TrimPrefix(trimmed, "任务进程意外退出，exit code ")
+	}
+	if strings.HasPrefix(trimmed, "全量迁移推进到 ") {
+		return "Full migration progressed to " + strings.TrimPrefix(trimmed, "全量迁移推进到 ")
+	}
+	if strings.HasPrefix(trimmed, "增量同步正常，位点推进到 ") {
+		return "Incremental sync healthy; position advanced to " + strings.TrimPrefix(trimmed, "增量同步正常，位点推进到 ")
+	}
+	if strings.HasPrefix(trimmed, "重置任务位点 ") {
+		if _, after, found := strings.Cut(trimmed, " 到 "); found {
+			return "Task position reset to " + after
+		}
+		return "Task position reset"
+	}
+	if translated, ok := normalizeLegacyAssignmentLogMessage(trimmed); ok {
+		return translated
+	}
+	return trimmed
+}
+
+func normalizeLegacyAssignmentLogMessage(message string) (string, bool) {
+	reasons := map[string]string{
+		"任务重跑分配":       "rerun assignment",
+		"任务状态恢复分配":     "lifecycle recovery assignment",
+		"节点恢复上线重新分配":   "node recovery assignment",
+		"任务重新均衡":       "cluster rebalance",
+		"节点故障自动接管":     "node failover takeover",
+		"lease_assign": "lease assignment",
+	}
+	for legacyReason, reason := range reasons {
+		prefix := legacyReason + "："
+		if !strings.HasPrefix(message, prefix) {
+			continue
+		}
+		body := strings.TrimPrefix(message, prefix)
+		taskID, movement, found := strings.Cut(body, " 从 ")
+		if !found {
+			return reason + ": " + body, true
+		}
+		previousNodeID, nodeID, found := strings.Cut(movement, " 切换到 ")
+		if !found {
+			return reason + ": task " + taskID + " " + movement, true
+		}
+		return reason + ": task " + taskID + " moved from " + previousNodeID + " to " + nodeID, true
+	}
+	return "", false
+}
+
+func taskLogThreadName(taskID string, nodeID string, processID int) string {
+	if taskID != "" {
+		return "sync-task:" + taskID
+	}
+	if processID > 0 {
+		return fmt.Sprintf("process:%d", processID)
+	}
+	if nodeID != "" {
+		return "node:" + nodeID
+	}
+	return "app"
+}
+
+func formatTaskLogMessage(timestamp string, level string, thread string, message string) string {
+	normalizedMessage := strings.TrimSpace(message)
+	if normalizedMessage == "" {
+		normalizedMessage = "No log message"
+	}
+	return "[" + timestamp + "][" + level + "][" + thread + "]" + normalizedMessage
+}
+
+func (s *Store) updateRuntimeLastLogLocked(taskID string, timestamp string, message string) {
+	if taskID == "" {
+		return
+	}
+	for index := range s.data.RuntimeStates {
+		if s.data.RuntimeStates[index].TaskID != taskID {
+			continue
+		}
+		s.data.RuntimeStates[index].LastLogAt = timestamp
+		s.data.RuntimeStates[index].LastLogMessage = message
+		return
+	}
+}
+
+func formatRuntimeLogMessage(runtime TaskRuntimeState, timestamp string, level string, message string) string {
+	normalizedLevel := normalizeTaskLogLevel(level)
+	return formatTaskLogMessage(timestamp, normalizedLevel, taskLogThreadName(runtime.TaskID, runtime.NodeID, runtime.ProcessID), message)
 }
 
 func (s *Store) pruneTaskLogsLocked(taskID string) {

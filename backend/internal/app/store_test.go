@@ -1,6 +1,7 @@
 package app
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -1208,7 +1209,9 @@ func TestTransitionTaskWritesTaskLog(t *testing.T) {
 	logs := store.Snapshot().TaskLogs
 	found := false
 	for _, entry := range logs {
-		if entry.TaskID == task.ID && entry.Message == "任务已暂停" {
+		if entry.TaskID == task.ID &&
+			strings.Contains(entry.Message, "][info][sync-task:"+task.ID+"]") &&
+			strings.HasSuffix(entry.Message, "Task paused") {
 			found = true
 			break
 		}
