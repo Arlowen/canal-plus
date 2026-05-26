@@ -31,6 +31,7 @@ import {
   WarningCircle,
   XCircle
 } from "@phosphor-icons/react";
+import canalPlusLogo from "./assets/canal-plus-logo.png";
 import { PermissionNotice } from "./components/PermissionNotice";
 import { StatusBadge } from "./components/StatusBadge";
 import { Button, CheckboxInput, SelectInput, TextareaInput, TextInput } from "./components/ui";
@@ -695,13 +696,17 @@ function App() {
       <div className="page-shell">
         <div className="grid gap-5 lg:grid-cols-[240px_minmax(0,1fr)]">
           <aside className="flex h-fit flex-col border-r border-line bg-white/35 p-3 lg:sticky lg:top-5 lg:min-h-[calc(100dvh-3rem)]">
-            <div className="flex items-center justify-between gap-3 border-b border-line pb-4">
-              <div>
-                <div className="text-xs font-medium uppercase tracking-[0.22em] text-slate-500">Canal Plus</div>
-                <div className="mt-2 text-lg font-semibold tracking-tight text-coal">同步控制台</div>
-              </div>
-              <div className="border-l border-blue-200 bg-blue-50/70 px-3 py-2 text-xs font-medium text-blue-700">
-                {user?.role === "admin" ? "Admin" : "Operator"}
+            <div className="border-b border-line pb-4">
+              <img
+                src={canalPlusLogo}
+                alt="Canal Plus"
+                className="h-11 w-full max-w-[190px] object-contain object-left"
+              />
+              <div className="mt-3 flex items-center justify-between gap-3">
+                <div className="text-sm font-semibold tracking-tight text-coal">同步控制台</div>
+                <div className="bg-blue-50/70 px-3 py-2 text-xs font-medium text-blue-700">
+                  {user?.role === "admin" ? "Admin" : "Operator"}
+                </div>
               </div>
             </div>
 
