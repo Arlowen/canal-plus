@@ -699,7 +699,7 @@ function App() {
     <div className="min-h-[100dvh] bg-mist text-ink">
       <div className="page-shell">
         <div className="grid gap-5 lg:grid-cols-[240px_minmax(0,1fr)]">
-          <aside className="surface h-fit p-3 lg:sticky lg:top-5">
+          <aside className="surface flex h-fit flex-col p-3 lg:sticky lg:top-5 lg:min-h-[calc(100dvh-3rem)]">
             <div className="flex items-center justify-between gap-3 border-b border-line pb-4">
               <div>
                 <div className="text-xs font-medium uppercase tracking-[0.22em] text-slate-500">Canal Plus</div>
@@ -731,23 +731,11 @@ function App() {
               })}
             </nav>
 
-            <div className="mt-4 flex items-center justify-between gap-3 rounded-xl border border-line bg-slate-50/80 p-4 lg:hidden">
-              <div>
-                <div className="text-sm font-medium text-coal">{roleLabel(user?.role)}</div>
-              </div>
-              <Button onClick={handleLogout} className="btn-secondary">
-                <SignOut size={16} />
-                退出
-              </Button>
-            </div>
-
-            <div className="mt-5 hidden rounded-xl border border-line bg-slate-50/80 p-4 lg:block">
-              <div className="text-sm font-medium text-coal">{roleLabel(user?.role)}</div>
-              <Button onClick={handleLogout} className="btn-secondary mt-4 w-full">
-                <SignOut size={16} />
-                退出
-              </Button>
-            </div>
+            <UserProfileMenu
+              user={user}
+              onOpenSettings={() => setPage("settings")}
+              onLogout={handleLogout}
+            />
           </aside>
 
           <main className="min-w-0">
@@ -5193,6 +5181,110 @@ function ActionMenu({
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+function UserProfileMenu({
+  user,
+  onOpenSettings,
+  onLogout
+}: {
+  user: User | null;
+  onOpenSettings: () => void;
+  onLogout: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const buttonRef = useRef<HTMLButtonElement | null>(null);
+  const displayName = user?.name || user?.username || "User";
+  const initial = displayName.trim().charAt(0).toUpperCase() || "U";
+
+  useEffect(() => {
+    if (!open) return;
+    const handlePointerDown = (event: MouseEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setOpen(false);
+        buttonRef.current?.focus();
+      }
+    };
+    document.addEventListener("mousedown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [open]);
+
+  const menuItems: Array<{ label: string; icon: typeof GearSix; danger?: boolean; onSelect: () => void }> = [
+    {
+      label: "设置",
+      icon: GearSix,
+      onSelect: onOpenSettings
+    },
+    {
+      label: "退出",
+      icon: SignOut,
+      danger: true,
+      onSelect: onLogout
+    }
+  ];
+
+  return (
+    <div ref={rootRef} className="relative mt-4 lg:mt-auto lg:pt-4">
+      {open && (
+        <div
+          role="menu"
+          className="absolute bottom-[calc(100%+0.75rem)] left-0 z-30 w-full min-w-[14rem] overflow-hidden rounded-2xl border border-line bg-white p-2 shadow-panel"
+        >
+          {menuItems.map((item) => {
+            const Icon = item.icon;
+            return (
+              <Button
+                key={item.label}
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setOpen(false);
+                  item.onSelect();
+                }}
+                className={cx(
+                  "flex w-full items-center justify-start gap-3 rounded-xl px-3 py-3 text-left text-sm font-medium transition",
+                  item.danger ? "text-red-600 hover:bg-red-50" : "text-slate-700 hover:bg-slate-50"
+                )}
+              >
+                <Icon size={18} />
+                {item.label}
+              </Button>
+            );
+          })}
+        </div>
+      )}
+
+      <Button
+        ref={buttonRef}
+        type="button"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((current) => !current)}
+        className={cx(
+          "flex w-full items-center justify-start gap-3 rounded-2xl border border-line bg-slate-50/80 px-3 py-3 text-left transition hover:border-blue-200 hover:bg-white",
+          open && "border-blue-200 bg-white"
+        )}
+      >
+        <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-red-600 text-xl font-semibold text-white">
+          {initial}
+        </span>
+        <span className="min-w-0">
+          <span className="block truncate text-base font-semibold text-coal">{displayName}</span>
+          <span className="mt-0.5 block truncate text-sm text-slate-500">{roleLabel(user?.role)}</span>
+        </span>
+      </Button>
     </div>
   );
 }
