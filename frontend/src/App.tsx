@@ -86,7 +86,7 @@ type MainPage = "dashboard" | "datasources" | "tasks" | "nodes" | "settings";
 type Page = MainPage | "datasourceDetail" | "taskDetail" | "nodeDetail" | "capabilityJobDetail";
 type NoticeTone = "success" | "error" | "warning";
 type TaskBlueprintType = "full_migration" | "incremental_sync" | "data_validation" | "data_correction" | "structure_compare";
-type TaskStateFilter = "all" | "running" | "awaiting" | "remote" | "failed" | "stopped";
+type TaskStateFilter = "all" | "running" | "paused" | "failed" | "stopped" | "pending";
 type WorkloadItem = {
   id: string;
   key: string;
@@ -126,11 +126,11 @@ type ClusterHandoffReport = {
 };
 
 const navItems: Array<{ id: MainPage; label: string; icon: typeof SquaresFour }> = [
-  { id: "tasks", label: "任务中心", icon: FlowArrow },
+  { id: "tasks", label: "任务", icon: FlowArrow },
   { id: "datasources", label: "数据源", icon: Database },
   { id: "nodes", label: "节点", icon: HardDrives },
-  { id: "dashboard", label: "总览", icon: SquaresFour },
-  { id: "settings", label: "设置", icon: GearSix }
+  { id: "settings", label: "告警/设置", icon: GearSix },
+  { id: "dashboard", label: "概览", icon: SquaresFour }
 ];
 
 const taskBlueprints: Array<{
@@ -699,13 +699,13 @@ function App() {
     <div className="min-h-[100dvh] bg-mist text-ink">
       <div className="page-shell">
         <div className="grid gap-5 lg:grid-cols-[240px_minmax(0,1fr)]">
-          <aside className="surface h-fit p-4 lg:sticky lg:top-5">
+          <aside className="surface h-fit p-3 lg:sticky lg:top-5">
             <div className="flex items-center justify-between gap-3 border-b border-line pb-4">
               <div>
                 <div className="text-xs font-medium uppercase tracking-[0.22em] text-slate-500">Canal Plus</div>
-                <div className="mt-2 text-lg font-semibold tracking-tight text-coal">任务平台</div>
+                <div className="mt-2 text-lg font-semibold tracking-tight text-coal">同步控制台</div>
               </div>
-              <div className="rounded-2xl border border-blue-100 bg-blue-50 px-3 py-2 text-xs font-medium text-blue-700">
+              <div className="rounded-xl border border-blue-100 bg-blue-50 px-3 py-2 text-xs font-medium text-blue-700">
                 {user?.role === "admin" ? "Admin" : "Operator"}
               </div>
             </div>
@@ -731,7 +731,7 @@ function App() {
               })}
             </nav>
 
-            <div className="mt-4 flex items-center justify-between gap-3 rounded-3xl border border-line bg-slate-50/80 p-4 lg:hidden">
+            <div className="mt-4 flex items-center justify-between gap-3 rounded-xl border border-line bg-slate-50/80 p-4 lg:hidden">
               <div>
                 <div className="text-sm font-medium text-coal">{roleLabel(user?.role)}</div>
               </div>
@@ -741,7 +741,7 @@ function App() {
               </Button>
             </div>
 
-            <div className="mt-5 hidden rounded-3xl border border-line bg-slate-50/80 p-4 lg:block">
+            <div className="mt-5 hidden rounded-xl border border-line bg-slate-50/80 p-4 lg:block">
               <div className="text-sm font-medium text-coal">{roleLabel(user?.role)}</div>
               <Button onClick={handleLogout} className="btn-secondary mt-4 w-full">
                 <SignOut size={16} />
@@ -756,9 +756,11 @@ function App() {
                 <h1 className="text-3xl font-semibold tracking-tight text-coal md:text-4xl">
                   {pageTitle(page)}
                 </h1>
-                <p className="mt-2 text-sm text-slate-500">
-                  {pageDescription(page)}
-                </p>
+                {pageDescription(page) && (
+                  <p className="mt-2 text-sm text-slate-500">
+                    {pageDescription(page)}
+                  </p>
+                )}
               </div>
               <div className="flex flex-wrap gap-2">
                 <Button onClick={() => void refresh()} className="btn-secondary">
@@ -942,16 +944,13 @@ function DashboardPage({
   onOpenTask: (taskID: string) => void;
   onOpenNodes: () => void;
 }) {
-  const runtimeTasks = tasks.filter((task) => task.runtime);
   const failedTasks = tasks.filter((task) => task.status === "failed").length;
   const awaitingTasks = tasks.filter(taskAwaitingNode).length;
-  const localHostedTasks = runtimeTasks.filter((task) => task.runtime?.managedByLocalNode !== false && Boolean(task.runtime?.nodeId)).length;
-  const remoteHostedTasks = runtimeTasks.filter((task) => task.runtime?.managedByLocalNode === false).length;
+  const runningTasks = tasks.filter((task) => task.status === "full_syncing" || task.status === "incremental_running").length;
   const pendingErrors = errors.filter((item) => item.status === "pending").length;
   const onlineNodes = cluster?.onlineNodes ?? summary?.onlineNodes ?? 0;
   const totalNodes = cluster?.totalNodes ?? summary?.totalNodes ?? 0;
   const hasCreatedTasks = tasks.length > 0;
-  const localNodeLabel = cluster?.localNodeName || cluster?.localNodeId || "当前节点";
   const readyDatasources = datasources.filter((item) => item.connectionStatus === "online").length;
   const attentionTasks = [...tasks]
     .filter((task) => task.status === "failed" || taskAwaitingNode(task) || (task.runtime?.delaySeconds ?? 0) >= 180)
@@ -961,43 +960,43 @@ function DashboardPage({
   const overviewActions: Array<{ title: string; description: string; actionLabel: string; onClick: () => void }> = [];
   if (datasources.length < 2) {
     overviewActions.push({
-      title: "先补齐数据源",
-      description: "补齐源端、目标端",
-      actionLabel: "管理数据源",
+      title: "数据源未就绪",
+      description: "添加源端和目标端",
+      actionLabel: "添加数据源",
       onClick: onCreateDatasource
     });
   }
   if (onlineNodes === 0) {
     overviewActions.push({
-      title: "当前没有在线节点",
-      description: "先恢复节点",
+      title: "节点离线",
+      description: "进入运维区",
       actionLabel: "查看节点",
       onClick: onOpenNodes
     });
   }
   if (awaitingTasks > 0) {
     overviewActions.push({
-      title: "存在待接管任务",
-      description: `${awaitingTasks} 条待接管`,
-      actionLabel: "进入任务中心",
+      title: "任务待处理",
+      description: `${awaitingTasks} 条`,
+      actionLabel: "查看任务",
       onClick: onOpenTasks
     });
   }
   if (failedTasks + pendingErrors > 0) {
     overviewActions.push({
-      title: "异常需要处理",
-      description: `${failedTasks} 异常 · ${pendingErrors} 错误`,
+      title: "发现异常",
+      description: `${failedTasks + pendingErrors} 条`,
       actionLabel: "查看任务",
       onClick: onOpenTasks
     });
   }
   if (overviewActions.length === 0) {
     overviewActions.push({
-      title: hasCreatedTasks ? "主链路稳定" : "可以开始建第一条链路",
+      title: hasCreatedTasks ? "运行正常" : "暂无任务",
       description: hasCreatedTasks
-        ? "继续处理"
-        : "先补资源",
-      actionLabel: hasCreatedTasks ? "进入任务中心" : "创建任务",
+        ? "继续查看"
+        : "创建第一条同步",
+      actionLabel: hasCreatedTasks ? "查看任务" : "创建任务",
       onClick: hasCreatedTasks ? onOpenTasks : onCreateTask
     });
   }
@@ -1006,7 +1005,7 @@ function DashboardPage({
     <div className="space-y-5">
       <div className="grid gap-5 xl:grid-cols-[1.08fr_0.92fr]">
         <section className="surface p-6">
-          <SectionHeader title="当前阻塞" />
+          <SectionHeader title="待处理" />
           <div className="mt-5 grid gap-3">
             {overviewActions.map((item) => (
               <NextStepCard
@@ -1021,20 +1020,12 @@ function DashboardPage({
         </section>
 
         <section className="surface p-6">
-          <SectionHeader title="资源准备度" />
+          <SectionHeader title="概览" />
           <div className="mt-5 grid gap-3 sm:grid-cols-2">
             <MetricMini label="数据源就绪" value={`${readyDatasources}/${datasources.length || 0}`} />
+            <MetricMini label="运行任务" value={`${runningTasks}/${tasks.length || 0}`} />
+            <MetricMini label="异常" value={`${failedTasks + pendingErrors}`} />
             <MetricMini label="在线节点" value={`${onlineNodes}/${totalNodes}`} />
-            <MetricMini label="当前节点托管" value={`${localHostedTasks}`} />
-            <MetricMini label="待接管" value={`${awaitingTasks}`} />
-          </div>
-          <div className="mt-4 rounded-2xl border border-line bg-slate-50/70 px-4 py-4 text-sm text-slate-500">
-            控制节点：<span className="font-medium text-coal">{localNodeLabel}</span>
-          </div>
-          <div className="mt-3 rounded-2xl border border-line bg-white px-4 py-4 text-sm text-slate-500">
-            {remoteHostedTasks > 0
-              ? `远程托管 ${remoteHostedTasks} 条`
-              : "无远程托管"}
           </div>
         </section>
       </div>
@@ -1044,8 +1035,7 @@ function DashboardPage({
         {attentionTasks.length === 0 ? (
           <EmptyPanel
             icon={ShieldCheck}
-            title="暂无高优先级任务"
-            description="继续处理"
+            title="暂无异常"
           />
         ) : (
           <div className="mt-5 grid gap-3">
@@ -1141,10 +1131,10 @@ function DatasourcePage({
     try {
       if (editingId) {
         await api.updateDatasource(editingId, form);
-        pushNotice({ tone: "success", message: "数据源已保存" });
+        pushNotice({ tone: "success", message: "已保存" });
       } else {
         await api.createDatasource(form);
-        pushNotice({ tone: "success", message: "数据源已创建" });
+        pushNotice({ tone: "success", message: "已创建" });
       }
       setEditorOpen(false);
       await onChanged();
@@ -1178,7 +1168,7 @@ function DatasourcePage({
     }
     try {
       await api.deleteDatasource(item.id);
-      pushNotice({ tone: "success", message: "数据源已删除" });
+      pushNotice({ tone: "success", message: "已删除" });
       await onChanged();
     } catch (requestError) {
       pushNotice({ tone: "error", message: requestError instanceof Error ? requestError.message : "删除失败" });
@@ -1198,29 +1188,12 @@ function DatasourcePage({
   };
 
   const usageCount = (item: Datasource) => tasks.filter((task) => task.sourceDatasourceId === item.id || task.targetDatasourceId === item.id).length;
-  const onlineCount = datasources.filter((item) => item.connectionStatus === "online").length;
-  const offlineCount = datasources.filter((item) => item.connectionStatus === "offline").length;
-  const untestedCount = datasources.filter((item) => item.connectionStatus === "untested").length;
-  const sourceCount = datasources.filter((item) => item.purpose === "source").length;
-  const targetCount = datasources.filter((item) => item.purpose === "target").length;
-  const bothCount = datasources.filter((item) => item.purpose === "both").length;
-
   return (
     <div className="space-y-5">
       <section className="surface min-w-0 p-6">
-        <SectionHeader
-          title="数据源列表"
-          description="连接与用途。"
-        />
+        <SectionHeader title="数据源" />
 
-        <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          <MetricMini label="数据源总数" value={`${datasources.length}`} />
-          <MetricMini label="在线" value={`${onlineCount}`} />
-          <MetricMini label="离线" value={`${offlineCount}`} />
-          <MetricMini label="未测试" value={`${untestedCount}`} />
-        </div>
-
-        <div className="mt-5 grid gap-3 lg:grid-cols-[minmax(0,1fr)_180px]">
+        <div className="mt-5 grid gap-3 lg:grid-cols-[minmax(0,1fr)_180px_180px]">
           <label className="block">
             <span className="mb-2 block text-xs font-medium uppercase tracking-[0.18em] text-slate-500">搜索</span>
             <span className="relative block">
@@ -1241,9 +1214,6 @@ function DatasourcePage({
               <option value="untested">未测试</option>
             </SelectInput>
           </Field>
-        </div>
-
-        <div className="mt-3 grid gap-3 lg:grid-cols-[220px_minmax(0,1fr)]">
           <Field label="用途">
             <SelectInput className="select" value={purposeFilter} onChange={(event) => setPurposeFilter(event.target.value as "all" | DatasourcePurpose)}>
               <option value="all">全部用途</option>
@@ -1252,17 +1222,22 @@ function DatasourcePage({
               <option value="both">源端和目标端</option>
             </SelectInput>
           </Field>
-          <div className="flex items-end text-sm text-slate-500">
-            {`源端 ${sourceCount} · 目标端 ${targetCount} · 双向 ${bothCount}`}
-          </div>
         </div>
 
         {datasources.length === 0 ? (
           <EmptyPanel
             icon={Database}
             title="暂无数据源"
-            description="先补齐"
-            action={!canManage ? <PermissionNotice compact description="仅管理员可新增数据源。" /> : undefined}
+            action={canManage ? (
+              <Button onClick={() => {
+                setEditingId(null);
+                setForm({ ...emptyDatasourceForm });
+                setEditorOpen(true);
+              }} className="btn-primary">
+                <Plus size={16} />
+                添加数据源
+              </Button>
+            ) : <PermissionNotice compact description="仅管理员可新增数据源。" />}
           />
         ) : (
           <div className="table-shell mt-5">
@@ -1334,7 +1309,6 @@ function DatasourcePage({
       <Modal
         open={editorOpen}
         title={editingId ? "编辑数据源" : "添加数据源"}
-        description={editingId ? "只保留任务需要的信息。" : "补齐连接信息即可。"}
         onClose={() => setEditorOpen(false)}
       >
         <form onSubmit={saveDatasource} className="grid gap-4">
@@ -1448,7 +1422,7 @@ function DatasourceDetailPage({
     setSubmitting(true);
     try {
       await api.updateDatasource(selected.id, form);
-      pushNotice({ tone: "success", message: "数据源已保存" });
+      pushNotice({ tone: "success", message: "已保存" });
       setEditorOpen(false);
       await onChanged();
     } catch (requestError) {
@@ -1479,7 +1453,7 @@ function DatasourceDetailPage({
     if (!selected || !canManage) return;
     try {
       await api.deleteDatasource(selected.id);
-      pushNotice({ tone: "success", message: "数据源已删除" });
+      pushNotice({ tone: "success", message: "已删除" });
       onBack();
       await onChanged();
     } catch (requestError) {
@@ -1504,7 +1478,7 @@ function DatasourceDetailPage({
     return (
       <section className="surface p-6">
         <DetailPageHeader title="数据源详情" onBack={onBack} />
-        <div className="mt-5 text-sm text-slate-500">当前数据源不存在或已被删除。</div>
+        <div className="mt-5 text-sm text-slate-500">数据源不存在或已删除。</div>
       </section>
     );
   }
@@ -1546,14 +1520,13 @@ function DatasourceDetailPage({
         <div className="mt-4 rounded-2xl border border-line bg-slate-50/70 px-4 py-4 text-sm text-slate-500">
           {selected.lastTestMessage
             ? `最近测试：${formatDateTime(selected.lastTestedAt)} · ${selected.lastTestMessage}`
-            : "当前还没有测试记录。"}
+            : "暂无测试记录。"}
         </div>
       </section>
 
       <Modal
         open={editorOpen}
         title="编辑数据源"
-        description="只保留任务需要的信息。"
         onClose={() => setEditorOpen(false)}
       >
         <form onSubmit={saveDatasource} className="grid gap-4">
@@ -1646,7 +1619,6 @@ function TasksPage({
   const [keyword, setKeyword] = useState("");
   const [typeFilter, setTypeFilter] = useState("all");
   const [stateFilter, setStateFilter] = useState<TaskStateFilter>("all");
-  const [hostingFilter, setHostingFilter] = useState<"all" | "local" | "remote" | "unassigned">("all");
   const [showCapabilityJobs, setShowCapabilityJobs] = useState(false);
   const [creatorOpen, setCreatorOpen] = useState(false);
   const [busyKey, setBusyKey] = useState<string | null>(null);
@@ -1664,18 +1636,12 @@ function TasksPage({
     const matchesState = item.rawTask
       ? stateFilter === "all"
         || (stateFilter === "running" && (item.rawTask.status === "full_syncing" || item.rawTask.status === "incremental_running"))
-        || (stateFilter === "awaiting" && taskAwaitingNode(item.rawTask))
-        || (stateFilter === "remote" && item.rawTask.runtime?.managedByLocalNode === false)
+        || (stateFilter === "paused" && item.rawTask.status === "paused")
         || (stateFilter === "failed" && item.rawTask.status === "failed")
         || (stateFilter === "stopped" && item.rawTask.status === "stopped")
+        || (stateFilter === "pending" && (item.rawTask.status === "draft" || item.rawTask.status === "pending"))
       : stateFilter === "all";
-    const matchesHosting = item.rawTask
-      ? hostingFilter === "all"
-        || (hostingFilter === "local" && item.rawTask.runtime?.managedByLocalNode !== false && Boolean(item.rawTask.runtime?.nodeId))
-        || (hostingFilter === "remote" && item.rawTask.runtime?.managedByLocalNode === false)
-        || (hostingFilter === "unassigned" && !item.rawTask.runtime?.nodeId)
-      : hostingFilter === "all";
-    return matchesKeyword && matchesType && matchesState && matchesHosting;
+    return matchesKeyword && matchesType && matchesState;
   });
 
   const runTaskAction = async (task: SyncTask, action: "start" | "pause" | "resume" | "stop") => {
@@ -1694,11 +1660,8 @@ function TasksPage({
   const rerunTask = async (task: SyncTask) => {
     setBusyKey(`${task.id}:rerun`);
     try {
-      const result = await api.rerunTask(task.id);
-      const message = result.task?.runtime?.processStatus === "awaiting_takeover" || taskAwaitingNode(result.task)
-        ? "任务已重跑，等待节点接管"
-        : "任务已重跑";
-      pushNotice({ tone: "success", message });
+      await api.rerunTask(task.id);
+      pushNotice({ tone: "success", message: "已重跑" });
       await onChanged();
     } catch (requestError) {
       pushNotice({ tone: "error", message: requestError instanceof Error ? requestError.message : "重跑失败" });
@@ -1711,7 +1674,7 @@ function TasksPage({
     setBusyKey(`${task.id}:delete`);
     try {
       await api.deleteTask(task.id);
-      pushNotice({ tone: "success", message: "任务已删除" });
+      pushNotice({ tone: "success", message: "已删除" });
       await onChanged();
     } catch (requestError) {
       pushNotice({ tone: "error", message: requestError instanceof Error ? requestError.message : "删除失败" });
@@ -1736,7 +1699,7 @@ function TasksPage({
     setBusyKey(`${job.id}:job`);
     try {
       await api.runCapabilityJob(job.id);
-      pushNotice({ tone: "success", message: "治理任务已启动" });
+      pushNotice({ tone: "success", message: "已启动" });
       await onChanged();
     } catch (requestError) {
       pushNotice({ tone: "error", message: requestError instanceof Error ? requestError.message : "启动失败" });
@@ -1749,16 +1712,18 @@ function TasksPage({
   return (
     <div className="space-y-5">
       <section className="surface min-w-0 p-6">
-        <SectionHeader title="同步任务" />
+        <SectionHeader
+          title="同步任务"
+          action={visibleCapabilityJobs.length > 0 ? (
+            <FilterChip
+              active={showCapabilityJobs}
+              onClick={() => setShowCapabilityJobs((value) => !value)}
+              label={showCapabilityJobs ? "隐藏扩展任务" : `扩展任务 ${visibleCapabilityJobs.length}`}
+            />
+          ) : undefined}
+        />
 
-        <div className="mt-5 flex justify-end">
-          <div className="flex flex-wrap gap-2">
-            <FilterChip active={!showCapabilityJobs} onClick={() => setShowCapabilityJobs(false)} label="只看同步任务" />
-            <FilterChip active={showCapabilityJobs} onClick={() => setShowCapabilityJobs(true)} label={`显示扩展任务 ${visibleCapabilityJobs.length}`} />
-          </div>
-        </div>
-
-        <div className="mt-5 grid gap-3 xl:grid-cols-[minmax(0,1.2fr)_180px_180px_180px]">
+        <div className="mt-5 grid gap-3 xl:grid-cols-[minmax(0,1.2fr)_180px_180px]">
           <label className="block">
             <span className="mb-2 block text-xs font-medium uppercase tracking-[0.18em] text-slate-500">搜索</span>
             <span className="relative block">
@@ -1779,22 +1744,14 @@ function TasksPage({
               ))}
             </SelectInput>
           </Field>
-          <Field label="运行视角">
+          <Field label="状态">
             <SelectInput className="select" value={stateFilter} onChange={(event) => setStateFilter(event.target.value as TaskStateFilter)}>
               <option value="all">全部状态</option>
               <option value="running">运行中</option>
-              <option value="awaiting">待接管</option>
-              <option value="remote">远程托管</option>
+              <option value="paused">已暂停</option>
               <option value="failed">异常</option>
               <option value="stopped">已停止</option>
-            </SelectInput>
-          </Field>
-          <Field label="托管范围">
-            <SelectInput className="select" value={hostingFilter} onChange={(event) => setHostingFilter(event.target.value as "all" | "local" | "remote" | "unassigned")}>
-              <option value="all">全部任务</option>
-              <option value="local">当前节点托管</option>
-              <option value="remote">远程节点托管</option>
-              <option value="unassigned">待分配</option>
+              <option value="pending">待启动</option>
             </SelectInput>
           </Field>
         </div>
@@ -1802,8 +1759,7 @@ function TasksPage({
         {datasources.length === 0 ? (
           <EmptyPanel
             icon={Database}
-            title="先添加数据源"
-            description="先准备源端和目标端。"
+            title="暂无数据源"
             action={
               <Button onClick={onCreateDatasource} className="btn-primary">
                 <Plus size={16} />
@@ -1815,16 +1771,20 @@ function TasksPage({
           <EmptyPanel
             icon={ClipboardText}
             title="暂无任务"
-            description="先创建"
-            action={!canManage ? <PermissionNotice compact description="仅管理员可新增任务。" /> : undefined}
+            action={canManage ? (
+              <Button onClick={() => setCreatorOpen(true)} className="btn-primary">
+                <Plus size={16} />
+                创建任务
+              </Button>
+            ) : <PermissionNotice compact description="仅管理员可新增任务。" />}
           />
         ) : (
-          <div className="mt-5 divide-y divide-line overflow-hidden rounded-3xl border border-line bg-white">
+          <div className="mt-5 divide-y divide-line overflow-hidden rounded-2xl border border-line bg-white">
             {filtered.map((item) => {
               const task = item.rawTask;
               const job = item.rawJob;
               const primaryAction = task ? taskPrimaryAction(task) : null;
-              const executionNode = task?.runtime?.executionNodeName || task?.runtime?.nodeId;
+              const taskHasException = Boolean(task && (task.status === "failed" || taskAwaitingNode(task) || task.runtime?.processStatus === "failed"));
               return (
                 <div key={item.key} className="grid gap-3 p-4 lg:grid-cols-[1fr_auto] lg:items-center">
                   <Button
@@ -1841,17 +1801,12 @@ function TasksPage({
                       <span className="font-medium text-coal">{item.title}</span>
                       <TypeBadge type={item.type} />
                       {task && <StatusBadge status={task.status} />}
-                      {task && shouldShowTaskProcessBadge(task) && <Badge tone={taskProcessTone(task.runtime?.processStatus)}>{taskProcessStatusText(task.runtime?.processStatus)}</Badge>}
-                      {task && taskAwaitingNode(task) && <Badge tone="yellow">待接管</Badge>}
-                      {task && task.runtime?.managedByLocalNode === false && <Badge tone="yellow">远程托管</Badge>}
+                      {taskHasException && task && shouldShowTaskProcessBadge(task) && <Badge tone={taskProcessTone(task.runtime?.processStatus)}>{taskProcessStatusText(task.runtime?.processStatus)}</Badge>}
+                      {taskHasException && task && taskAwaitingNode(task) && <Badge tone="yellow">待处理</Badge>}
                       {job && <Badge tone={capabilityJobTone(job.status)}>{capabilityJobStatusText(job.status)}</Badge>}
                     </div>
                     <div className="mt-1 text-sm text-slate-500">{item.detail}</div>
-                    {task && (
-                      <div className="mt-2 text-xs text-slate-500">
-                        {executionNode ? `节点 ${executionNode}` : "待分配"} · {formatDate(item.updatedAt)}
-                      </div>
-                    )}
+                    {task && <div className="mt-2 text-xs text-slate-500">更新 {formatDate(item.updatedAt)}</div>}
                     {!task && <div className="mt-2 text-xs text-slate-500">{formatDate(item.updatedAt)}</div>}
                   </Button>
                   <div className="flex flex-wrap justify-end gap-2">
@@ -1877,8 +1832,12 @@ function TasksPage({
                     )}
                     <ActionMenu
                       items={task ? [
+                        { label: "详情", onSelect: () => onOpenTask(task.id) },
+                        { label: "停止", onSelect: () => void runTaskAction(task, "stop"), disabled: !(task.status === "full_syncing" || task.status === "incremental_running") },
                         { label: "重跑", onSelect: () => void rerunTask(task), disabled: !(task.status === "stopped" || task.status === "failed") },
                         { label: "删除", onSelect: () => requestDeleteTask(task), danger: true, disabled: !canManage }
+                      ] : job ? [
+                        { label: "详情", onSelect: () => onOpenCapabilityJob(job.id) }
                       ] : []}
                     />
                   </div>
@@ -1946,7 +1905,7 @@ function TaskDetailPage({
     setBusyJobId(job.id);
     try {
       await api.runCapabilityJob(job.id);
-      pushNotice({ tone: "success", message: "治理任务已启动" });
+      pushNotice({ tone: "success", message: "已启动" });
       await onChanged();
     } catch (requestError) {
       pushNotice({ tone: "error", message: requestError instanceof Error ? requestError.message : "启动失败" });
@@ -1959,7 +1918,7 @@ function TaskDetailPage({
     return (
       <section className="surface p-6">
         <DetailPageHeader title="任务详情" onBack={onBack} />
-        <div className="mt-5 text-sm text-slate-500">当前任务不存在或已被删除。</div>
+        <div className="mt-5 text-sm text-slate-500">任务不存在或已删除。</div>
       </section>
     );
   }
@@ -2044,7 +2003,7 @@ function CapabilityJobDetailPage({
     return (
       <section className="surface p-6">
         <DetailPageHeader title="扩展任务详情" onBack={onBack} />
-        <div className="mt-5 text-sm text-slate-500">当前扩展任务不存在或已被删除。</div>
+        <div className="mt-5 text-sm text-slate-500">扩展任务不存在或已删除。</div>
       </section>
     );
   }
@@ -2059,18 +2018,15 @@ function CapabilityJobDetailPage({
 
 function handoffTitle(kind: ClusterHandoffReport["kind"]) {
   if (kind === "drain") return "排空结果";
-  if (kind === "drill") return "故障演练结果";
+  if (kind === "drill") return "演练结果";
   if (kind === "offline") return "节点下线结果";
   if (kind === "online") return "节点上线结果";
   return "重新均衡结果";
 }
 
 function handoffTrackTitle(kind: ClusterHandoffReport["kind"]) {
-  if (kind === "drill") return "故障切换路径";
-  if (kind === "drain") return "排空迁移路径";
-  if (kind === "offline") return "下线迁移路径";
-  if (kind === "online") return "上线接管路径";
-  return "任务重新分布";
+  if (kind === "rebalance") return "任务分布";
+  return "影响范围";
 }
 
 function fromDrainReport(report: NodeDrainReport): ClusterHandoffReport {
@@ -2154,7 +2110,6 @@ function NodesPage({
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [confirmation, setConfirmation] = useState<ConfirmationDialogState | null>(null);
   const localNodeId = cluster?.localNodeId;
-  const localNodeName = cluster?.localNodeName || localNodeId;
   const awaitingTasks = tasks.filter(taskAwaitingNode);
 
   useEffect(() => {
@@ -2195,7 +2150,7 @@ function NodesPage({
     setConfirmation({
       title: action === "upgrade" ? `升级节点“${node.name}”` : `卸载节点“${node.name}”`,
       description: action === "upgrade"
-        ? "升级前会先迁移当前节点承载的任务，过程可能触发任务接管。确认继续吗？"
+        ? "升级前会迁移该节点上的任务，过程可能影响运行。确认继续吗？"
         : "卸载会迁移承载任务并移除节点安装，操作不可直接撤销。确认继续吗？",
       confirmLabel: action === "upgrade" ? "确认升级" : "确认卸载",
       confirmTone: "danger",
@@ -2226,7 +2181,7 @@ function NodesPage({
           setHandoffReport(fromNodeStatusChangeResult(result));
           pushNotice({ tone: result.success ? "success" : "warning", message: result.message });
         } else {
-          pushNotice({ tone: "success", message: action === "online" ? "节点已上线" : "节点已下线" });
+          pushNotice({ tone: "success", message: action === "online" ? "已上线" : "已下线" });
         }
       }
       await onChanged();
@@ -2248,10 +2203,10 @@ function NodesPage({
     const description = action === "drain"
       ? "该节点上的任务会迁移到其他节点，适合维护前使用。确认继续吗？"
       : action === "offline"
-        ? "节点会被标记为离线，并触发受影响任务重新接管。确认继续吗？"
+        ? "节点会被标记为离线，受影响任务会重新分配。确认继续吗？"
         : action === "online"
-          ? "节点恢复上线后，待分配任务可能被重新接管。确认继续吗？"
-          : "系统会模拟节点故障并触发切换，仅应在演练窗口执行。确认继续吗？";
+          ? "节点恢复上线后，待分配任务可能重新运行。确认继续吗？"
+          : "将模拟节点故障并触发切换，仅应在演练窗口执行。确认继续吗？";
     const confirmLabel = action === "online" ? "确认上线" : action === "offline" ? "确认下线" : action === "drain" ? "确认排空" : "确认演练";
     setConfirmation({
       title,
@@ -2284,8 +2239,8 @@ function NodesPage({
 
   const requestRebalanceCluster = () => {
     setConfirmation({
-      title: "重新均衡集群任务",
-      description: "系统会重新分配节点承载任务，可能触发任务迁移和接管。确认继续吗？",
+      title: "重新均衡任务",
+      description: "会重新分配节点上的任务，可能触发迁移。确认继续吗？",
       confirmLabel: "确认均衡",
       confirmTone: "danger",
       onConfirm: () => {
@@ -2298,13 +2253,13 @@ function NodesPage({
     <div className="space-y-5">
         <section className="surface min-w-0 p-6">
           <SectionHeader
-            title="节点列表"
-            description={localNodeName ? `控制节点：${localNodeName}` : "部署与运维。"}
+            title="节点"
             action={canManage ? (
-            <Button onClick={requestRebalanceCluster} disabled={busyKey === "rebalance"} className="btn-secondary">
-              <ArrowsClockwise size={16} />
-              {busyKey === "rebalance" ? "均衡中" : "重新均衡"}
-            </Button>
+              <ActionMenu
+                items={[
+                  { label: busyKey === "rebalance" ? "均衡中" : "重新均衡", onSelect: requestRebalanceCluster, disabled: busyKey === "rebalance" }
+                ]}
+              />
           ) : undefined}
         />
 
@@ -2346,46 +2301,64 @@ function NodesPage({
           <EmptyPanel
             icon={HardDrives}
             title="暂无节点"
-            description="先补节点"
-            action={!canManage ? <PermissionNotice compact description="仅管理员可管节点。" /> : undefined}
+            action={canManage ? (
+              <Button onClick={() => setCreatorOpen(true)} className="btn-primary">
+                <Plus size={16} />
+                添加节点
+              </Button>
+            ) : <PermissionNotice compact description="仅管理员可管节点。" />}
           />
         ) : (
-          <div className="mt-5 grid gap-4">
-            {visibleNodes.map((node) => {
-              const isCurrentNode = localNodeId === node.id;
-              return (
-                <div key={node.id} className="rounded-3xl border border-line bg-white p-4">
-                  <div className="grid gap-4 xl:grid-cols-[1fr_auto] xl:items-start">
-                    <Button onClick={() => onOpenNode(node.id)} className="panel-link">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <div className="font-medium text-coal">{node.name}</div>
+          <div className="table-shell mt-5">
+            <table className="w-full min-w-[820px] text-left text-sm">
+              <thead className="bg-slate-50 text-xs uppercase tracking-[0.18em] text-slate-500">
+                <tr>
+                  <th className="px-4 py-3">名称</th>
+                  <th className="px-4 py-3">状态</th>
+                  <th className="px-4 py-3">地址</th>
+                  <th className="px-4 py-3">任务</th>
+                  <th className="px-4 py-3">资源</th>
+                  <th className="px-4 py-3 text-right">操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                {visibleNodes.map((node) => {
+                  const isCurrentNode = localNodeId === node.id;
+                  return (
+                    <tr key={node.id} className="table-row hover:bg-slate-50/70">
+                      <td className="px-4 py-4">
+                        <Button onClick={() => onOpenNode(node.id)} className="link-button">
+                          <div className="font-medium text-coal">{node.name}</div>
+                          <div className="mt-1 text-xs text-slate-500">{node.version}</div>
+                        </Button>
+                      </td>
+                      <td className="px-4 py-4">
                         <Badge tone={nodeTone(node.status)}>{nodeStatusText(node.status)}</Badge>
-                        {isCurrentNode && <Badge tone="blue">当前节点</Badge>}
-                        <div className="chip border-slate-200 bg-slate-50 text-slate-600">{node.version}</div>
-                      </div>
-                      <div className="mt-1 text-sm text-slate-500">{node.endpoint} · {node.installDir}</div>
-                      <div className="mt-3 grid gap-2 text-xs text-slate-500 sm:grid-cols-4">
-                        <span>SSH {node.sshUser}@{node.sshPort}</span>
-                        <span>任务 {node.runningTasks}/{node.capacity}</span>
-                        <span>CPU {node.cpuPercent}%</span>
-                        <span>内存 {node.memoryPercent}%</span>
-                      </div>
-                    </Button>
-                    <div className="flex flex-wrap justify-end gap-2">
-                      <ActionMenu
-                        items={[
-                          { label: "升级", onSelect: () => requestQuickAction(node, "upgrade"), disabled: !canManage },
-                          { label: "卸载", onSelect: () => requestQuickAction(node, "uninstall"), danger: true, disabled: !canManage || isCurrentNode },
-                          { label: "维护排空", onSelect: () => requestMoreAction(node, "drain"), disabled: !canManage || node.status === "offline" },
-                          { label: node.status === "online" ? "手动下线" : "恢复上线", onSelect: () => requestMoreAction(node, node.status === "online" ? "offline" : "online"), disabled: !canManage || (isCurrentNode && node.status === "online") },
-                          { label: "故障演练", onSelect: () => requestMoreAction(node, "drill"), disabled: !canManage || node.status !== "online" || isCurrentNode }
-                        ]}
-                      />
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
+                      </td>
+                      <td className="px-4 py-4">
+                        <div className="mono text-slate-700">{node.endpoint}</div>
+                      </td>
+                      <td className="px-4 py-4 text-slate-600">{node.runningTasks}/{node.capacity}</td>
+                      <td className="px-4 py-4 text-slate-600">CPU {node.cpuPercent}% · 内存 {node.memoryPercent}%</td>
+                      <td className="px-4 py-4">
+                        <div className="flex justify-end">
+                          <ActionMenu
+                            items={[
+                              { label: "详情", onSelect: () => onOpenNode(node.id) },
+                              { label: "升级", onSelect: () => requestQuickAction(node, "upgrade"), disabled: !canManage },
+                              { label: "卸载", onSelect: () => requestQuickAction(node, "uninstall"), danger: true, disabled: !canManage || isCurrentNode },
+                              { label: "排空", onSelect: () => requestMoreAction(node, "drain"), disabled: !canManage || node.status === "offline" },
+                              { label: node.status === "online" ? "下线" : "上线", onSelect: () => requestMoreAction(node, node.status === "online" ? "offline" : "online"), disabled: !canManage || (isCurrentNode && node.status === "online") },
+                              { label: "故障演练", onSelect: () => requestMoreAction(node, "drill"), disabled: !canManage || node.status !== "online" || isCurrentNode }
+                            ]}
+                          />
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         )}
       </section>
@@ -2412,10 +2385,10 @@ function NodesPage({
               <DetailCard label="影响任务" value={`${handoffReport.affectedTasks.length} 条`} />
             </div>
 
-            <div className="rounded-3xl border border-line bg-slate-50/70 p-4">
+            <div className="rounded-xl border border-line bg-slate-50/70 p-4">
               <div className="text-sm font-medium text-coal">{handoffTrackTitle(handoffReport.kind)}</div>
               <div className="mt-3 grid gap-3 sm:grid-cols-[1fr_auto_1fr] sm:items-center">
-                <div className="rounded-2xl border border-line bg-white px-4 py-4">
+                <div className="rounded-xl border border-line bg-white px-4 py-4">
                   <div className="text-xs uppercase tracking-[0.18em] text-slate-500">
                     {handoffReport.kind === "drill"
                       ? "故障节点"
@@ -2425,7 +2398,7 @@ function NodesPage({
                           ? "下线节点"
                           : handoffReport.kind === "online"
                             ? "恢复节点"
-                            : "原承载节点"}
+                            : "来源"}
                   </div>
                   <div className="mt-2 text-sm font-medium text-coal">
                     {handoffReport.node ? nodeName(handoffReport.node.id) : "多节点"}
@@ -2434,8 +2407,8 @@ function NodesPage({
                 <div className="hidden justify-center sm:flex">
                   <ArrowRight size={18} className="text-slate-400" />
                 </div>
-                <div className="rounded-2xl border border-line bg-white px-4 py-4">
-                  <div className="text-xs uppercase tracking-[0.18em] text-slate-500">接管结果</div>
+                <div className="rounded-xl border border-line bg-white px-4 py-4">
+                  <div className="text-xs uppercase tracking-[0.18em] text-slate-500">结果</div>
                   <div className="mt-2 text-sm font-medium text-coal">
                     {handoffReport.affectedTasks.length === 0 ? "无任务迁移" : Array.from(new Set(handoffReport.affectedTasks.map((item) => nodeName(item.newNodeId)))).join(" / ")}
                   </div>
@@ -2445,15 +2418,15 @@ function NodesPage({
 
             <div className="grid gap-3">
               {handoffReport.affectedTasks.length === 0 ? (
-                <div className="rounded-2xl border border-dashed border-line bg-slate-50/70 px-4 py-6 text-center text-sm text-slate-500">
+                <div className="rounded-xl border border-dashed border-line bg-slate-50/70 px-4 py-6 text-center text-sm text-slate-500">
                   {handoffReport.kind === "rebalance"
-                    ? "当前集群已经均衡，没有任务需要迁移。"
+                    ? "任务分布无需调整。"
                     : handoffReport.kind === "online"
-                      ? "节点已上线，当前没有待接管任务。"
-                      : "当前节点没有承载任务，本次操作只更新节点状态。"}
+                      ? "节点已上线，暂无待处理任务。"
+                      : "该节点暂无运行任务。"}
                 </div>
               ) : handoffReport.affectedTasks.map((item) => (
-                <div key={item.taskId} className="rounded-3xl border border-line bg-white p-4">
+                <div key={item.taskId} className="rounded-xl border border-line bg-white p-4">
                   <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
@@ -2466,14 +2439,14 @@ function NodesPage({
                         <span className="rounded-full border border-line bg-slate-50 px-2 py-1">{nodeName(item.newNodeId)}</span>
                       </div>
                     </div>
-                    <div className="rounded-2xl border border-line bg-slate-50/70 px-4 py-3">
+                    <div className="rounded-xl border border-line bg-slate-50/70 px-4 py-3">
                       <div className="text-xs uppercase tracking-[0.18em] text-slate-500">恢复位点</div>
                       <div className="mt-2 mono text-coal">{item.recoveryBinlogFile}:{formatNumber(item.recoveryBinlogPosition)}</div>
                     </div>
                   </div>
                   <div className="mt-3 grid gap-3 sm:grid-cols-4">
                     <DetailCard label="运行阶段" value={taskRuntimePhaseText(item.runtimePhase)} />
-                    <DetailCard label="Lease" value={`${item.previousLeaseEpoch} -> ${item.leaseEpoch}`} mono />
+                    <DetailCard label="调度版本" value={`${item.previousLeaseEpoch} -> ${item.leaseEpoch}`} mono />
                     <DetailCard label="延迟" value={`${item.recoveryDelaySeconds}s`} />
                     <DetailCard label="接管次数" value={`${item.takeoverCount}`} />
                   </div>
@@ -2501,13 +2474,13 @@ function NodesPage({
             )}
 
             {operationResult.affectedTasks && operationResult.affectedTasks.length > 0 && (
-              <div className="rounded-3xl border border-line bg-slate-50/70 p-4">
+              <div className="rounded-xl border border-line bg-slate-50/70 p-4">
                 <div className="text-sm font-medium text-coal">
                   {operationResult.action === "upgrade" ? "升级前任务迁移" : "卸载前任务迁移"}
                 </div>
                 <div className="mt-3 grid gap-3">
                   {operationResult.affectedTasks.map((task) => (
-                    <div key={task.taskId} className="rounded-2xl border border-line bg-white p-4">
+                    <div key={task.taskId} className="rounded-xl border border-line bg-white p-4">
                       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                         <div className="min-w-0">
                           <div className="flex flex-wrap items-center gap-2">
@@ -2520,14 +2493,14 @@ function NodesPage({
                             <span className="rounded-full border border-line bg-slate-50 px-2 py-1">{nodeName(task.newNodeId)}</span>
                           </div>
                         </div>
-                        <div className="rounded-2xl border border-line bg-slate-50/70 px-4 py-3">
+                        <div className="rounded-xl border border-line bg-slate-50/70 px-4 py-3">
                           <div className="text-xs uppercase tracking-[0.18em] text-slate-500">恢复位点</div>
                           <div className="mt-2 mono text-coal">{task.recoveryBinlogFile}:{formatNumber(task.recoveryBinlogPosition)}</div>
                         </div>
                       </div>
                       <div className="mt-3 grid gap-3 sm:grid-cols-4">
                         <DetailCard label="运行阶段" value={taskRuntimePhaseText(task.runtimePhase)} />
-                        <DetailCard label="Lease" value={`${task.previousLeaseEpoch} -> ${task.leaseEpoch}`} mono />
+                        <DetailCard label="调度版本" value={`${task.previousLeaseEpoch} -> ${task.leaseEpoch}`} mono />
                         <DetailCard label="延迟" value={`${task.recoveryDelaySeconds}s`} />
                         <DetailCard label="接管次数" value={`${task.takeoverCount}`} />
                       </div>
@@ -2539,7 +2512,7 @@ function NodesPage({
 
             <div className="grid gap-3">
               {operationResult.steps.map((step) => (
-                <div key={step.key} className="rounded-2xl border border-line bg-slate-50/70 p-4">
+                <div key={step.key} className="rounded-xl border border-line bg-slate-50/70 p-4">
                   <div className="flex items-center justify-between gap-3">
                     <div className="font-medium text-coal">{step.label}</div>
                     <Badge tone={step.status === "done" ? "green" : "red"}>{step.status === "done" ? "完成" : "失败"}</Badge>
@@ -2613,7 +2586,7 @@ function NodeDetailPage({
     return (
       <section className="surface p-6">
         <DetailPageHeader title="节点详情" onBack={onBack} />
-        <div className="mt-5 text-sm text-slate-500">当前节点不存在或已被删除。</div>
+        <div className="mt-5 text-sm text-slate-500">节点不存在或已删除。</div>
       </section>
     );
   }
@@ -2625,7 +2598,7 @@ function NodeDetailPage({
         <div className="mt-5 space-y-4">
           <div className="flex flex-wrap items-center gap-2">
             <Badge tone={nodeTone(selected.status)}>{nodeStatusText(selected.status)}</Badge>
-            {localNodeId === selected.id && <Badge tone="blue">当前节点</Badge>}
+            {localNodeId === selected.id && <Badge tone="blue">本机节点</Badge>}
           </div>
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
             <DetailCard label="主机地址" value={selected.endpoint} mono />
@@ -2637,7 +2610,7 @@ function NodeDetailPage({
           </div>
           {localNodeId === selected.id && (
             <div className="rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-700">
-              当前控制节点不支持自卸载、自下线或故障演练。
+              本机节点不支持自卸载、自下线或故障演练。
             </div>
           )}
         </div>
@@ -2783,11 +2756,11 @@ function SettingsPage({
     try {
       if (editing) {
         await api.updateAlertRule(editing.id, form);
-        pushNotice({ tone: "success", message: "告警规则已保存" });
+        pushNotice({ tone: "success", message: "已保存" });
       } else {
         const created = await api.createAlertRule(form);
         setEditingId(created.id);
-        pushNotice({ tone: "success", message: "告警规则已创建" });
+        pushNotice({ tone: "success", message: "已创建" });
       }
       await onChanged();
     } catch (requestError) {
@@ -2804,7 +2777,7 @@ function SettingsPage({
     try {
       await api.deleteAlertRule(editing.id);
       setEditingId(null);
-      pushNotice({ tone: "success", message: "告警规则已删除" });
+      pushNotice({ tone: "success", message: "已删除" });
       await onChanged();
     } catch (requestError) {
       pushNotice({ tone: "error", message: requestError instanceof Error ? requestError.message : "删除失败" });
@@ -2828,32 +2801,32 @@ function SettingsPage({
     <div className="grid gap-5 xl:grid-cols-[0.98fr_1.02fr]">
       <div className="space-y-5">
         <section className="surface p-6">
-          <SectionHeader title="部署配置" />
+          <SectionHeader title="运行配置" />
           <div className="mt-5 grid gap-3">
-            <DetailCard label="当前节点" value={runtimeConfig?.localNodeId || "-"} mono />
+            <DetailCard label="本机节点" value={runtimeConfig?.localNodeId || "-"} mono />
             <DetailCard label="后端端口" value={runtimeConfig?.backendPort || "-"} mono />
             <DetailCard label="前端来源" value={runtimeConfig?.frontendOrigins.join(", ") || "-"} />
             <DetailCard label="存储后端" value={runtimeConfig?.storageBackend || "-"} mono />
             <DetailCard label="存储位置" value={runtimeConfig?.storageLocation || runtimeConfig?.dataFile || "-"} mono />
             <DetailCard label="集群巡检" value={runtimeConfig ? `${runtimeConfig.clusterSupervisorEnabled ? "开启" : "关闭"} · ${runtimeConfig.clusterSupervisorIntervalSeconds}s` : "-"} />
             <DetailCard label="节点心跳" value={runtimeConfig ? `${runtimeConfig.embeddedHeartbeatEnabled ? "开启" : "关闭"} · ${runtimeConfig.embeddedHeartbeatIntervalSeconds}s` : "-"} />
-            <DetailCard label="进程协调" value={runtimeConfig ? `${runtimeConfig.taskProcessSupervisorIntervalSeconds}s` : "-"} />
+            <DetailCard label="任务检查" value={runtimeConfig ? `${runtimeConfig.taskProcessSupervisorIntervalSeconds}s` : "-"} />
           </div>
         </section>
 
         <section className="surface p-6">
           <SectionHeader title="最近操作" />
           <div className="mt-5 grid gap-3">
-            {logs.slice(0, 4).map((log) => (
-              <div key={log.id} className="rounded-2xl border border-line bg-slate-50/70 p-4">
+            {logs.slice(0, 3).map((log) => (
+              <div key={log.id} className="rounded-xl border border-line bg-slate-50/70 p-4">
                 <div className="flex flex-wrap items-center gap-2">
                   <Badge tone="neutral">{log.targetType}</Badge>
                   <span className="text-sm font-medium text-coal">{log.action}</span>
                 </div>
-                <div className="mt-2 text-sm text-slate-500">{log.detail}</div>
                 <div className="mt-2 text-xs text-slate-500">{log.actor} · {formatDate(log.createdAt)}</div>
               </div>
             ))}
+            {logs.length === 0 && <div className="rounded-xl border border-dashed border-line bg-slate-50/70 px-4 py-6 text-sm text-slate-500">暂无操作</div>}
           </div>
         </section>
       </div>
@@ -2872,7 +2845,7 @@ function SettingsPage({
         <div className="mt-5 grid gap-5 xl:grid-cols-[0.95fr_1.05fr]">
           <div className="grid gap-3">
             {alertRules.length === 0 ? (
-              <div className="rounded-2xl border border-dashed border-line bg-slate-50/70 px-4 py-6 text-sm text-slate-500">暂无告警规则</div>
+              <div className="rounded-xl border border-dashed border-line bg-slate-50/70 px-4 py-6 text-sm text-slate-500">暂无告警规则</div>
             ) : alertRules.map((rule) => {
               const evaluation = evaluations.find((item) => item.ruleId === rule.id);
               return (
@@ -2880,7 +2853,7 @@ function SettingsPage({
                   key={rule.id}
                   onClick={() => setEditingId(rule.id)}
                   className={cx(
-                    "rounded-2xl border px-4 py-4 text-left transition",
+                    "rounded-xl border px-4 py-4 text-left transition",
                     editingId === rule.id ? "border-blue-200 bg-blue-50" : "border-line bg-white hover:bg-slate-50"
                   )}
                 >
@@ -2897,23 +2870,23 @@ function SettingsPage({
 
           <div>
             {!canManage && (
-              <PermissionNotice compact description="当前角色只能查看规则与事件。" />
+              <PermissionNotice compact description="此角色只能查看规则与事件。" />
             )}
             <form onSubmit={saveRule} className="mt-4 grid gap-4 xl:mt-0">
-              <Field label="规则名称">
+              <Field label="规则">
                 <TextInput className="input" value={form.name} disabled={!canManage} onChange={(event) => setForm({ ...form, name: event.target.value })} />
               </Field>
-              <Field label="作用范围">
+              <Field label="范围">
                 <SelectInput className="select" value={form.taskId || ""} disabled={!canManage} onChange={(event) => setForm({ ...form, taskId: event.target.value })}>
                   <option value="">全部任务</option>
                   {tasks.map((task) => <option key={task.id} value={task.id}>{task.name}</option>)}
                 </SelectInput>
               </Field>
               <div className="grid gap-4 sm:grid-cols-2">
-                <Field label="延迟阈值秒">
+                <Field label="延迟秒">
                   <TextInput className="input" type="number" min={1} value={form.delayThresholdSeconds} disabled={!canManage} onChange={(event) => setForm({ ...form, delayThresholdSeconds: Number(event.target.value) })} />
                 </Field>
-                <Field label="错误次数阈值">
+                <Field label="错误数">
                   <TextInput className="input" type="number" min={0} value={form.errorThreshold} disabled={!canManage} onChange={(event) => setForm({ ...form, errorThreshold: Number(event.target.value) })} />
                 </Field>
               </div>
@@ -2938,11 +2911,11 @@ function SettingsPage({
               </div>
             </form>
 
-            <div className="mt-6 rounded-3xl border border-line bg-slate-50/70 p-4">
+            <div className="mt-6 rounded-xl border border-line bg-slate-50/70 p-4">
               <div className="text-sm font-medium text-coal">最近告警事件</div>
               <div className="mt-3 grid gap-3">
                 {alertEvents.slice(0, 3).map((event) => (
-                  <div key={event.id} className="rounded-2xl border border-line bg-white px-4 py-3">
+                  <div key={event.id} className="rounded-xl border border-line bg-white px-4 py-3">
                     <div className="flex flex-wrap items-center gap-2">
                       <Badge tone={event.status === "triggered" ? "red" : "green"}>
                         {event.status === "triggered" ? "触发" : "恢复"}
@@ -2953,6 +2926,7 @@ function SettingsPage({
                     <div className="mt-2 text-xs text-slate-500">{formatDate(event.createdAt)}</div>
                   </div>
                 ))}
+                {alertEvents.length === 0 && <div className="rounded-xl border border-dashed border-line bg-white px-4 py-6 text-sm text-slate-500">暂无告警</div>}
               </div>
             </div>
           </div>
@@ -3097,6 +3071,7 @@ function TaskCreatorModal({
   const [tables, setTables] = useState<TableInfo[]>([]);
   const [columns, setColumns] = useState<TableColumn[]>([]);
   const [fieldMappings, setFieldMappings] = useState<FieldMapping[]>([]);
+  const [showFieldMappings, setShowFieldMappings] = useState(false);
   const [preflight, setPreflight] = useState<TaskPreflightReport | null>(null);
   const [checking, setChecking] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -3134,6 +3109,7 @@ function TaskCreatorModal({
     setTables([]);
     setColumns([]);
     setFieldMappings([]);
+    setShowFieldMappings(false);
     setSyncDraft({
       name: "",
       owner: "数据平台",
@@ -3399,7 +3375,7 @@ function TaskCreatorModal({
 
   const activeFieldMappings = fieldMappings.filter((item) => !item.ignored);
   const syncStepError = !sourceOptions.length || !targetOptions.length
-    ? "请先准备至少一个源端和一个目标端数据源。"
+    ? "至少需要一个源端和一个目标端数据源。"
     : !syncDraft.sourceDatasourceId || !syncDraft.targetDatasourceId
       ? "请选择源端和目标端数据源。"
       : loadingSourceSchemas || loadingTargetSchemas || loadingTables || loadingColumns
@@ -3416,12 +3392,12 @@ function TaskCreatorModal({
                   ? "目标字段名不能为空。"
                   : null;
   const capabilityStepError = executableTasks.length === 0
-    ? "请先准备一条可执行的同步任务。"
+    ? "需要一条可执行的同步任务。"
     : !capabilityDraft.taskId
       ? "请选择关联同步任务。"
       : null;
   const stepOneError = isSyncType ? syncStepError : capabilityStepError;
-  const submitBlockedError = stepOneError || (isSyncType && preflight && !preflight.ok ? "预检未通过，请返回上一步修复失败项。" : null);
+  const submitBlockedError = stepOneError || (isSyncType && preflight && !preflight.ok ? "检查未通过，请返回上一步修复失败项。" : null);
 
   const runPreflight = async () => {
     if (syncStepError) {
@@ -3434,11 +3410,11 @@ function TaskCreatorModal({
       const report = await api.preflightTask(buildSyncInput());
       setPreflight(report);
       if (!report.ok) {
-        setFormError("预检未通过，请先处理失败项。");
+        setFormError("检查未通过，请处理失败项。");
       }
       return report;
     } catch (requestError) {
-      setFormError(requestError instanceof Error ? requestError.message : "预检失败");
+      setFormError(requestError instanceof Error ? requestError.message : "检查失败");
       return null;
     } finally {
       setChecking(false);
@@ -3461,12 +3437,12 @@ function TaskCreatorModal({
         const report = preflight ?? await api.preflightTask(buildSyncInput());
         setPreflight(report);
         if (!report.ok) {
-          setFormError("预检未通过，请先处理失败项。");
+          setFormError("检查未通过，请处理失败项。");
           return;
         }
         const created = await api.createTask(buildSyncInput());
         await api.taskAction(created.id, "start");
-        pushNotice({ tone: "success", message: `${created.name} 已创建并启动` });
+        pushNotice({ tone: "success", message: "已创建" });
       } else {
         const mode = selectedType === "structure_compare"
           ? "schema_prepare"
@@ -3475,7 +3451,7 @@ function TaskCreatorModal({
             : "verify_then_correct";
         const selectedTask = tasks.find((task) => task.id === capabilityDraft.taskId);
         if (!selectedTask) {
-          setFormError("请先选择关联同步任务");
+          setFormError("请选择关联同步任务");
           return;
         }
         await api.createCapabilityJob({
@@ -3485,7 +3461,7 @@ function TaskCreatorModal({
           mode,
           autoStart: true
         });
-        pushNotice({ tone: "success", message: "治理任务已创建并启动" });
+        pushNotice({ tone: "success", message: "已创建" });
       }
       onClose();
       await onChanged();
@@ -3500,13 +3476,12 @@ function TaskCreatorModal({
     <Modal
       open={open}
       title="创建任务"
-      description="按类型配置。"
       onClose={onClose}
     >
       <div className="grid gap-4">
         <div className="grid gap-2 sm:grid-cols-3">
-          {["选择类型", "配置任务", "确认启动"].map((label, index) => (
-            <div key={label} className={cx("rounded-2xl border px-4 py-3 text-sm", step === index ? "border-blue-200 bg-blue-50 text-blue-700" : "border-line bg-slate-50/70 text-slate-500")}>
+          {["类型", "配置", "确认"].map((label, index) => (
+            <div key={label} className={cx("rounded-xl border px-4 py-3 text-sm", step === index ? "border-blue-200 bg-blue-50 text-blue-700" : "border-line bg-slate-50/70 text-slate-500")}>
               {index + 1}. {label}
             </div>
           ))}
@@ -3519,12 +3494,11 @@ function TaskCreatorModal({
                 key={item.type}
                 onClick={() => setSelectedType(item.type)}
                 className={cx(
-                  "rounded-3xl border p-5 text-left transition",
+                  "rounded-xl border p-5 text-left transition",
                   selectedType === item.type ? "border-blue-200 bg-blue-50" : "border-line bg-white hover:bg-slate-50"
                 )}
               >
-                <div className="chip border-slate-200 bg-white text-slate-600">{item.tag}</div>
-                <div className="mt-4 text-lg font-semibold text-coal">{item.name}</div>
+                <div className="text-lg font-semibold text-coal">{item.name}</div>
                 <div className="mt-2 text-sm text-slate-500">{item.description}</div>
               </Button>
             ))}
@@ -3607,63 +3581,69 @@ function TaskCreatorModal({
                 </Field>
               </div>
             </div>
-            <div className="rounded-3xl border border-line bg-slate-50/70 p-4">
+            <div className="rounded-xl border border-line bg-slate-50/70 p-4">
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <div className="font-medium text-coal">字段映射</div>
-                  <div className="mt-1 text-sm text-slate-500">默认按同名字段填充，必要时再精简或忽略。</div>
                 </div>
-                <div className="chip border-slate-200 bg-white text-slate-600">{loadingColumns ? "加载中" : `${columns.length} 列`}</div>
+                <div className="flex items-center gap-2">
+                  <div className="chip border-slate-200 bg-white text-slate-600">{loadingColumns ? "加载中" : `${columns.length} 列`}</div>
+                  <Button type="button" onClick={() => setShowFieldMappings((value) => !value)} className="btn-compact">
+                    {showFieldMappings ? "收起" : "展开"}
+                  </Button>
+                </div>
               </div>
-              <div className="mt-4 overflow-auto rounded-2xl border border-line bg-white">
-                <table className="w-full min-w-[640px] text-left text-sm">
-                  <thead className="bg-slate-50 text-xs uppercase tracking-[0.16em] text-slate-500">
-                    <tr>
-                      <th className="px-3 py-3">源字段</th>
-                      <th className="px-3 py-3">目标字段</th>
-                      <th className="px-3 py-3">类型</th>
-                      <th className="px-3 py-3">主键</th>
-                      <th className="px-3 py-3">忽略</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {fieldMappings.length === 0 ? (
+              {showFieldMappings && (
+                <div className="mt-4 overflow-auto rounded-xl border border-line bg-white">
+                  <table className="w-full min-w-[640px] text-left text-sm">
+                    <thead className="bg-slate-50 text-xs uppercase tracking-[0.16em] text-slate-500">
                       <tr>
-                        <td colSpan={5} className="px-3 py-6 text-center text-sm text-slate-500">
-                          {loadingColumns ? "正在加载字段映射..." : "请选择可用的源表后再配置字段映射。"}
-                        </td>
+                        <th className="px-3 py-3">源字段</th>
+                        <th className="px-3 py-3">目标字段</th>
+                        <th className="px-3 py-3">类型</th>
+                        <th className="px-3 py-3">主键</th>
+                        <th className="px-3 py-3">忽略</th>
                       </tr>
-                    ) : fieldMappings.map((field, index) => (
-                      <tr key={field.sourceField} className="border-b border-line last:border-b-0">
-                        <td className="px-3 py-3 mono text-slate-700">{field.sourceField}</td>
-                        <td className="px-3 py-3">
-                          <TextInput
-                            className="input py-2"
-                            value={field.targetField}
-                            onChange={(event) => {
-                              const next = [...fieldMappings];
-                              next[index] = { ...field, targetField: event.target.value };
-                              setFieldMappings(next);
-                            }}
-                          />
-                        </td>
-                        <td className="px-3 py-3 text-slate-500">{field.sourceType}</td>
-                        <td className="px-3 py-3">{field.primaryKey ? "是" : "否"}</td>
-                        <td className="px-3 py-3">
-                          <CheckboxInput
-                            checked={field.ignored}
-                            onChange={(event) => {
-                              const next = [...fieldMappings];
-                              next[index] = { ...field, ignored: event.target.checked };
-                              setFieldMappings(next);
-                            }}
-                          />
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                    </thead>
+                    <tbody>
+                      {fieldMappings.length === 0 ? (
+                        <tr>
+                          <td colSpan={5} className="px-3 py-6 text-center text-sm text-slate-500">
+                            {loadingColumns ? "加载中" : "请选择源表。"}
+                          </td>
+                        </tr>
+                      ) : fieldMappings.map((field, index) => (
+                        <tr key={field.sourceField} className="border-b border-line last:border-b-0">
+                          <td className="px-3 py-3 mono text-slate-700">{field.sourceField}</td>
+                          <td className="px-3 py-3">
+                            <TextInput
+                              className="input py-2"
+                              value={field.targetField}
+                              onChange={(event) => {
+                                const next = [...fieldMappings];
+                                next[index] = { ...field, targetField: event.target.value };
+                                setFieldMappings(next);
+                              }}
+                            />
+                          </td>
+                          <td className="px-3 py-3 text-slate-500">{field.sourceType}</td>
+                          <td className="px-3 py-3">{field.primaryKey ? "是" : "否"}</td>
+                          <td className="px-3 py-3">
+                            <CheckboxInput
+                              checked={field.ignored}
+                              onChange={(event) => {
+                                const next = [...fieldMappings];
+                                next[index] = { ...field, ignored: event.target.checked };
+                                setFieldMappings(next);
+                              }}
+                            />
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -3672,8 +3652,7 @@ function TaskCreatorModal({
           executableTasks.length === 0 ? (
             <EmptyPanel
               icon={FlowArrow}
-              title="先准备一条同步任务"
-              description="数据校验、数据订正和结构对比都依赖已有同步链路。"
+              title="暂无同步任务"
             />
           ) : (
             <div className="grid gap-4">
@@ -3683,7 +3662,7 @@ function TaskCreatorModal({
                 </SelectInput>
               </Field>
               <Field label="任务名称">
-                <TextInput className="input" value={capabilityDraft.name} onChange={(event) => setCapabilityDraft({ ...capabilityDraft, name: event.target.value })} placeholder="可留空，系统会自动生成" />
+                <TextInput className="input" value={capabilityDraft.name} onChange={(event) => setCapabilityDraft({ ...capabilityDraft, name: event.target.value })} placeholder="留空自动生成" />
               </Field>
             </div>
           )
@@ -3691,7 +3670,7 @@ function TaskCreatorModal({
 
         {step === 2 && (
           <div className="grid gap-4">
-            <div className="rounded-3xl border border-line bg-slate-50/70 p-5">
+            <div className="rounded-xl border border-line bg-slate-50/70 p-5">
               <div className="flex flex-wrap items-center gap-2">
                 <TypeBadge type={taskBlueprints.find((item) => item.type === selectedType)?.name || selectedType} />
                 <span className="font-medium text-coal">{taskBlueprints.find((item) => item.type === selectedType)?.description}</span>
@@ -3714,11 +3693,9 @@ function TaskCreatorModal({
             </div>
 
             {isSyncType && preflight && (
-              <div className={cx("rounded-3xl border p-5", preflight.ok ? "border-emerald-200 bg-emerald-50" : "border-red-200 bg-red-50")}>
-                <div className="flex flex-wrap items-center gap-3">
-                  <Badge tone={preflight.ok ? "green" : "red"}>{preflight.ok ? "预检通过" : "预检未通过"}</Badge>
-                  <span className="text-sm text-slate-600">评分 {preflight.score}</span>
-                  <span className="text-sm text-slate-600">估算行数 {formatNumber(preflight.estimatedRows)}</span>
+              <div className={cx("rounded-xl border p-5", preflight.ok ? "border-emerald-200 bg-emerald-50" : "border-red-200 bg-red-50")}>
+              <div className="flex flex-wrap items-center gap-3">
+                  <Badge tone={preflight.ok ? "green" : "red"}>{preflight.ok ? "检查通过" : "检查未通过"}</Badge>
                 </div>
                 <div className="mt-4 grid gap-2">
                   {preflight.checks.slice(0, 4).map((check) => (
@@ -3765,7 +3742,7 @@ function TaskCreatorModal({
                 {isSyncType && (
                   <Button type="button" onClick={() => void runPreflight()} disabled={checking || Boolean(syncStepError)} className="btn-secondary">
                     {checking ? <ArrowsClockwise size={16} /> : <ShieldCheck size={16} />}
-                    {checking ? "预检中" : "运行预检"}
+                    {checking ? "检查中" : "检查配置"}
                   </Button>
                 )}
                 <Button type="button" onClick={() => void submit()} disabled={submitting || Boolean(submitBlockedError)} className="btn-primary">
@@ -3805,10 +3782,10 @@ function NodeCreatorModal({
   const testExpired = Boolean(lastSuccessfulTestSignature && lastSuccessfulTestSignature !== currentFormSignature);
   const deployBlockedReason = nodeFormError
     || (!testResult
-      ? "请先完成连接测试，再部署节点。"
+      ? "完成连接测试后再部署节点。"
       : !testResult.success
         ? "连接测试未通过，请修复后重新测试。"
-        : testExpired
+      : testExpired
           ? "连接信息已变更，请重新测试后再部署。"
           : null);
   const showDeployGuard = Boolean(
@@ -3881,7 +3858,6 @@ function NodeCreatorModal({
     <Modal
       open={open}
       title="添加节点"
-      description="先测试，再部署。"
       onClose={onClose}
     >
       <div className="grid gap-4">
@@ -4025,12 +4001,12 @@ function SyncTaskDetail({
   const runtimeNodeLabel = runtime?.executionNodeName || cluster?.nodes.find((node) => node.id === runtimeNode)?.name || runtimeNode;
   const remoteManaged = runtime?.managedByLocalNode === false || Boolean(localNodeId && runtimeNode && runtimeNode !== localNodeId);
   const checkpointNodeName = (nodeID?: string) => cluster?.nodes.find((node) => node.id === nodeID)?.name || nodeID || "待分配";
-  const hostingModeText = runtime?.managedByLocalNode === false ? "远程节点托管" : runtime?.nodeId ? "当前节点托管" : "待分配";
+  const hostingModeText = runtime?.managedByLocalNode === false ? "远程节点" : runtime?.nodeId ? "本机节点" : "待分配";
   const logAccessText = runtime?.localLogAccessible === false
     ? runtime?.logAccessMessage || "需切换到执行节点查看"
     : remoteManaged
       ? runtime?.logAccessMessage || "执行节点可查看"
-      : "当前节点可查看";
+      : "本机可查看";
   const sortedRelatedJobs = [...relatedJobs].sort((left, right) => new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime());
   const visibleRelatedJobs = sortedRelatedJobs.slice(0, 3);
   const visibleTableMappings = task.tableMappings.slice(0, 3);
@@ -4102,7 +4078,7 @@ function SyncTaskDetail({
     setRollingBackVersion(version);
     try {
       await api.rollbackTaskRevision(task.id, version);
-      pushNotice({ tone: "success", message: `任务已回滚到 v${version}` });
+      pushNotice({ tone: "success", message: "已回滚" });
       await onChanged();
     } catch (requestError) {
       pushNotice({ tone: "error", message: requestError instanceof Error ? requestError.message : "回滚失败" });
@@ -4114,7 +4090,7 @@ function SyncTaskDetail({
   const requestRollbackRevision = (version: number) => {
     setConfirmation({
       title: `回滚到 v${version}`,
-      description: `任务配置会被回滚到 v${version}，当前版本的参数和表映射会被替换。确认继续吗？`,
+      description: `任务配置会被回滚到 v${version}，现有参数和表映射会被替换。确认继续吗？`,
       confirmLabel: "确认回滚",
       confirmTone: "danger",
       onConfirm: () => {
@@ -4137,7 +4113,7 @@ function SyncTaskDetail({
         conflictStrategy: paramsDraft.conflictStrategy,
         deleteStrategy: paramsDraft.deleteStrategy
       });
-      pushNotice({ tone: "success", message: "运行参数已保存" });
+      pushNotice({ tone: "success", message: "已保存" });
       await onChanged();
     } catch (requestError) {
       pushNotice({ tone: "error", message: requestError instanceof Error ? requestError.message : "保存参数失败" });
@@ -4169,7 +4145,7 @@ function SyncTaskDetail({
   const requestResetPosition = () => {
     setConfirmation({
       title: "重置任务位点",
-      description: `任务会跳转到 ${positionDraft.binlogFile}:${Number(positionDraft.binlogPosition)}。请确认当前任务已停止，并且允许从该位点重新开始。`,
+      description: `任务会跳转到 ${positionDraft.binlogFile}:${Number(positionDraft.binlogPosition)}。请确认任务已停止，并且允许从该位点重新开始。`,
       confirmLabel: "确认重置",
       confirmTone: "danger",
       onConfirm: () => {
@@ -4181,7 +4157,7 @@ function SyncTaskDetail({
   useEffect(() => {
     if (remoteManaged) {
       setTaskLogs([]);
-      setLogNotice(runtime?.logAccessMessage || `当前任务由节点 ${runtimeNodeLabel} 托管，请切换到该节点查看实时日志。`);
+      setLogNotice(runtime?.logAccessMessage || `任务在节点 ${runtimeNodeLabel} 运行，请切换到该节点查看实时日志。`);
       setLogConnected(false);
       return;
     }
@@ -4264,9 +4240,9 @@ function SyncTaskDetail({
           <Badge tone={taskProcessTone(runtime?.processStatus)}>{taskProcessStatusText(runtime?.processStatus)}</Badge>
         )}
         {taskAwaitingNode(task) && <Badge tone="yellow">待接管</Badge>}
-        {remoteManaged && <Badge tone="yellow">远程托管</Badge>}
+        {remoteManaged && <Badge tone="yellow">远程节点</Badge>}
       </div>
-      <section className="rounded-[2rem] border border-line bg-white p-5 shadow-panel">
+      <section className="rounded-2xl border border-line bg-white p-5 shadow-panel">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div className="min-w-0">
             <div className="text-2xl font-semibold tracking-tight text-coal">{task.name}</div>
@@ -4285,17 +4261,17 @@ function SyncTaskDetail({
 
       <div className="grid gap-5 2xl:grid-cols-[minmax(0,1fr)_360px]">
         <div className="order-2 space-y-5 2xl:order-1">
-          <section className="rounded-[2rem] border border-line bg-white p-5 shadow-panel">
+          <section className="rounded-2xl border border-line bg-white p-5 shadow-panel">
             <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
               <DetailCard label="负责人" value={task.owner} />
               <DetailCard label="配置版本" value={`v${task.configVersion}`} mono />
               <DetailCard label="更新时间" value={formatDateTime(task.updatedAt)} />
               <DetailCard label="运行节点" value={runtimeNodeLabel || "待分配"} mono />
-              <DetailCard label="托管模式" value={hostingModeText} />
+              <DetailCard label="执行位置" value={hostingModeText} />
               <DetailCard label="日志" value={logAccessText} />
             </div>
 
-            <div className="mt-5 rounded-3xl border border-line bg-slate-50/70 p-4">
+            <div className="mt-5 rounded-xl border border-line bg-slate-50/70 p-4">
               <div className="flex items-center justify-between gap-3">
                 <div className="font-medium text-coal">运行状态</div>
                 <div className="text-sm text-slate-500">{progress}%</div>
@@ -4319,11 +4295,11 @@ function SyncTaskDetail({
           </section>
 
           {relatedJobs.length > 0 && (
-            <section className="rounded-3xl border border-line bg-slate-50/70 p-4">
+            <section className="rounded-xl border border-line bg-slate-50/70 p-4">
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <div className="font-medium text-coal">扩展任务</div>
-                  <div className="mt-1 text-sm text-slate-500">挂在当前同步任务下。</div>
+                  <div className="mt-1 text-sm text-slate-500">关联此任务。</div>
                 </div>
                 <Badge tone="blue">{`${relatedJobs.length} 条`}</Badge>
               </div>
@@ -4375,7 +4351,7 @@ function SyncTaskDetail({
       </div>
 
       <div className="grid gap-5 2xl:grid-cols-2">
-        <section className="rounded-3xl border border-line bg-slate-50/70 p-4">
+        <section className="rounded-xl border border-line bg-slate-50/70 p-4">
           <div className="font-medium text-coal">表映射</div>
           {task.tableMappings.length > visibleTableMappings.length && (
             <div className="mt-1 text-sm text-slate-500">仅展示前 {visibleTableMappings.length} 条。</div>
@@ -4396,7 +4372,7 @@ function SyncTaskDetail({
         </section>
 
         {taskErrors.length > 0 && (
-          <section className="rounded-3xl border border-line bg-slate-50/70 p-4">
+          <section className="rounded-xl border border-line bg-slate-50/70 p-4">
             <div className="font-medium text-coal">最近异常</div>
             <div className="mt-3 grid gap-3">
               {taskErrors.map((item) => (
@@ -4415,7 +4391,7 @@ function SyncTaskDetail({
 
       {canManage && (
         <div className="grid gap-5 2xl:grid-cols-2">
-          <section className="rounded-3xl border border-line bg-slate-50/70 p-4">
+          <section className="rounded-xl border border-line bg-slate-50/70 p-4">
             <div className="font-medium text-coal">运行参数</div>
             <div className="mt-4 grid gap-4 sm:grid-cols-2">
               <Field label="批量写入">
@@ -4450,7 +4426,7 @@ function SyncTaskDetail({
             </div>
           </section>
 
-          <section className="rounded-3xl border border-line bg-slate-50/70 p-4">
+          <section className="rounded-xl border border-line bg-slate-50/70 p-4">
             <div className="font-medium text-coal">位点控制</div>
             <div className="mt-2 text-sm text-slate-500">仅已停止任务允许重置位点。</div>
             <div className="mt-4 grid gap-4 sm:grid-cols-2">
@@ -4477,7 +4453,7 @@ function SyncTaskDetail({
       )}
 
       {revisions.length > 0 && (
-        <section className="rounded-3xl border border-line bg-slate-50/70 p-4">
+        <section className="rounded-xl border border-line bg-slate-50/70 p-4">
           <div className="font-medium text-coal">配置版本</div>
           <div className="mt-3 grid gap-3">
             {revisions.map((revision) => (
@@ -4513,7 +4489,7 @@ function SyncTaskDetail({
       )}
 
       {checkpoints.length > 0 && (
-        <section className="rounded-3xl border border-line bg-slate-50/70 p-4">
+        <section className="rounded-xl border border-line bg-slate-50/70 p-4">
           <div className="font-medium text-coal">运行轨迹</div>
           <div className="mt-3 grid gap-3">
             {checkpoints.map((checkpoint) => (
@@ -4543,7 +4519,7 @@ function SyncTaskDetail({
                   </div>
                 </div>
                 <div className="mt-3 grid gap-3 sm:grid-cols-3">
-                  <DetailCard label="Lease Epoch" value={`${checkpoint.leaseEpoch}`} mono />
+                  <DetailCard label="调度版本" value={`${checkpoint.leaseEpoch}`} mono />
                   <DetailCard label="延迟" value={`${checkpoint.delaySeconds}s`} />
                   <DetailCard label="吞吐" value={`${checkpoint.eventsPerSecond} eps`} />
                 </div>
@@ -4626,7 +4602,7 @@ function TaskLiveLogPanel({
   };
 
   return (
-    <section className={cx("rounded-[2rem] border border-slate-800 bg-slate-950 p-4 text-slate-100 shadow-panel", className)}>
+    <section className={cx("rounded-2xl border border-slate-800 bg-slate-950 p-4 text-slate-100 shadow-panel", className)}>
       <div className="flex items-center justify-between gap-3">
         <div>
           <div className="text-sm font-medium text-white">实时日志</div>
@@ -4651,7 +4627,7 @@ function TaskLiveLogPanel({
           {logNotice ? (
             <div className="text-sm leading-6 text-slate-300">{logNotice}</div>
           ) : taskLogs.length === 0 ? (
-            <div className="text-sm leading-6 text-slate-300">当前还没有任务进程日志。</div>
+            <div className="text-sm leading-6 text-slate-300">暂无日志。</div>
           ) : (
             <div className="grid gap-3">
               {taskLogs.map((entry) => (
@@ -4693,7 +4669,7 @@ function CapabilityJobDetail({
       </div>
       <div className="text-lg font-semibold text-coal">{job.name}</div>
       <div className="text-sm text-slate-500">关联任务：{linkedTask?.name || job.taskId}</div>
-      <div className="rounded-3xl border border-line bg-slate-50/70 p-4">
+      <div className="rounded-xl border border-line bg-slate-50/70 p-4">
         <div className="flex items-center justify-between gap-3">
           <div className="font-medium text-coal">执行进度</div>
           <div className="text-sm text-slate-500">{job.progressPercent}%</div>
@@ -4714,7 +4690,7 @@ function CapabilityJobDetail({
         </div>
       </div>
       {qualityDiffs.length > 0 && (
-        <div className="rounded-3xl border border-line bg-slate-50/70 p-4">
+        <div className="rounded-xl border border-line bg-slate-50/70 p-4">
           <div className="font-medium text-coal">差异预览</div>
           <div className="mt-3 grid gap-3">
             {qualityDiffs.map((item) => (
@@ -4730,7 +4706,7 @@ function CapabilityJobDetail({
         </div>
       )}
       {structureItems.length > 0 && (
-        <div className="rounded-3xl border border-line bg-slate-50/70 p-4">
+        <div className="rounded-xl border border-line bg-slate-50/70 p-4">
           <div className="font-medium text-coal">结构差异预览</div>
           <div className="mt-3 grid gap-3">
             {structureItems.map((item) => (
@@ -4797,7 +4773,7 @@ function DetailPageHeader({
 
 function MetricMini({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-2xl border border-line bg-slate-50/70 px-4 py-4">
+    <div className="rounded-xl border border-line bg-slate-50/70 px-4 py-4">
       <div className="text-xs uppercase tracking-[0.18em] text-slate-500">{label}</div>
       <div className="mt-3 text-2xl font-semibold tracking-tight text-coal">{value}</div>
     </div>
@@ -4806,7 +4782,7 @@ function MetricMini({ label, value }: { label: string; value: string }) {
 
 function DetailCard({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
   return (
-    <div className="rounded-2xl border border-line bg-white px-4 py-4">
+    <div className="rounded-xl border border-line bg-white px-4 py-4">
       <div className="text-xs uppercase tracking-[0.18em] text-slate-500">{label}</div>
       <div className={cx("mt-2 text-sm font-medium text-coal", mono && "mono")}>{value}</div>
     </div>
@@ -4830,16 +4806,16 @@ function EmptyPanel({
 }: {
   icon: typeof Database;
   title: string;
-  description: string;
+  description?: string;
   action?: ReactNode;
 }) {
   return (
-    <div className="mt-5 rounded-3xl border border-dashed border-line bg-slate-50/70 p-8 text-center">
-      <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl border border-line bg-white text-blue-700">
+    <div className="mt-5 rounded-2xl border border-dashed border-line bg-slate-50/70 p-8 text-center">
+      <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl border border-line bg-white text-blue-700">
         <Icon size={20} />
       </div>
       <div className="mt-4 text-lg font-semibold text-coal">{title}</div>
-      <div className="mx-auto mt-2 max-w-xl text-sm leading-6 text-slate-500">{description}</div>
+      {description && <div className="mx-auto mt-2 max-w-xl text-sm leading-6 text-slate-500">{description}</div>}
       {action && <div className="mt-5 flex justify-center">{action}</div>}
     </div>
   );
@@ -4881,7 +4857,7 @@ function BackendUnavailableScreen({
     <div className="min-h-[100dvh] bg-mist px-4 py-8 text-ink">
       <div className="mx-auto flex min-h-[calc(100dvh-4rem)] max-w-3xl items-center justify-center">
         <section className="surface w-full p-8 text-center md:p-12">
-          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-3xl border border-red-100 bg-red-50 text-red-600">
+          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl border border-red-100 bg-red-50 text-red-600">
             <WarningCircle size={28} />
           </div>
           <div className="mt-6 text-xs font-medium uppercase tracking-[0.28em] text-slate-500">Canal Plus</div>
@@ -4958,7 +4934,7 @@ function NextStepCard({
   onClick: () => void;
 }) {
   return (
-    <div className="rounded-3xl border border-line bg-white p-4">
+    <div className="rounded-xl border border-line bg-white p-4">
       <div className="text-base font-semibold text-coal">{title}</div>
       <div className="mt-2 text-sm text-slate-500">{description}</div>
       <Button onClick={onClick} className="btn-secondary mt-4">
@@ -5259,15 +5235,15 @@ function nodeFormFingerprint(form: ClusterNodeInput) {
 }
 
 function validateNodeForm(form: ClusterNodeInput) {
-  if (!form.name?.trim()) return "请先填写节点名称。";
-  if (!form.endpoint?.trim()) return "请先填写主机地址。";
-  if (!form.sshUser?.trim()) return "请先填写 SSH 用户。";
+  if (!form.name?.trim()) return "请填写节点名称。";
+  if (!form.endpoint?.trim()) return "请填写主机地址。";
+  if (!form.sshUser?.trim()) return "请填写 SSH 用户。";
   if (!Number.isFinite(Number(form.sshPort)) || Number(form.sshPort) <= 0) return "SSH 端口必须大于 0。";
-  if (!form.installDir?.trim()) return "请先填写安装目录。";
-  if (!form.version?.trim()) return "请先填写节点版本。";
+  if (!form.installDir?.trim()) return "请填写安装目录。";
+  if (!form.version?.trim()) return "请填写节点版本。";
   if (!Number.isFinite(Number(form.capacity)) || Number(form.capacity) <= 0) return "可承载任务数必须大于 0。";
-  if (form.authMode === "private_key" && !form.privateKey?.trim()) return "请先填写私钥后再测试连接。";
-  if (form.authMode !== "private_key" && !form.password) return "请先填写密码后再测试连接。";
+  if (form.authMode === "private_key" && !form.privateKey?.trim()) return "请填写私钥后再测试连接。";
+  if (form.authMode !== "private_key" && !form.password) return "请填写密码后再测试连接。";
   return null;
 }
 
@@ -5283,8 +5259,7 @@ function datasourceSearchText(item: Datasource) {
 
 function taskAwaitingNode(task: SyncTask) {
   return !task.runtime?.nodeId && (
-    task.status === "pending"
-    || task.status === "full_syncing"
+    task.status === "full_syncing"
     || task.status === "incremental_running"
     || task.status === "failed"
   );
@@ -5345,27 +5320,24 @@ function navPage(page: Page): MainPage {
 }
 
 function pageTitle(page: Page) {
-  if (page === "dashboard") return "总览";
+  if (page === "dashboard") return "概览";
   if (page === "datasources") return "数据源";
-  if (page === "tasks") return "任务中心";
+  if (page === "tasks") return "任务";
   if (page === "nodes") return "节点";
   if (page === "datasourceDetail") return "数据源详情";
   if (page === "taskDetail") return "任务详情";
   if (page === "capabilityJobDetail") return "扩展任务详情";
   if (page === "nodeDetail") return "节点详情";
-  return "系统设置";
+  return "告警/设置";
 }
 
 function pageDescription(page: Page) {
-  if (page === "dashboard") return "状态与阻塞。";
-  if (page === "datasources") return "连接与测试。";
-  if (page === "tasks") return "任务与日志。";
-  if (page === "nodes") return "节点与运维。";
-  if (page === "datasourceDetail") return "数据源详情。";
-  if (page === "taskDetail") return "任务详情。";
-  if (page === "capabilityJobDetail") return "扩展任务详情。";
-  if (page === "nodeDetail") return "节点详情。";
-  return "配置与告警。";
+  if (page === "dashboard") return "就绪、运行、异常";
+  if (page === "datasources") return "连接与状态";
+  if (page === "tasks") return "同步任务";
+  if (page === "nodes") return "运维区";
+  if (page === "settings") return "告警与运行配置";
+  return "";
 }
 
 function purposeText(value: DatasourcePurpose) {
@@ -5482,12 +5454,12 @@ function shouldShowTaskProcessBadge(task: Pick<SyncTask, "status" | "runtime">) 
 
 function taskActionNotice(task: SyncTask, action: "start" | "pause" | "resume" | "stop") {
   if ((action === "start" || action === "resume") && (task.runtime?.processStatus === "awaiting_takeover" || taskAwaitingNode(task))) {
-    return "任务等待节点接管";
+    return "已启动";
   }
-  if (action === "pause") return "任务已暂停";
-  if (action === "resume") return "任务已恢复";
-  if (action === "stop") return "任务已停止";
-  return "任务已启动";
+  if (action === "pause") return "已暂停";
+  if (action === "resume") return "已恢复";
+  if (action === "stop") return "已停止";
+  return "已启动";
 }
 
 function taskRuntimePhaseText(phase?: string) {
