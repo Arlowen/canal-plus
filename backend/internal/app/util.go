@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -88,10 +87,6 @@ func writeError(response http.ResponseWriter, status int, message string) {
 func decodeJSON(request *http.Request, target any) error {
 	defer request.Body.Close()
 	return json.NewDecoder(request.Body).Decode(target)
-}
-
-func ensureParentDir(path string) error {
-	return os.MkdirAll(filepath.Dir(path), 0o755)
 }
 
 func stringContainsFold(value string, keyword string) bool {

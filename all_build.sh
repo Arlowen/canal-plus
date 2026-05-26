@@ -61,9 +61,9 @@ chmod +x "$BACKEND_STAGE_DIR/start.sh"
 cat > "$BACKEND_STAGE_DIR/README.txt" <<'EOF'
 Canal Plus backend package
 
-- Copy .env.example to .env and adjust the values before startup if needed.
+- Copy .env.example to .env and set CANAL_PLUS_METADATA_DSN before startup.
 - Run ./start.sh to start the backend service.
-- The backend stores runtime data in ./data/store.json by default.
+- The backend stores metadata and runtime state in the configured MySQL RDB.
 EOF
 tar -C "$TMP_DIR" -czf "$BACKEND_ARCHIVE" "$(basename "$BACKEND_STAGE_DIR")"
 

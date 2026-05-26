@@ -1,28 +1,23 @@
 package app
 
 import (
-	"path/filepath"
 	"strings"
 	"testing"
 
 	mysqlcfg "github.com/go-sql-driver/mysql"
 )
 
-func TestNewStoreUsesFilePersistenceByDefault(t *testing.T) {
+func TestNewStorePersistenceRequiresMetadataDSN(t *testing.T) {
 	t.Setenv(metadataDSNEnv, "")
 	t.Setenv(metadataTablePrefixEnv, "")
 	t.Setenv(legacyMetadataTableEnv, "")
 
-	store, err := NewStore(filepath.Join(t.TempDir(), "store.json"))
-	if err != nil {
-		t.Fatalf("NewStore() error = %v", err)
+	_, err := newStorePersistence()
+	if err == nil {
+		t.Fatal("expected missing metadata DSN error")
 	}
-
-	if store.StorageBackend() != "file" {
-		t.Fatalf("StorageBackend() = %q, want file", store.StorageBackend())
-	}
-	if !strings.HasSuffix(store.StorageLocation(), "store.json") {
-		t.Fatalf("StorageLocation() = %q, want file path", store.StorageLocation())
+	if !strings.Contains(err.Error(), metadataDSNEnv) {
+		t.Fatalf("expected error to mention %s, got %v", metadataDSNEnv, err)
 	}
 }
 
@@ -30,7 +25,7 @@ func TestNewStorePersistenceRejectsInvalidMySQLTablePrefix(t *testing.T) {
 	t.Setenv(metadataDSNEnv, "root:secret@tcp(127.0.0.1:3306)/canal_plus?parseTime=true")
 	t.Setenv(metadataTablePrefixEnv, "bad-table-name")
 
-	_, err := newStorePersistence("")
+	_, err := newStorePersistence()
 	if err == nil {
 		t.Fatal("expected invalid metadata table prefix error")
 	}

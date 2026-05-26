@@ -2,10 +2,8 @@ package app
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
 	"regexp"
 	"strings"
 	"sync"
@@ -17,7 +15,6 @@ import (
 )
 
 const (
-	defaultDataFilePath        = "./data/store.json"
 	metadataDSNEnv             = "CANAL_PLUS_METADATA_DSN"
 	metadataTablePrefixEnv     = "CANAL_PLUS_METADATA_TABLE_PREFIX"
 	legacyMetadataTableEnv     = "CANAL_PLUS_METADATA_TABLE"
@@ -31,58 +28,6 @@ type storePersistence interface {
 	Save(DatabaseShape) error
 	Backend() string
 	Location() string
-}
-
-type fileStorePersistence struct {
-	path string
-}
-
-func newFileStorePersistence(path string) *fileStorePersistence {
-	if strings.TrimSpace(path) == "" {
-		path = defaultDataFilePath
-	}
-	return &fileStorePersistence{path: path}
-}
-
-func (p *fileStorePersistence) Load() (DatabaseShape, bool, error) {
-	if _, err := os.Stat(p.path); err != nil {
-		if os.IsNotExist(err) {
-			return DatabaseShape{}, false, nil
-		}
-		return DatabaseShape{}, false, err
-	}
-	bytes, err := os.ReadFile(p.path)
-	if err != nil {
-		return DatabaseShape{}, false, err
-	}
-	var data DatabaseShape
-	if err := json.Unmarshal(bytes, &data); err != nil {
-		return DatabaseShape{}, false, err
-	}
-	return data, true, nil
-}
-
-func (p *fileStorePersistence) Save(data DatabaseShape) error {
-	if err := ensureParentDir(p.path); err != nil {
-		return err
-	}
-	bytes, err := json.MarshalIndent(data, "", "  ")
-	if err != nil {
-		return err
-	}
-	tempPath := filepath.Join(filepath.Dir(p.path), "."+filepath.Base(p.path)+".tmp")
-	if err := os.WriteFile(tempPath, append(bytes, '\n'), 0o644); err != nil {
-		return err
-	}
-	return os.Rename(tempPath, p.path)
-}
-
-func (p *fileStorePersistence) Backend() string {
-	return "file"
-}
-
-func (p *fileStorePersistence) Location() string {
-	return p.path
 }
 
 type mySQLStorePersistence struct {
@@ -351,9 +296,9 @@ func metadataTablePrefix() string {
 	return defaultMetadataTablePrefix
 }
 
-func newStorePersistence(path string) (storePersistence, error) {
+func newStorePersistence() (storePersistence, error) {
 	if dsn := strings.TrimSpace(os.Getenv(metadataDSNEnv)); dsn != "" {
 		return newMySQLStorePersistence(dsn, metadataTablePrefix())
 	}
-	return newFileStorePersistence(path), nil
+	return nil, fmt.Errorf("%s is required", metadataDSNEnv)
 }

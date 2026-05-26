@@ -104,8 +104,7 @@ cp backend/.env.example backend/.env
 - `PORT`: 后端端口，默认 `4100`
 - `FRONTEND_ORIGIN`: 允许跨域的前端地址，默认 `http://localhost:8999`
 - `CANAL_PLUS_SECRET`: 数据源密码加密密钥
-- `CANAL_PLUS_DATA_FILE`: 未启用 MySQL 元数据存储时，本地元数据与运行态文件路径，默认 `./data/store.json`
-- `CANAL_PLUS_METADATA_DSN`: 元数据 MySQL DSN。设置后，后端会把元数据和运行态持久化到 MySQL，而不是 `store.json`
+- `CANAL_PLUS_METADATA_DSN`: 必填。元数据 MySQL DSN，后端会把元数据和运行态持久化到 MySQL
 - `CANAL_PLUS_METADATA_TABLE_PREFIX`: ORM 表前缀，默认 `canal_plus`，会生成如 `canal_plus_users`、`canal_plus_sync_tasks` 的实体表
 - `CANAL_PLUS_NODE_ID`: 当前控制节点 ID。未设置时会自动选择一个在线节点作为当前节点
 - `CANAL_PLUS_CLUSTER_SUPERVISOR`: 集群巡检开关，默认开启
@@ -118,14 +117,12 @@ cp backend/.env.example backend/.env
 
 - `VITE_API_BASE_URL`: API 地址，默认 `http://localhost:4100/api`
 
-启用 MySQL 元数据存储示例：
+MySQL 元数据存储示例：
 
 ```env
 CANAL_PLUS_METADATA_DSN=root:password@tcp(127.0.0.1:3306)/canal_plus?parseTime=true
 CANAL_PLUS_METADATA_TABLE_PREFIX=canal_plus
 ```
-
-首次切换到 MySQL 时，如果目标 ORM 表还没有数据而本地 `store.json` 已存在，后端会自动把现有文件数据导入 MySQL。
 
 ## 关键接口
 

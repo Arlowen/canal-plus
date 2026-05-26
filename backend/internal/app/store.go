@@ -16,8 +16,8 @@ type Store struct {
 	data        DatabaseShape
 }
 
-func NewStore(path string) (*Store, error) {
-	persistence, err := newStorePersistence(path)
+func NewStore() (*Store, error) {
+	persistence, err := newStorePersistence()
 	if err != nil {
 		return nil, err
 	}
@@ -26,14 +26,6 @@ func NewStore(path string) (*Store, error) {
 	data, found, err := persistence.Load()
 	if err != nil {
 		return nil, err
-	}
-	if !found && persistence.Backend() == "mysql" {
-		if fileData, fileFound, fileErr := newFileStorePersistence(path).Load(); fileErr != nil {
-			return nil, fileErr
-		} else if fileFound {
-			data = fileData
-			found = true
-		}
 	}
 	if found {
 		store.data = data

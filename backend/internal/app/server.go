@@ -18,7 +18,6 @@ type Server struct {
 	taskStatus      *TaskStatusService
 	processes       *TaskProcessManager
 	port            string
-	dataFile        string
 	frontendOrigins []string
 	runtimeConfig   RuntimeConfig
 	allowedOrigins  map[string]struct{}
@@ -30,11 +29,7 @@ func NewServer() (*Server, error) {
 	if port == "" {
 		port = "4100"
 	}
-	dataFile := os.Getenv("CANAL_PLUS_DATA_FILE")
-	if dataFile == "" {
-		dataFile = defaultDataFilePath
-	}
-	store, err := NewStore(dataFile)
+	store, err := NewStore()
 	if err != nil {
 		return nil, err
 	}
@@ -75,10 +70,6 @@ func NewServer() (*Server, error) {
 
 	storageBackend := store.StorageBackend()
 	storageLocation := store.StorageLocation()
-	runtimeDataFile := ""
-	if storageBackend == "file" {
-		runtimeDataFile = storageLocation
-	}
 
 	server := &Server{
 		store:           store,
@@ -86,7 +77,6 @@ func NewServer() (*Server, error) {
 		taskStatus:      taskStatus,
 		processes:       processes,
 		port:            port,
-		dataFile:        dataFile,
 		frontendOrigins: frontendOrigins,
 		allowedOrigins:  allowedOrigins,
 		runtimeConfig: RuntimeConfig{
@@ -94,7 +84,6 @@ func NewServer() (*Server, error) {
 			FrontendOrigins:                      frontendOrigins,
 			StorageBackend:                       storageBackend,
 			StorageLocation:                      storageLocation,
-			DataFile:                             runtimeDataFile,
 			LocalNodeID:                          localNodeID,
 			ClusterSupervisorEnabled:             clusterSupervisorEnabled,
 			ClusterSupervisorIntervalSeconds:     int(clusterSupervisorInterval.Seconds()),

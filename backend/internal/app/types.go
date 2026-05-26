@@ -737,7 +737,6 @@ type RuntimeConfig struct {
 	FrontendOrigins                      []string `json:"frontendOrigins"`
 	StorageBackend                       string   `json:"storageBackend"`
 	StorageLocation                      string   `json:"storageLocation"`
-	DataFile                             string   `json:"dataFile,omitempty"`
 	LocalNodeID                          string   `json:"localNodeId"`
 	ClusterSupervisorEnabled             bool     `json:"clusterSupervisorEnabled"`
 	ClusterSupervisorIntervalSeconds     int      `json:"clusterSupervisorIntervalSeconds"`

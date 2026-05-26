@@ -431,7 +431,6 @@ export interface RuntimeConfig {
   frontendOrigins: string[];
   storageBackend: string;
   storageLocation: string;
-  dataFile?: string;
   localNodeId: string;
   clusterSupervisorEnabled: boolean;
   clusterSupervisorIntervalSeconds: number;

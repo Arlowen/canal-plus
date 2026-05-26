@@ -1,19 +1,50 @@
 package app
 
 import (
-	"path/filepath"
 	"testing"
 	"time"
 )
 
+type testStorePersistence struct {
+	data  DatabaseShape
+	found bool
+}
+
+func (p *testStorePersistence) Load() (DatabaseShape, bool, error) {
+	return cloneJSON(p.data), p.found, nil
+}
+
+func (p *testStorePersistence) Save(data DatabaseShape) error {
+	p.data = cloneJSON(data)
+	p.found = true
+	return nil
+}
+
+func (p *testStorePersistence) Backend() string {
+	return "test-rdb"
+}
+
+func (p *testStorePersistence) Location() string {
+	return "memory://unit-test"
+}
+
 func newTestStore(t *testing.T) *Store {
 	t.Helper()
-	t.Setenv(metadataDSNEnv, "")
-	t.Setenv(metadataTablePrefixEnv, "")
-	t.Setenv(legacyMetadataTableEnv, "")
-	store, err := NewStore(filepath.Join(t.TempDir(), "store.json"))
+	seed, err := createSeedData()
 	if err != nil {
-		t.Fatalf("NewStore() error = %v", err)
+		t.Fatalf("createSeedData() error = %v", err)
+	}
+	store := &Store{
+		persistence: &testStorePersistence{},
+		data:        seed,
+	}
+	store.ensureTaskRevisionsLocked()
+	store.ensureTaskCheckpointsLocked()
+	store.ensureStructureDDLsLocked()
+	store.ensureQualityDiffsLocked()
+	store.ensureSubscriptionChangesLocked()
+	if err := store.saveLocked(); err != nil {
+		t.Fatalf("save test store: %v", err)
 	}
 	return store
 }
