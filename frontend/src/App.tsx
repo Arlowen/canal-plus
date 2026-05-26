@@ -25,7 +25,6 @@ import {
   RocketLaunch,
   ShieldCheck,
   SignOut,
-  SquaresFour,
   Stop,
   Trash,
   WarningCircle,
@@ -124,12 +123,10 @@ type ClusterHandoffReport = {
   after: ClusterSnapshot;
 };
 
-const navItems: Array<{ id: MainPage; label: string; icon: typeof SquaresFour }> = [
+const navItems: Array<{ id: MainPage; label: string; icon: typeof FlowArrow }> = [
   { id: "tasks", label: "任务", icon: FlowArrow },
   { id: "datasources", label: "数据源", icon: Database },
-  { id: "nodes", label: "节点", icon: HardDrives },
-  { id: "settings", label: "告警/设置", icon: GearSix },
-  { id: "dashboard", label: "概览", icon: SquaresFour }
+  { id: "nodes", label: "节点", icon: HardDrives }
 ];
 
 const taskBlueprints: Array<{
@@ -698,13 +695,7 @@ function App() {
             <div className="border-b border-line pb-4">
               <div className="brand-wordmark" aria-label="Canal Plus">
                 <span>Canal</span>
-                <span className="text-blue-600">Plus</span>
-              </div>
-              <div className="mt-3 flex items-center justify-between gap-3">
-                <div className="text-sm font-semibold tracking-tight text-coal">同步控制台</div>
-                <div className="bg-blue-50/70 px-3 py-2 text-xs font-medium text-blue-700">
-                  {user?.role === "admin" ? "Admin" : "Operator"}
-                </div>
+                <span>Plus</span>
               </div>
             </div>
 
@@ -890,7 +881,6 @@ function App() {
             ) : (
               <SettingsPage
                 tasks={tasks}
-                logs={logs}
                 alertRules={alertRules}
                 alertEvents={alertEvents}
                 evaluations={alertEvaluations}
@@ -2679,7 +2669,6 @@ function NodeDetailPage({
 
 function SettingsPage({
   tasks,
-  logs,
   alertRules,
   alertEvents,
   evaluations,
@@ -2688,7 +2677,6 @@ function SettingsPage({
   pushNotice
 }: {
   tasks: SyncTask[];
-  logs: OperationLog[];
   alertRules: AlertRule[];
   alertEvents: AlertEvent[];
   evaluations: AlertRuleEvaluation[];
@@ -2707,6 +2695,7 @@ function SettingsPage({
     webhookUrl: ""
   });
   const [confirmation, setConfirmation] = useState<ConfirmationDialogState | null>(null);
+  const [activeTab, setActiveTab] = useState<"alerts">("alerts");
 
   useEffect(() => {
     if (!editing) {
@@ -2781,141 +2770,138 @@ function SettingsPage({
   };
 
   return (
-    <div className="grid gap-5 xl:grid-cols-[0.98fr_1.02fr]">
-      <div className="space-y-5">
-        <section className="surface p-6">
-          <SectionHeader title="最近操作" />
-          <div className="mt-5 grid gap-3">
-            {logs.slice(0, 3).map((log) => (
-              <div key={log.id} className="border-l border-line bg-slate-50/60 px-4 py-3">
-                <div className="flex flex-wrap items-center gap-2">
-                  <Badge tone="neutral">{log.targetType}</Badge>
-                  <span className="text-sm font-medium text-coal">{log.action}</span>
-                </div>
-                <div className="mt-2 text-xs text-slate-500">{log.actor} · {formatDate(log.createdAt)}</div>
-              </div>
-            ))}
-            {logs.length === 0 && <div className="border-y border-dashed border-line bg-slate-50/60 px-4 py-6 text-sm text-slate-500">暂无操作</div>}
-          </div>
-        </section>
+    <section className="surface p-6">
+      <div className="flex flex-wrap items-center gap-2 border-b border-line pb-4">
+        <Button
+          type="button"
+          onClick={() => setActiveTab("alerts")}
+          className={cx(
+            "rounded-lg px-4 py-2 text-sm font-medium transition",
+            activeTab === "alerts" ? "bg-blue-600 text-white" : "text-slate-600 hover:bg-slate-50"
+          )}
+        >
+          告警
+        </Button>
       </div>
 
-      <section className="surface p-6">
-        <SectionHeader
-          title="告警规则"
-          action={canManage ? (
-            <Button onClick={() => setEditingId(null)} className="btn-secondary">
-              <Plus size={16} />
-              新增规则
-            </Button>
-          ) : undefined}
-        />
-
-        <div className="mt-5 grid gap-5 xl:grid-cols-[0.95fr_1.05fr]">
-          <div className="grid gap-3">
-            {alertRules.length === 0 ? (
-              <div className="border-y border-dashed border-line bg-slate-50/60 px-4 py-6 text-sm text-slate-500">暂无告警规则</div>
-            ) : alertRules.map((rule) => {
-              const evaluation = evaluations.find((item) => item.ruleId === rule.id);
-              return (
-                <Button
-                  key={rule.id}
-                  onClick={() => setEditingId(rule.id)}
-                  className={cx(
-                    "border-l-4 px-4 py-4 text-left transition",
-                    editingId === rule.id ? "border-blue-200 bg-blue-50" : "border-line bg-white hover:bg-slate-50"
-                  )}
-                >
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-medium text-coal">{rule.name}</span>
-                    <Badge tone={evaluation?.triggered ? "red" : "green"}>{evaluation?.triggered ? "触发中" : "正常"}</Badge>
-                  </div>
-                  <div className="mt-2 text-sm text-slate-500">{rule.taskId ? tasks.find((task) => task.id === rule.taskId)?.name || rule.taskId : "全部任务"}</div>
-                  <div className="mt-2 text-xs text-slate-500">延迟 {rule.delayThresholdSeconds}s · 错误 {rule.errorThreshold}</div>
-                </Button>
-              );
-            })}
+      {activeTab === "alerts" && (
+        <div className="pt-5">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <SectionHeader title="告警规则" />
+            {canManage && (
+              <Button onClick={() => setEditingId(null)} className="btn-secondary">
+                <Plus size={16} />
+                新增规则
+              </Button>
+            )}
           </div>
 
-          <div>
-            {!canManage && (
-              <PermissionNotice compact description="此角色只能查看规则与事件。" />
-            )}
-            <form onSubmit={saveRule} className="mt-4 grid gap-4 xl:mt-0">
-              <Field label="规则">
-                <TextInput className="input" value={form.name} disabled={!canManage} onChange={(event) => setForm({ ...form, name: event.target.value })} />
-              </Field>
-              <Field label="范围">
-                <SelectInput className="select" value={form.taskId || ""} disabled={!canManage} onChange={(event) => setForm({ ...form, taskId: event.target.value })}>
-                  <option value="">全部任务</option>
-                  {tasks.map((task) => <option key={task.id} value={task.id}>{task.name}</option>)}
-                </SelectInput>
-              </Field>
-              <div className="grid gap-4 sm:grid-cols-2">
-                <Field label="延迟秒">
-                  <TextInput className="input" type="number" min={1} value={form.delayThresholdSeconds} disabled={!canManage} onChange={(event) => setForm({ ...form, delayThresholdSeconds: Number(event.target.value) })} />
-                </Field>
-                <Field label="错误数">
-                  <TextInput className="input" type="number" min={0} value={form.errorThreshold} disabled={!canManage} onChange={(event) => setForm({ ...form, errorThreshold: Number(event.target.value) })} />
-                </Field>
-              </div>
-              <Field label="Webhook">
-                <TextInput className="input" value={form.webhookUrl || ""} disabled={!canManage} onChange={(event) => setForm({ ...form, webhookUrl: event.target.value })} placeholder="https://example.com/webhook" />
-              </Field>
-              <label className="inline-flex items-center gap-2 text-sm text-slate-600">
-                <CheckboxInput checked={Boolean(form.enabled)} disabled={!canManage} onChange={(event) => setForm({ ...form, enabled: event.target.checked })} />
-                启用规则
-              </label>
-              <div className="flex flex-wrap justify-end gap-3 pt-2">
-                {editing && (
-                  <Button type="button" onClick={requestRemoveRule} disabled={!canManage} className="btn-danger">
-                    <Trash size={16} />
-                    删除
-                  </Button>
-                )}
-                <Button disabled={!canManage} className="btn-primary">
-                  <CheckCircle size={16} />
-                  保存
-                </Button>
-              </div>
-            </form>
-
-            <div className="mt-6 border-l border-line bg-slate-50/60 px-4 py-3">
-              <div className="text-sm font-medium text-coal">最近告警事件</div>
-              <div className="mt-3 grid gap-3">
-                {alertEvents.slice(0, 3).map((event) => (
-                  <div key={event.id} className="border-t border-line px-0 py-3">
+          <div className="mt-5 grid gap-5 xl:grid-cols-[0.95fr_1.05fr]">
+            <div className="grid gap-3">
+              {alertRules.length === 0 ? (
+                <div className="border-y border-dashed border-line bg-slate-50/60 px-4 py-6 text-sm text-slate-500">暂无告警规则</div>
+              ) : alertRules.map((rule) => {
+                const evaluation = evaluations.find((item) => item.ruleId === rule.id);
+                return (
+                  <Button
+                    key={rule.id}
+                    onClick={() => setEditingId(rule.id)}
+                    className={cx(
+                      "border-l-4 px-4 py-4 text-left transition",
+                      editingId === rule.id ? "border-blue-200 bg-blue-50" : "border-line bg-white hover:bg-slate-50"
+                    )}
+                  >
                     <div className="flex flex-wrap items-center gap-2">
-                      <Badge tone={event.status === "triggered" ? "red" : "green"}>
-                        {event.status === "triggered" ? "触发" : "恢复"}
-                      </Badge>
-                      <span className="font-medium text-coal">{event.ruleName}</span>
+                      <span className="font-medium text-coal">{rule.name}</span>
+                      <Badge tone={evaluation?.triggered ? "red" : "green"}>{evaluation?.triggered ? "触发中" : "正常"}</Badge>
                     </div>
-                    <div className="mt-2 text-sm text-slate-500">{event.message}</div>
-                    <div className="mt-2 text-xs text-slate-500">{formatDate(event.createdAt)}</div>
-                  </div>
-                ))}
-                {alertEvents.length === 0 && <div className="border-y border-dashed border-line bg-slate-50/60 px-4 py-6 text-sm text-slate-500">暂无告警</div>}
+                    <div className="mt-2 text-sm text-slate-500">{rule.taskId ? tasks.find((task) => task.id === rule.taskId)?.name || rule.taskId : "全部任务"}</div>
+                    <div className="mt-2 text-xs text-slate-500">延迟 {rule.delayThresholdSeconds}s · 错误 {rule.errorThreshold}</div>
+                  </Button>
+                );
+              })}
+            </div>
+
+            <div>
+              {!canManage && (
+                <PermissionNotice compact description="此角色只能查看规则与事件。" />
+              )}
+              <form onSubmit={saveRule} className="mt-4 grid gap-4 xl:mt-0">
+                <Field label="规则">
+                  <TextInput className="input" value={form.name} disabled={!canManage} onChange={(event) => setForm({ ...form, name: event.target.value })} />
+                </Field>
+                <Field label="范围">
+                  <SelectInput className="select" value={form.taskId || ""} disabled={!canManage} onChange={(event) => setForm({ ...form, taskId: event.target.value })}>
+                    <option value="">全部任务</option>
+                    {tasks.map((task) => <option key={task.id} value={task.id}>{task.name}</option>)}
+                  </SelectInput>
+                </Field>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <Field label="延迟秒">
+                    <TextInput className="input" type="number" min={1} value={form.delayThresholdSeconds} disabled={!canManage} onChange={(event) => setForm({ ...form, delayThresholdSeconds: Number(event.target.value) })} />
+                  </Field>
+                  <Field label="错误数">
+                    <TextInput className="input" type="number" min={0} value={form.errorThreshold} disabled={!canManage} onChange={(event) => setForm({ ...form, errorThreshold: Number(event.target.value) })} />
+                  </Field>
+                </div>
+                <Field label="Webhook">
+                  <TextInput className="input" value={form.webhookUrl || ""} disabled={!canManage} onChange={(event) => setForm({ ...form, webhookUrl: event.target.value })} placeholder="https://example.com/webhook" />
+                </Field>
+                <label className="inline-flex items-center gap-2 text-sm text-slate-600">
+                  <CheckboxInput checked={Boolean(form.enabled)} disabled={!canManage} onChange={(event) => setForm({ ...form, enabled: event.target.checked })} />
+                  启用规则
+                </label>
+                <div className="flex flex-wrap justify-end gap-3 pt-2">
+                  {editing && (
+                    <Button type="button" onClick={requestRemoveRule} disabled={!canManage} className="btn-danger">
+                      <Trash size={16} />
+                      删除
+                    </Button>
+                  )}
+                  <Button disabled={!canManage} className="btn-primary">
+                    <CheckCircle size={16} />
+                    保存
+                  </Button>
+                </div>
+              </form>
+
+              <div className="mt-6 border-l border-line bg-slate-50/60 px-4 py-3">
+                <div className="text-sm font-medium text-coal">最近告警事件</div>
+                <div className="mt-3 grid gap-3">
+                  {alertEvents.slice(0, 3).map((event) => (
+                    <div key={event.id} className="border-t border-line px-0 py-3">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Badge tone={event.status === "triggered" ? "red" : "green"}>
+                          {event.status === "triggered" ? "触发" : "恢复"}
+                        </Badge>
+                        <span className="font-medium text-coal">{event.ruleName}</span>
+                      </div>
+                      <div className="mt-2 text-sm text-slate-500">{event.message}</div>
+                      <div className="mt-2 text-xs text-slate-500">{formatDate(event.createdAt)}</div>
+                    </div>
+                  ))}
+                  {alertEvents.length === 0 && <div className="border-y border-dashed border-line bg-slate-50/60 px-4 py-6 text-sm text-slate-500">暂无告警</div>}
+                </div>
               </div>
             </div>
           </div>
         </div>
+      )}
 
-        <ConfirmDialog
-          open={Boolean(confirmation)}
-          title={confirmation?.title || ""}
-          description={confirmation?.description || ""}
-          confirmLabel={confirmation?.confirmLabel || "确认"}
-          confirmTone={confirmation?.confirmTone}
-          onCancel={() => setConfirmation(null)}
-          onConfirm={() => {
-            const action = confirmation?.onConfirm;
-            setConfirmation(null);
-            action?.();
-          }}
-        />
-      </section>
-    </div>
+      <ConfirmDialog
+        open={Boolean(confirmation)}
+        title={confirmation?.title || ""}
+        description={confirmation?.description || ""}
+        confirmLabel={confirmation?.confirmLabel || "确认"}
+        confirmTone={confirmation?.confirmTone}
+        onCancel={() => setConfirmation(null)}
+        onConfirm={() => {
+          const action = confirmation?.onConfirm;
+          setConfirmation(null);
+          action?.();
+        }}
+      />
+    </section>
   );
 }
 
@@ -5394,7 +5380,7 @@ function pageTitle(page: Page) {
   if (page === "taskDetail") return "任务详情";
   if (page === "capabilityJobDetail") return "扩展任务详情";
   if (page === "nodeDetail") return "节点详情";
-  return "告警/设置";
+  return "设置";
 }
 
 function pageDescription(page: Page) {
@@ -5402,7 +5388,7 @@ function pageDescription(page: Page) {
   if (page === "datasources") return "连接与状态";
   if (page === "tasks") return "同步任务";
   if (page === "nodes") return "运维区";
-  if (page === "settings") return "告警与操作";
+  if (page === "settings") return "告警";
   return "";
 }
 
