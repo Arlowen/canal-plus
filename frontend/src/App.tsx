@@ -4595,16 +4595,9 @@ function TaskLiveLogPanel({
           ) : taskLogs.length === 0 ? (
             <div className="text-sm leading-6 text-slate-300">暂无日志。</div>
           ) : (
-            <div className="grid gap-3">
+            <div className="font-mono text-[13px] leading-6">
               {taskLogs.map((entry) => (
-                <div key={entry.id} className="border-t border-slate-800 bg-slate-950/80 px-0 py-3">
-                  <div className="flex flex-wrap items-center gap-2 text-xs">
-                    <Badge tone={taskLogTone(entry.level)}>{entry.level}</Badge>
-                    {entry.phase && <span className="mono text-slate-400">{entry.phase}</span>}
-                    <span className="mono text-slate-500">{formatDateTime(entry.createdAt)}</span>
-                  </div>
-                  <div className="mt-2 break-words text-sm leading-6 text-slate-100">{entry.message}</div>
-                </div>
+                <div key={entry.id} className={cx("whitespace-pre-wrap break-words", taskLogLineClass(entry.level))}>{entry.message}</div>
               ))}
               <div ref={logEndRef} />
             </div>
@@ -5567,10 +5560,10 @@ function checkpointReasonTone(reason: string) {
   return "neutral";
 }
 
-function taskLogTone(level: string) {
-  if (level === "error") return "red";
-  if (level === "warn") return "yellow";
-  return "blue";
+function taskLogLineClass(level: string) {
+  if (level === "error") return "text-red-300";
+  if (level === "warn") return "text-amber-300";
+  return "text-emerald-300";
 }
 
 function taskPrimaryAction(task: SyncTask): "start" | "pause" | "resume" | "stop" | null {
