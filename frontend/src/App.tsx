@@ -699,13 +699,13 @@ function App() {
     <div className="min-h-[100dvh] bg-mist text-ink">
       <div className="page-shell">
         <div className="grid gap-5 lg:grid-cols-[240px_minmax(0,1fr)]">
-          <aside className="surface flex h-fit flex-col p-3 lg:sticky lg:top-5 lg:min-h-[calc(100dvh-3rem)]">
+          <aside className="flex h-fit flex-col border-r border-line bg-white/35 p-3 lg:sticky lg:top-5 lg:min-h-[calc(100dvh-3rem)]">
             <div className="flex items-center justify-between gap-3 border-b border-line pb-4">
               <div>
                 <div className="text-xs font-medium uppercase tracking-[0.22em] text-slate-500">Canal Plus</div>
                 <div className="mt-2 text-lg font-semibold tracking-tight text-coal">同步控制台</div>
               </div>
-              <div className="rounded-xl border border-blue-100 bg-blue-50 px-3 py-2 text-xs font-medium text-blue-700">
+              <div className="border-l border-blue-200 bg-blue-50/70 px-3 py-2 text-xs font-medium text-blue-700">
                 {user?.role === "admin" ? "Admin" : "Operator"}
               </div>
             </div>
@@ -718,9 +718,9 @@ function App() {
                     key={item.id}
                     onClick={() => setPage(item.id)}
                     className={cx(
-                      "flex items-center gap-3 rounded-2xl px-3 py-3 text-left text-sm font-medium transition",
+                      "flex items-center gap-3 rounded-lg px-3 py-3 text-left text-sm font-medium transition",
                       navPage(page) === item.id
-                        ? "bg-blue-600 text-white shadow-panel"
+                        ? "bg-blue-600 text-white"
                         : "text-slate-600 hover:bg-slate-50 hover:text-coal"
                     )}
                   >
@@ -1505,7 +1505,7 @@ function DatasourceDetailPage({
           <DetailCard label="默认库" value={selected.defaultSchema || "未设置"} mono />
           <DetailCard label="关联任务" value={`${usageCount} 条`} />
         </div>
-        <div className="mt-4 rounded-2xl border border-line bg-slate-50/70 px-4 py-4 text-sm text-slate-500">
+        <div className="mt-4 border-l border-line bg-slate-50/60 px-4 py-4 text-sm text-slate-500">
           {selected.lastTestMessage
             ? `最近测试：${formatDateTime(selected.lastTestedAt)} · ${selected.lastTestMessage}`
             : "暂无测试记录。"}
@@ -2373,10 +2373,10 @@ function NodesPage({
               <DetailCard label="影响任务" value={`${handoffReport.affectedTasks.length} 条`} />
             </div>
 
-            <div className="rounded-xl border border-line bg-slate-50/70 p-4">
+            <div className="border-l border-line bg-slate-50/60 px-4 py-3">
               <div className="text-sm font-medium text-coal">{handoffTrackTitle(handoffReport.kind)}</div>
               <div className="mt-3 grid gap-3 sm:grid-cols-[1fr_auto_1fr] sm:items-center">
-                <div className="rounded-xl border border-line bg-white px-4 py-4">
+                <div className="border-t border-line px-0 py-4">
                   <div className="text-xs uppercase tracking-[0.18em] text-slate-500">
                     {handoffReport.kind === "drill"
                       ? "故障节点"
@@ -2395,7 +2395,7 @@ function NodesPage({
                 <div className="hidden justify-center sm:flex">
                   <ArrowRight size={18} className="text-slate-400" />
                 </div>
-                <div className="rounded-xl border border-line bg-white px-4 py-4">
+                <div className="border-t border-line px-0 py-4">
                   <div className="text-xs uppercase tracking-[0.18em] text-slate-500">结果</div>
                   <div className="mt-2 text-sm font-medium text-coal">
                     {handoffReport.affectedTasks.length === 0 ? "无任务迁移" : Array.from(new Set(handoffReport.affectedTasks.map((item) => nodeName(item.newNodeId)))).join(" / ")}
@@ -2406,7 +2406,7 @@ function NodesPage({
 
             <div className="grid gap-3">
               {handoffReport.affectedTasks.length === 0 ? (
-                <div className="rounded-xl border border-dashed border-line bg-slate-50/70 px-4 py-6 text-center text-sm text-slate-500">
+                <div className="border-y border-dashed border-line bg-slate-50/60 px-4 py-6 text-center text-sm text-slate-500">
                   {handoffReport.kind === "rebalance"
                     ? "任务分布无需调整。"
                     : handoffReport.kind === "online"
@@ -2414,7 +2414,7 @@ function NodesPage({
                       : "该节点暂无运行任务。"}
                 </div>
               ) : handoffReport.affectedTasks.map((item) => (
-                <div key={item.taskId} className="rounded-xl border border-line bg-white p-4">
+                <div key={item.taskId} className="border-t border-line py-4">
                   <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
@@ -2422,12 +2422,12 @@ function NodesPage({
                         <Badge tone={item.newNodeId ? "green" : "red"}>{item.newNodeId ? "已接管" : "待处理"}</Badge>
                       </div>
                       <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-500">
-                        <span className="rounded-full border border-line bg-slate-50 px-2 py-1">{nodeName(item.previousNodeId)}</span>
+                        <span className="rounded-md bg-slate-50 px-2 py-1">{nodeName(item.previousNodeId)}</span>
                         <ArrowRight size={14} className="text-slate-400" />
-                        <span className="rounded-full border border-line bg-slate-50 px-2 py-1">{nodeName(item.newNodeId)}</span>
+                        <span className="rounded-md bg-slate-50 px-2 py-1">{nodeName(item.newNodeId)}</span>
                       </div>
                     </div>
-                    <div className="rounded-xl border border-line bg-slate-50/70 px-4 py-3">
+                    <div className="border-l border-line bg-slate-50/60 px-4 py-3">
                       <div className="text-xs uppercase tracking-[0.18em] text-slate-500">恢复位点</div>
                       <div className="mt-2 mono text-coal">{item.recoveryBinlogFile}:{formatNumber(item.recoveryBinlogPosition)}</div>
                     </div>
@@ -2462,13 +2462,13 @@ function NodesPage({
             )}
 
             {operationResult.affectedTasks && operationResult.affectedTasks.length > 0 && (
-              <div className="rounded-xl border border-line bg-slate-50/70 p-4">
+              <div className="border-l border-line bg-slate-50/60 px-4 py-3">
                 <div className="text-sm font-medium text-coal">
                   {operationResult.action === "upgrade" ? "升级前任务迁移" : "卸载前任务迁移"}
                 </div>
                 <div className="mt-3 grid gap-3">
                   {operationResult.affectedTasks.map((task) => (
-                    <div key={task.taskId} className="rounded-xl border border-line bg-white p-4">
+                    <div key={task.taskId} className="border-t border-line py-4">
                       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                         <div className="min-w-0">
                           <div className="flex flex-wrap items-center gap-2">
@@ -2476,12 +2476,12 @@ function NodesPage({
                             <Badge tone={task.newNodeId ? "green" : "red"}>{task.newNodeId ? "已接管" : "待处理"}</Badge>
                           </div>
                           <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-500">
-                            <span className="rounded-full border border-line bg-slate-50 px-2 py-1">{nodeName(task.previousNodeId)}</span>
+                            <span className="rounded-md bg-slate-50 px-2 py-1">{nodeName(task.previousNodeId)}</span>
                             <ArrowRight size={14} className="text-slate-400" />
-                            <span className="rounded-full border border-line bg-slate-50 px-2 py-1">{nodeName(task.newNodeId)}</span>
+                            <span className="rounded-md bg-slate-50 px-2 py-1">{nodeName(task.newNodeId)}</span>
                           </div>
                         </div>
-                        <div className="rounded-xl border border-line bg-slate-50/70 px-4 py-3">
+                        <div className="border-l border-line bg-slate-50/60 px-4 py-3">
                           <div className="text-xs uppercase tracking-[0.18em] text-slate-500">恢复位点</div>
                           <div className="mt-2 mono text-coal">{task.recoveryBinlogFile}:{formatNumber(task.recoveryBinlogPosition)}</div>
                         </div>
@@ -2500,7 +2500,7 @@ function NodesPage({
 
             <div className="grid gap-3">
               {operationResult.steps.map((step) => (
-                <div key={step.key} className="rounded-xl border border-line bg-slate-50/70 p-4">
+                <div key={step.key} className="border-l border-line bg-slate-50/60 px-4 py-3">
                   <div className="flex items-center justify-between gap-3">
                     <div className="font-medium text-coal">{step.label}</div>
                     <Badge tone={step.status === "done" ? "green" : "red"}>{step.status === "done" ? "完成" : "失败"}</Badge>
@@ -2597,7 +2597,7 @@ function NodeDetailPage({
             <DetailCard label="运行任务" value={`${selected.runningTasks}/${selected.capacity}`} />
           </div>
           {localNodeId === selected.id && (
-            <div className="rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-700">
+            <div className="border-l-4 border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-700">
               本机节点不支持自卸载、自下线或故障演练。
             </div>
           )}
@@ -2612,7 +2612,7 @@ function NodeDetailPage({
           )}
           <div className="mt-3 grid gap-3">
             {visibleNodeTasks.map((task) => (
-              <div key={task.id} className="rounded-2xl border border-line bg-white px-4 py-4">
+              <div key={task.id} className="border-t border-line px-0 py-4">
                 <div className="flex items-center justify-between gap-3">
                   <div className="font-medium text-coal">{task.name}</div>
                   <div className="flex flex-wrap items-center gap-2">
@@ -2641,7 +2641,7 @@ function NodeDetailPage({
           <SectionHeader title="待接管任务" />
           <div className="mt-3 grid gap-3">
             {awaitingTasks.slice(0, 6).map((task) => (
-              <div key={task.id} className="rounded-2xl border border-line bg-white px-4 py-4">
+              <div key={task.id} className="border-t border-line px-0 py-4">
                 <div className="flex items-center justify-between gap-3">
                   <div className="font-medium text-coal">{task.name}</div>
                   <Badge tone="yellow">待接管</Badge>
@@ -2665,7 +2665,7 @@ function NodeDetailPage({
           <SectionHeader title="最近运维事件" />
           <div className="mt-3 grid gap-3">
             {nodeEvents.map((log) => (
-              <div key={log.id} className="rounded-2xl border border-line bg-white px-4 py-4">
+              <div key={log.id} className="border-t border-line px-0 py-4">
                 <div className="flex flex-wrap items-center gap-2">
                   <Badge tone={log.targetType === "cluster_node" ? "blue" : "yellow"}>{log.action}</Badge>
                   <span className="text-xs text-slate-500">{formatDateTime(log.createdAt)}</span>
@@ -2806,7 +2806,7 @@ function SettingsPage({
           <SectionHeader title="最近操作" />
           <div className="mt-5 grid gap-3">
             {logs.slice(0, 3).map((log) => (
-              <div key={log.id} className="rounded-xl border border-line bg-slate-50/70 p-4">
+              <div key={log.id} className="border-l border-line bg-slate-50/60 px-4 py-3">
                 <div className="flex flex-wrap items-center gap-2">
                   <Badge tone="neutral">{log.targetType}</Badge>
                   <span className="text-sm font-medium text-coal">{log.action}</span>
@@ -2814,7 +2814,7 @@ function SettingsPage({
                 <div className="mt-2 text-xs text-slate-500">{log.actor} · {formatDate(log.createdAt)}</div>
               </div>
             ))}
-            {logs.length === 0 && <div className="rounded-xl border border-dashed border-line bg-slate-50/70 px-4 py-6 text-sm text-slate-500">暂无操作</div>}
+            {logs.length === 0 && <div className="border-y border-dashed border-line bg-slate-50/60 px-4 py-6 text-sm text-slate-500">暂无操作</div>}
           </div>
         </section>
       </div>
@@ -2833,7 +2833,7 @@ function SettingsPage({
         <div className="mt-5 grid gap-5 xl:grid-cols-[0.95fr_1.05fr]">
           <div className="grid gap-3">
             {alertRules.length === 0 ? (
-              <div className="rounded-xl border border-dashed border-line bg-slate-50/70 px-4 py-6 text-sm text-slate-500">暂无告警规则</div>
+              <div className="border-y border-dashed border-line bg-slate-50/60 px-4 py-6 text-sm text-slate-500">暂无告警规则</div>
             ) : alertRules.map((rule) => {
               const evaluation = evaluations.find((item) => item.ruleId === rule.id);
               return (
@@ -2841,7 +2841,7 @@ function SettingsPage({
                   key={rule.id}
                   onClick={() => setEditingId(rule.id)}
                   className={cx(
-                    "rounded-xl border px-4 py-4 text-left transition",
+                    "border-l-4 px-4 py-4 text-left transition",
                     editingId === rule.id ? "border-blue-200 bg-blue-50" : "border-line bg-white hover:bg-slate-50"
                   )}
                 >
@@ -2899,11 +2899,11 @@ function SettingsPage({
               </div>
             </form>
 
-            <div className="mt-6 rounded-xl border border-line bg-slate-50/70 p-4">
+            <div className="mt-6 border-l border-line bg-slate-50/60 px-4 py-3">
               <div className="text-sm font-medium text-coal">最近告警事件</div>
               <div className="mt-3 grid gap-3">
                 {alertEvents.slice(0, 3).map((event) => (
-                  <div key={event.id} className="rounded-xl border border-line bg-white px-4 py-3">
+                  <div key={event.id} className="border-t border-line px-0 py-3">
                     <div className="flex flex-wrap items-center gap-2">
                       <Badge tone={event.status === "triggered" ? "red" : "green"}>
                         {event.status === "triggered" ? "触发" : "恢复"}
@@ -2914,7 +2914,7 @@ function SettingsPage({
                     <div className="mt-2 text-xs text-slate-500">{formatDate(event.createdAt)}</div>
                   </div>
                 ))}
-                {alertEvents.length === 0 && <div className="rounded-xl border border-dashed border-line bg-white px-4 py-6 text-sm text-slate-500">暂无告警</div>}
+                {alertEvents.length === 0 && <div className="border-y border-dashed border-line bg-slate-50/60 px-4 py-6 text-sm text-slate-500">暂无告警</div>}
               </div>
             </div>
           </div>
@@ -2996,7 +2996,7 @@ function LoginScreen({ onLogin }: { onLogin: (username: string, password: string
               </label>
 
               {error && (
-                <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                <div className="border-l-4 border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
                   {error}
                 </div>
               )}
@@ -3469,7 +3469,7 @@ function TaskCreatorModal({
       <div className="grid gap-4">
         <div className="grid gap-2 sm:grid-cols-3">
           {["类型", "配置", "确认"].map((label, index) => (
-            <div key={label} className={cx("rounded-xl border px-4 py-3 text-sm", step === index ? "border-blue-200 bg-blue-50 text-blue-700" : "border-line bg-slate-50/70 text-slate-500")}>
+            <div key={label} className={cx("border-l-4 px-4 py-3 text-sm", step === index ? "border-blue-200 bg-blue-50 text-blue-700" : "border-line bg-slate-50/70 text-slate-500")}>
               {index + 1}. {label}
             </div>
           ))}
@@ -3482,7 +3482,7 @@ function TaskCreatorModal({
                 key={item.type}
                 onClick={() => setSelectedType(item.type)}
                 className={cx(
-                  "rounded-xl border p-5 text-left transition",
+                  "border-l-4 p-5 text-left transition",
                   selectedType === item.type ? "border-blue-200 bg-blue-50" : "border-line bg-white hover:bg-slate-50"
                 )}
               >
@@ -3569,7 +3569,7 @@ function TaskCreatorModal({
                 </Field>
               </div>
             </div>
-            <div className="rounded-xl border border-line bg-slate-50/70 p-4">
+            <div className="border-l border-line bg-slate-50/60 px-4 py-3">
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <div className="font-medium text-coal">字段映射</div>
@@ -3582,7 +3582,7 @@ function TaskCreatorModal({
                 </div>
               </div>
               {showFieldMappings && (
-                <div className="mt-4 overflow-auto rounded-xl border border-line bg-white">
+                <div className="mt-4 overflow-auto border-y border-line bg-white/60">
                   <table className="w-full min-w-[640px] text-left text-sm">
                     <thead className="bg-slate-50 text-xs uppercase tracking-[0.16em] text-slate-500">
                       <tr>
@@ -3658,7 +3658,7 @@ function TaskCreatorModal({
 
         {step === 2 && (
           <div className="grid gap-4">
-            <div className="rounded-xl border border-line bg-slate-50/70 p-5">
+            <div className="border-l border-line bg-slate-50/60 p-5">
               <div className="flex flex-wrap items-center gap-2">
                 <TypeBadge type={taskBlueprints.find((item) => item.type === selectedType)?.name || selectedType} />
                 <span className="font-medium text-coal">{taskBlueprints.find((item) => item.type === selectedType)?.description}</span>
@@ -3681,13 +3681,13 @@ function TaskCreatorModal({
             </div>
 
             {isSyncType && preflight && (
-              <div className={cx("rounded-xl border p-5", preflight.ok ? "border-emerald-200 bg-emerald-50" : "border-red-200 bg-red-50")}>
-              <div className="flex flex-wrap items-center gap-3">
+              <div className={cx("border-l-4 p-5", preflight.ok ? "border-emerald-200 bg-emerald-50" : "border-red-200 bg-red-50")}>
+                <div className="flex flex-wrap items-center gap-3">
                   <Badge tone={preflight.ok ? "green" : "red"}>{preflight.ok ? "检查通过" : "检查未通过"}</Badge>
                 </div>
                 <div className="mt-4 grid gap-2">
                   {preflight.checks.slice(0, 4).map((check) => (
-                    <div key={check.id} className="rounded-2xl border border-white/70 bg-white px-4 py-3">
+                    <div key={check.id} className="border-t border-white/70 bg-white/70 px-0 py-3">
                       <div className="flex flex-wrap items-center gap-2">
                         <Badge tone={check.status === "failed" ? "red" : check.status === "warning" ? "yellow" : "green"}>
                           {check.status === "failed" ? "失败" : check.status === "warning" ? "注意" : "通过"}
@@ -3901,7 +3901,7 @@ function NodeCreatorModal({
         </div>
 
         {testResult && (
-          <div className={cx("rounded-2xl border px-4 py-3 text-sm", testResult.success ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-amber-200 bg-amber-50 text-amber-700")}>
+          <div className={cx("border-l-4 px-4 py-3 text-sm", testResult.success ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-amber-200 bg-amber-50 text-amber-700")}>
             {testResult.message} · 延迟 {testResult.latencyMs}ms
           </div>
         )}
@@ -3911,7 +3911,7 @@ function NodeCreatorModal({
         {deployResult && (
           <div className="grid gap-3">
             {deployResult.steps.map((step) => (
-              <div key={step.key} className="rounded-2xl border border-line bg-slate-50/70 px-4 py-3">
+              <div key={step.key} className="border-l border-line bg-slate-50/60 px-4 py-3">
                 <div className="flex items-center justify-between gap-3">
                   <div className="font-medium text-coal">{step.label}</div>
                   <Badge tone={step.status === "done" ? "green" : "red"}>{step.status === "done" ? "完成" : "失败"}</Badge>
@@ -4230,7 +4230,7 @@ function SyncTaskDetail({
         {taskAwaitingNode(task) && <Badge tone="yellow">待接管</Badge>}
         {remoteManaged && <Badge tone="yellow">远程节点</Badge>}
       </div>
-      <section className="rounded-2xl border border-line bg-white p-5 shadow-panel">
+      <section className="border-t border-line bg-white/35 p-5">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div className="min-w-0">
             <div className="text-2xl font-semibold tracking-tight text-coal">{task.name}</div>
@@ -4249,7 +4249,7 @@ function SyncTaskDetail({
 
       <div className="grid gap-5 2xl:grid-cols-[minmax(0,1fr)_360px]">
         <div className="order-2 space-y-5 2xl:order-1">
-          <section className="rounded-2xl border border-line bg-white p-5 shadow-panel">
+          <section className="border-t border-line bg-white/35 p-5">
             <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
               <DetailCard label="负责人" value={task.owner} />
               <DetailCard label="配置版本" value={`v${task.configVersion}`} mono />
@@ -4259,7 +4259,7 @@ function SyncTaskDetail({
               <DetailCard label="日志" value={logAccessText} />
             </div>
 
-            <div className="mt-5 rounded-xl border border-line bg-slate-50/70 p-4">
+            <div className="mt-5 border-l border-line bg-slate-50/60 px-4 py-3">
               <div className="flex items-center justify-between gap-3">
                 <div className="font-medium text-coal">运行状态</div>
                 <div className="text-sm text-slate-500">{progress}%</div>
@@ -4276,14 +4276,14 @@ function SyncTaskDetail({
                 <DetailCard label="进程 PID" value={runtime?.processId ? `${runtime.processId}` : "-"} mono />
                 <DetailCard label="最近心跳" value={runtime?.lastHeartbeatAt ? formatDateTime(runtime.lastHeartbeatAt) : "-"} />
               </div>
-              <div className="mt-3 rounded-2xl border border-line bg-white px-4 py-3 text-sm text-slate-500">
+              <div className="mt-3 border-t border-line px-0 py-3 text-sm text-slate-500">
                 {runtime?.lastLogMessage || "暂无运行日志摘要。"}
               </div>
             </div>
           </section>
 
           {relatedJobs.length > 0 && (
-            <section className="rounded-xl border border-line bg-slate-50/70 p-4">
+            <section className="border-l border-line bg-slate-50/60 px-4 py-3">
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <div className="font-medium text-coal">扩展任务</div>
@@ -4296,33 +4296,33 @@ function SyncTaskDetail({
               )}
               <div className="mt-3 grid gap-3">
                 {visibleRelatedJobs.map((job) => (
-                    <div key={job.id} className="rounded-2xl border border-line bg-white p-4">
-                      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                        <div className="min-w-0">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <TypeBadge type={capabilityJobTypeText(job)} />
-                            <Badge tone={capabilityJobTone(job.status)}>{capabilityJobStatusText(job.status)}</Badge>
-                          </div>
-                          <div className="mt-3 font-medium text-coal">{job.name}</div>
-                          <div className="mt-2 text-sm text-slate-500">{capabilityJobSummaryText(job)}</div>
+                  <div key={job.id} className="border-t border-line py-4">
+                    <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <TypeBadge type={capabilityJobTypeText(job)} />
+                          <Badge tone={capabilityJobTone(job.status)}>{capabilityJobStatusText(job.status)}</Badge>
                         </div>
-                        <div className="flex items-center gap-2">
-                          <div className="rounded-2xl border border-line bg-slate-50 px-3 py-2 text-xs text-slate-500">
-                            {job.progressPercent}%
-                          </div>
-                          <Button
-                            type="button"
-                            onClick={() => onRunJob(job)}
-                            disabled={job.status === "running" || busyActionKey === `${job.id}:job`}
-                            className="btn-compact"
-                          >
-                            <Play size={14} />
-                            {job.status === "running" ? "运行中" : "重跑"}
-                          </Button>
+                        <div className="mt-3 font-medium text-coal">{job.name}</div>
+                        <div className="mt-2 text-sm text-slate-500">{capabilityJobSummaryText(job)}</div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <div className="border-l border-line bg-slate-50/80 px-3 py-2 text-xs text-slate-500">
+                          {job.progressPercent}%
                         </div>
+                        <Button
+                          type="button"
+                          onClick={() => onRunJob(job)}
+                          disabled={job.status === "running" || busyActionKey === `${job.id}:job`}
+                          className="btn-compact"
+                        >
+                          <Play size={14} />
+                          {job.status === "running" ? "运行中" : "重跑"}
+                        </Button>
                       </div>
                     </div>
-                  ))}
+                  </div>
+                ))}
               </div>
             </section>
           )}
@@ -4339,14 +4339,14 @@ function SyncTaskDetail({
       </div>
 
       <div className="grid gap-5 2xl:grid-cols-2">
-        <section className="rounded-xl border border-line bg-slate-50/70 p-4">
+        <section className="border-l border-line bg-slate-50/60 px-4 py-3">
           <div className="font-medium text-coal">表映射</div>
           {task.tableMappings.length > visibleTableMappings.length && (
             <div className="mt-1 text-sm text-slate-500">仅展示前 {visibleTableMappings.length} 条。</div>
           )}
           <div className="mt-3 grid gap-3">
             {visibleTableMappings.map((mapping) => (
-              <div key={`${mapping.sourceSchema}.${mapping.sourceTable}.${mapping.targetTable}`} className="rounded-2xl border border-line bg-white px-4 py-3">
+              <div key={`${mapping.sourceSchema}.${mapping.sourceTable}.${mapping.targetTable}`} className="border-t border-line px-0 py-3">
                 <div className="font-medium text-coal">
                   {mapping.sourceSchema}.{mapping.sourceTable}
                 </div>
@@ -4360,11 +4360,11 @@ function SyncTaskDetail({
         </section>
 
         {taskErrors.length > 0 && (
-          <section className="rounded-xl border border-line bg-slate-50/70 p-4">
+          <section className="border-l border-line bg-slate-50/60 px-4 py-3">
             <div className="font-medium text-coal">最近异常</div>
             <div className="mt-3 grid gap-3">
               {taskErrors.map((item) => (
-                <div key={item.id} className="rounded-2xl border border-line bg-white px-4 py-3">
+                <div key={item.id} className="border-t border-line px-0 py-3">
                   <div className="flex flex-wrap items-center gap-2">
                     <Badge tone="red">{item.eventType.toUpperCase()}</Badge>
                     <span className="font-medium text-coal">{item.sourceTable}</span>
@@ -4379,7 +4379,7 @@ function SyncTaskDetail({
 
       {canManage && (
         <div className="grid gap-5 2xl:grid-cols-2">
-          <section className="rounded-xl border border-line bg-slate-50/70 p-4">
+          <section className="border-l border-line bg-slate-50/60 px-4 py-3">
             <div className="font-medium text-coal">运行参数</div>
             <div className="mt-4 grid gap-4 sm:grid-cols-2">
               <Field label="批量写入">
@@ -4414,7 +4414,7 @@ function SyncTaskDetail({
             </div>
           </section>
 
-          <section className="rounded-xl border border-line bg-slate-50/70 p-4">
+          <section className="border-l border-line bg-slate-50/60 px-4 py-3">
             <div className="font-medium text-coal">位点控制</div>
             <div className="mt-2 text-sm text-slate-500">仅已停止任务允许重置位点。</div>
             <div className="mt-4 grid gap-4 sm:grid-cols-2">
@@ -4441,11 +4441,11 @@ function SyncTaskDetail({
       )}
 
       {revisions.length > 0 && (
-        <section className="rounded-xl border border-line bg-slate-50/70 p-4">
+        <section className="border-l border-line bg-slate-50/60 px-4 py-3">
           <div className="font-medium text-coal">配置版本</div>
           <div className="mt-3 grid gap-3">
             {revisions.map((revision) => (
-              <div key={revision.id} className="rounded-2xl border border-line bg-white p-4">
+              <div key={revision.id} className="border-t border-line py-4">
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
@@ -4477,11 +4477,11 @@ function SyncTaskDetail({
       )}
 
       {checkpoints.length > 0 && (
-        <section className="rounded-xl border border-line bg-slate-50/70 p-4">
+        <section className="border-l border-line bg-slate-50/60 px-4 py-3">
           <div className="font-medium text-coal">运行轨迹</div>
           <div className="mt-3 grid gap-3">
             {checkpoints.map((checkpoint) => (
-              <div key={checkpoint.id} className="rounded-2xl border border-line bg-white p-4">
+              <div key={checkpoint.id} className="border-t border-line py-4">
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
@@ -4491,17 +4491,17 @@ function SyncTaskDetail({
                     <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-500">
                       {checkpoint.previousNodeId && checkpoint.previousNodeId !== checkpoint.nodeId ? (
                         <>
-                          <span className="rounded-full border border-line bg-slate-50 px-2 py-1">{checkpointNodeName(checkpoint.previousNodeId)}</span>
+                          <span className="rounded-md bg-slate-50 px-2 py-1">{checkpointNodeName(checkpoint.previousNodeId)}</span>
                           <ArrowRight size={14} className="text-slate-400" />
-                          <span className="rounded-full border border-line bg-slate-50 px-2 py-1">{checkpointNodeName(checkpoint.nodeId)}</span>
+                          <span className="rounded-md bg-slate-50 px-2 py-1">{checkpointNodeName(checkpoint.nodeId)}</span>
                         </>
                       ) : (
-                        <span className="rounded-full border border-line bg-slate-50 px-2 py-1">{checkpointNodeName(checkpoint.nodeId)}</span>
+                        <span className="rounded-md bg-slate-50 px-2 py-1">{checkpointNodeName(checkpoint.nodeId)}</span>
                       )}
                       <span>{formatDateTime(checkpoint.createdAt)}</span>
                     </div>
                   </div>
-                  <div className="rounded-2xl border border-line bg-slate-50/70 px-4 py-3">
+                  <div className="border-l border-line bg-slate-50/60 px-4 py-3">
                     <div className="text-xs uppercase tracking-[0.18em] text-slate-500">位点</div>
                     <div className="mt-2 mono text-coal">{checkpoint.binlogFile}:{checkpoint.binlogPosition}</div>
                   </div>
@@ -4590,7 +4590,7 @@ function TaskLiveLogPanel({
   };
 
   return (
-    <section className={cx("rounded-2xl border border-slate-800 bg-slate-950 p-4 text-slate-100 shadow-panel", className)}>
+    <section className={cx("border border-slate-800 bg-slate-950 p-4 text-slate-100", className)}>
       <div className="flex items-center justify-between gap-3">
         <div>
           <div className="text-sm font-medium text-white">实时日志</div>
@@ -4610,7 +4610,7 @@ function TaskLiveLogPanel({
           </Button>
         </div>
       )}
-      <div className="mt-4 rounded-[1.5rem] border border-slate-800 bg-slate-900/80">
+      <div className="mt-4 border-y border-slate-800 bg-slate-900/80">
         <div ref={scrollRef} onScroll={handleScroll} className="max-h-[560px] overflow-auto px-4 py-4">
           {logNotice ? (
             <div className="text-sm leading-6 text-slate-300">{logNotice}</div>
@@ -4619,7 +4619,7 @@ function TaskLiveLogPanel({
           ) : (
             <div className="grid gap-3">
               {taskLogs.map((entry) => (
-                <div key={entry.id} className="rounded-2xl border border-slate-800 bg-slate-950/80 px-3 py-3">
+                <div key={entry.id} className="border-t border-slate-800 bg-slate-950/80 px-0 py-3">
                   <div className="flex flex-wrap items-center gap-2 text-xs">
                     <Badge tone={taskLogTone(entry.level)}>{entry.level}</Badge>
                     {entry.phase && <span className="mono text-slate-400">{entry.phase}</span>}
@@ -4657,7 +4657,7 @@ function CapabilityJobDetail({
       </div>
       <div className="text-lg font-semibold text-coal">{job.name}</div>
       <div className="text-sm text-slate-500">关联任务：{linkedTask?.name || job.taskId}</div>
-      <div className="rounded-xl border border-line bg-slate-50/70 p-4">
+      <div className="border-l border-line bg-slate-50/60 px-4 py-3">
         <div className="flex items-center justify-between gap-3">
           <div className="font-medium text-coal">执行进度</div>
           <div className="text-sm text-slate-500">{job.progressPercent}%</div>
@@ -4667,7 +4667,7 @@ function CapabilityJobDetail({
         </div>
         <div className="mt-4 grid gap-3">
           {job.steps.map((step, index) => (
-            <div key={`${job.id}-${step.name}`} className="rounded-2xl border border-line bg-white px-4 py-3">
+            <div key={`${job.id}-${step.name}`} className="border-t border-line px-0 py-3">
               <div className="flex items-center justify-between gap-3">
                 <div className="font-medium text-coal">{index + 1}. {step.name}</div>
                 <div className="text-xs text-slate-500">{step.status}</div>
@@ -4678,11 +4678,11 @@ function CapabilityJobDetail({
         </div>
       </div>
       {qualityDiffs.length > 0 && (
-        <div className="rounded-xl border border-line bg-slate-50/70 p-4">
+        <div className="border-l border-line bg-slate-50/60 px-4 py-3">
           <div className="font-medium text-coal">差异预览</div>
           <div className="mt-3 grid gap-3">
             {qualityDiffs.map((item) => (
-              <div key={item.id} className="rounded-2xl border border-line bg-white px-4 py-3">
+              <div key={item.id} className="border-t border-line px-0 py-3">
                 <div className="flex flex-wrap items-center gap-2">
                   <Badge tone={item.severity === "high" ? "red" : item.severity === "medium" ? "yellow" : "green"}>{item.severity}</Badge>
                   <span className="font-medium text-coal">{item.fieldName}</span>
@@ -4694,11 +4694,11 @@ function CapabilityJobDetail({
         </div>
       )}
       {structureItems.length > 0 && (
-        <div className="rounded-xl border border-line bg-slate-50/70 p-4">
+        <div className="border-l border-line bg-slate-50/60 px-4 py-3">
           <div className="font-medium text-coal">结构差异预览</div>
           <div className="mt-3 grid gap-3">
             {structureItems.map((item) => (
-              <div key={item.id} className="rounded-2xl border border-line bg-white px-4 py-3">
+              <div key={item.id} className="border-t border-line px-0 py-3">
                 <div className="flex flex-wrap items-center gap-2">
                   <Badge tone={item.riskLevel === "high" ? "red" : item.riskLevel === "medium" ? "yellow" : "green"}>{item.riskLevel}</Badge>
                   <span className="font-medium text-coal">{item.changeType}</span>
@@ -4761,7 +4761,7 @@ function DetailPageHeader({
 
 function MetricMini({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-xl border border-line bg-slate-50/70 px-4 py-4">
+    <div className="border-b border-line px-0 py-4">
       <div className="text-xs uppercase tracking-[0.18em] text-slate-500">{label}</div>
       <div className="mt-3 text-2xl font-semibold tracking-tight text-coal">{value}</div>
     </div>
@@ -4770,7 +4770,7 @@ function MetricMini({ label, value }: { label: string; value: string }) {
 
 function DetailCard({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
   return (
-    <div className="rounded-xl border border-line bg-white px-4 py-4">
+    <div className="border-b border-line px-0 py-3">
       <div className="text-xs uppercase tracking-[0.18em] text-slate-500">{label}</div>
       <div className={cx("mt-2 text-sm font-medium text-coal", mono && "mono")}>{value}</div>
     </div>
@@ -4798,8 +4798,8 @@ function EmptyPanel({
   action?: ReactNode;
 }) {
   return (
-    <div className="mt-5 rounded-2xl border border-dashed border-line bg-slate-50/70 p-8 text-center">
-      <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl border border-line bg-white text-blue-700">
+    <div className="mt-5 border-y border-dashed border-line bg-slate-50/60 p-8 text-center">
+      <div className="mx-auto flex h-12 w-12 items-center justify-center text-blue-700">
         <Icon size={20} />
       </div>
       <div className="mt-4 text-lg font-semibold text-coal">{title}</div>
@@ -4824,7 +4824,7 @@ function NoticeBanner({
       ? "border-amber-200 bg-amber-50 text-amber-700"
       : "border-red-200 bg-red-50 text-red-700";
   return (
-    <div className={cx("mb-5 flex flex-col gap-3 rounded-2xl border px-4 py-3 text-sm sm:flex-row sm:items-start sm:justify-between", className)}>
+    <div className={cx("mb-5 flex flex-col gap-3 border-l-4 px-4 py-3 text-sm sm:flex-row sm:items-start sm:justify-between", className)}>
       <div className="flex items-start gap-2">
         {tone === "success" ? <CheckCircle size={18} /> : tone === "warning" ? <WarningCircle size={18} /> : <XCircle size={18} />}
         <div>{children}</div>
@@ -4845,7 +4845,7 @@ function BackendUnavailableScreen({
     <div className="min-h-[100dvh] bg-mist px-4 py-8 text-ink">
       <div className="mx-auto flex min-h-[calc(100dvh-4rem)] max-w-3xl items-center justify-center">
         <section className="surface w-full p-8 text-center md:p-12">
-          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl border border-red-100 bg-red-50 text-red-600">
+          <div className="mx-auto flex h-16 w-16 items-center justify-center bg-red-50 text-red-600">
             <WarningCircle size={28} />
           </div>
           <div className="mt-6 text-xs font-medium uppercase tracking-[0.28em] text-slate-500">Canal Plus</div>
@@ -4922,7 +4922,7 @@ function NextStepCard({
   onClick: () => void;
 }) {
   return (
-    <div className="rounded-xl border border-line bg-white p-4">
+    <div className="border-t border-line py-4">
       <div className="text-base font-semibold text-coal">{title}</div>
       <div className="mt-2 text-sm text-slate-500">{description}</div>
       <Button onClick={onClick} className="btn-secondary mt-4">
@@ -5017,7 +5017,7 @@ function Modal({
         aria-labelledby={titleId}
         aria-describedby={description ? descriptionId : undefined}
         tabIndex={-1}
-        className={cx("surface max-h-[90dvh] w-full overflow-auto p-6 md:p-8", sizeClass)}
+        className={cx("max-h-[90dvh] w-full overflow-auto rounded-lg border border-line bg-white p-6 shadow-panel md:p-8", sizeClass)}
       >
         <div className="flex items-start justify-between gap-4">
           <div>
@@ -5157,7 +5157,7 @@ function ActionMenu({
               setOpen(false);
             }
           }}
-          className="absolute right-0 top-11 z-20 w-40 rounded-2xl border border-line bg-white p-2 shadow-panel"
+          className="absolute right-0 top-11 z-20 w-40 rounded-lg border border-line bg-white p-2 shadow-panel"
         >
           {items.map((item) => (
             <Button
@@ -5171,7 +5171,7 @@ function ActionMenu({
               }}
               disabled={item.disabled}
               className={cx(
-                "block w-full rounded-xl px-3 py-2 text-left text-sm transition",
+                "block w-full rounded-md px-3 py-2 text-left text-sm transition",
                 item.danger ? "text-red-700 hover:bg-red-50" : "text-slate-700 hover:bg-slate-50",
                 item.disabled && "cursor-not-allowed opacity-45"
               )}
@@ -5240,7 +5240,7 @@ function UserProfileMenu({
       {open && (
         <div
           role="menu"
-          className="absolute bottom-[calc(100%+0.75rem)] left-0 z-30 w-full min-w-[14rem] overflow-hidden rounded-2xl border border-line bg-white p-2 shadow-panel"
+          className="absolute bottom-[calc(100%+0.75rem)] left-0 z-30 w-full min-w-[14rem] overflow-hidden rounded-lg border border-line bg-white p-2 shadow-panel"
         >
           {menuItems.map((item) => {
             const Icon = item.icon;
@@ -5254,7 +5254,7 @@ function UserProfileMenu({
                   item.onSelect();
                 }}
                 className={cx(
-                  "flex w-full items-center justify-start gap-3 rounded-xl px-3 py-3 text-left text-sm font-medium transition",
+                  "flex w-full items-center justify-start gap-3 rounded-md px-3 py-3 text-left text-sm font-medium transition",
                   item.danger ? "text-red-600 hover:bg-red-50" : "text-slate-700 hover:bg-slate-50"
                 )}
               >
@@ -5273,7 +5273,7 @@ function UserProfileMenu({
         aria-expanded={open}
         onClick={() => setOpen((current) => !current)}
         className={cx(
-          "flex w-full items-center justify-start gap-3 rounded-2xl border border-line bg-slate-50/80 px-3 py-3 text-left transition hover:border-blue-200 hover:bg-white",
+          "flex w-full items-center justify-start gap-3 rounded-lg border border-line bg-slate-50/80 px-3 py-3 text-left transition hover:border-blue-200 hover:bg-white",
           open && "border-blue-200 bg-white"
         )}
       >
