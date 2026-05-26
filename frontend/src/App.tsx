@@ -1,4 +1,14 @@
-import { useCallback, useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type FormEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type MouseEvent as ReactMouseEvent,
+  type ReactNode
+} from "react";
 import {
   ArrowsClockwise,
   ArrowRight,
@@ -218,7 +228,6 @@ type ParticlePoint = {
   size: number;
   opacity: number;
   seed: number;
-  tint: "blue" | "ink";
 };
 
 type AnimatedParticle = ParticlePoint & {
@@ -237,42 +246,30 @@ function particleNoise(x: number, y: number) {
 
 function createWordmarkParticles(wordmark: string, width: number, height: number) {
   if (typeof document === "undefined") return [];
-  const compact = width < 680;
-  const lines = compact ? wordmark.split(" ") : [wordmark];
+  const label = wordmark.replace(/\s+/g, " ").trim();
   const canvas = document.createElement("canvas");
   const context = canvas.getContext("2d");
   if (!context) return [];
   canvas.width = width;
   canvas.height = height;
 
-  let fontSize = compact ? Math.max(78, Math.round(width * 0.17)) : Math.max(112, Math.round(width * 0.15));
+  let fontSize = Math.min(Math.max(66, Math.round(width * 0.15)), Math.round(height * 0.32));
   context.font = `900 ${fontSize}px ${loginDisplayFont}`;
-  const availableWidth = width - (compact ? 72 : 96);
-  const maxLineWidth = Math.max(...lines.map((line) => context.measureText(line).width));
+  const availableWidth = Math.max(260, width - 56);
+  const maxLineWidth = context.measureText(label).width;
   if (maxLineWidth > availableWidth) {
-    fontSize = Math.max(66, Math.floor(fontSize * (availableWidth / maxLineWidth)));
+    fontSize = Math.max(46, Math.floor(fontSize * (availableWidth / maxLineWidth)));
   }
-
-  const lineHeight = Math.round(fontSize * 0.92);
-  const firstY = compact ? height * 0.42 : height * 0.5;
-  const totalHeight = compact ? lineHeight * (lines.length - 1) : 0;
 
   context.clearRect(0, 0, width, height);
   context.font = `900 ${fontSize}px ${loginDisplayFont}`;
   context.textBaseline = "middle";
   context.fillStyle = "#ffffff";
+  const metrics = context.measureText(label);
+  context.fillText(label, (width - metrics.width) / 2, height * 0.5);
 
-  lines.forEach((line, index) => {
-    const metrics = context.measureText(line);
-    const offsetX = (width - metrics.width) / 2;
-    const offsetY = compact
-      ? firstY + index * lineHeight - totalHeight / 2
-      : firstY;
-    context.fillText(line, offsetX, offsetY);
-  });
-
-  const step = compact ? 5 : 5;
-  const limit = compact ? 1320 : 1480;
+  const step = width < 640 ? 5 : 6;
+  const limit = width < 640 ? 1320 : 1580;
   const samples: ParticlePoint[] = [];
   const pixels = context.getImageData(0, 0, width, height).data;
 
@@ -285,10 +282,9 @@ function createWordmarkParticles(wordmark: string, width: number, height: number
       samples.push({
         x: x + (seed - 0.5) * 2.2,
         y: y + (0.5 - seed) * 2.2,
-        size: seed > 0.76 ? 3.1 : seed > 0.42 ? 2.45 : 1.95,
-        opacity: seed > 0.72 ? 0.98 : seed > 0.48 ? 0.86 : 0.7,
-        seed,
-        tint: seed > 0.68 ? "ink" : "blue"
+        size: seed > 0.76 ? 3 : seed > 0.42 ? 2.35 : 1.85,
+        opacity: seed > 0.72 ? 0.96 : seed > 0.48 ? 0.84 : 0.68,
+        seed
       });
     }
   }
@@ -306,6 +302,7 @@ function ParticleWordmark({ wordmark }: { wordmark: string }) {
   const frameIdRef = useRef(0);
   const lastFrameAtRef = useRef(0);
   const sizeRef = useRef({ width: 0, height: 0 });
+  const pointerInsideRef = useRef(false);
 
   const createAnimatedParticles = useCallback((width: number, height: number) => {
     const centerX = width / 2;
@@ -324,6 +321,46 @@ function ParticleWordmark({ wordmark }: { wordmark: string }) {
       };
     });
   }, [wordmark]);
+
+  const explodeParticles = useCallback((originX?: number, originY?: number) => {
+    const { width, height } = sizeRef.current;
+    const sourceX = originX ?? width / 2;
+    const sourceY = originY ?? height / 2;
+    particlesRef.current = particlesRef.current.map((particle) => {
+      const fallbackAngle = particle.seed * Math.PI * 2;
+      const angle = Math.atan2(particle.currentY - sourceY, particle.currentX - sourceX) || fallbackAngle;
+      const speed = 5 + particle.seed * 10;
+      return {
+        ...particle,
+        velocityX: Math.cos(angle + (particle.seed - 0.5) * 0.6) * speed,
+        velocityY: Math.sin(angle + (particle.seed - 0.5) * 0.6) * speed
+      };
+    });
+    phaseRef.current = "explode";
+    phaseStartedAtRef.current = performance.now();
+  }, []);
+
+  const mergeParticles = useCallback(() => {
+    pointerInsideRef.current = false;
+    phaseRef.current = "merge";
+    phaseStartedAtRef.current = performance.now();
+  }, []);
+
+  const markPointerInside = useCallback(() => {
+    pointerInsideRef.current = true;
+  }, []);
+
+  const handleClick = useCallback((event: ReactMouseEvent<HTMLDivElement>) => {
+    const rect = frameRef.current?.getBoundingClientRect();
+    explodeParticles(rect ? event.clientX - rect.left : undefined, rect ? event.clientY - rect.top : undefined);
+  }, [explodeParticles]);
+
+  const handleKeyDown = useCallback((event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      explodeParticles();
+    }
+  }, [explodeParticles]);
 
   useEffect(() => {
     const resizeCanvas = () => {
@@ -348,21 +385,6 @@ function ParticleWordmark({ wordmark }: { wordmark: string }) {
       lastFrameAtRef.current = 0;
     };
 
-    const explodeParticles = () => {
-      const { width, height } = sizeRef.current;
-      const centerX = width / 2;
-      const centerY = height / 2;
-      particlesRef.current = particlesRef.current.map((particle) => {
-        const angle = Math.atan2(particle.currentY - centerY, particle.currentX - centerX) + (particle.seed - 0.5) * 1.6;
-        const speed = 4 + particle.seed * 8;
-        return {
-          ...particle,
-          velocityX: Math.cos(angle) * speed,
-          velocityY: Math.sin(angle) * speed
-        };
-      });
-    };
-
     const drawFrame = (now: number) => {
       const canvas = canvasRef.current;
       const context = canvas?.getContext("2d");
@@ -374,26 +396,19 @@ function ParticleWordmark({ wordmark }: { wordmark: string }) {
 
       context.clearRect(0, 0, width, height);
 
-      const halo = context.createLinearGradient(width * 0.18, height * 0.2, width * 0.82, height * 0.8);
-      halo.addColorStop(0, "rgba(37, 99, 235, 0.08)");
-      halo.addColorStop(0.52, "rgba(56, 189, 248, 0.05)");
-      halo.addColorStop(1, "rgba(255, 255, 255, 0)");
-      context.fillStyle = halo;
-      context.fillRect(0, 0, width, height);
-
       let maxDistance = 0;
       particlesRef.current.forEach((particle, index) => {
         if (phaseRef.current === "explode") {
           particle.currentX += particle.velocityX * delta;
           particle.currentY += particle.velocityY * delta;
-          particle.velocityX *= 0.988;
-          particle.velocityY *= 0.988;
+          particle.velocityX *= 0.94;
+          particle.velocityY *= 0.94;
         } else {
-          const spring = 0.04 + particle.seed * 0.05;
+          const spring = 0.075 + particle.seed * 0.08;
           particle.velocityX += (particle.x - particle.currentX) * spring * delta;
           particle.velocityY += (particle.y - particle.currentY) * spring * delta;
-          particle.velocityX *= 0.84;
-          particle.velocityY *= 0.84;
+          particle.velocityX *= 0.78;
+          particle.velocityY *= 0.78;
           particle.currentX += particle.velocityX * delta;
           particle.currentY += particle.velocityY * delta;
           const distance = Math.hypot(particle.x - particle.currentX, particle.y - particle.currentY);
@@ -402,13 +417,13 @@ function ParticleWordmark({ wordmark }: { wordmark: string }) {
 
         const pulse = phaseRef.current === "hold" ? 0.9 + Math.sin(now / 320 + index * 0.45) * 0.12 : 1;
         context.globalAlpha = particle.opacity * 0.2;
-        context.fillStyle = particle.tint === "ink" ? "#1e3a8a" : "#60a5fa";
+        context.fillStyle = particle.seed > 0.56 ? "#60a5fa" : "#bfdbfe";
         context.beginPath();
-        context.arc(particle.currentX, particle.currentY, particle.size * 2.15 * pulse, 0, Math.PI * 2);
+        context.arc(particle.currentX, particle.currentY, particle.size * 2.1 * pulse, 0, Math.PI * 2);
         context.fill();
 
         context.globalAlpha = particle.opacity;
-        context.fillStyle = particle.tint === "ink" ? "#0f274f" : "#2f80ed";
+        context.fillStyle = particle.seed > 0.66 ? "#1d4ed8" : particle.seed > 0.36 ? "#2563eb" : "#38bdf8";
         context.beginPath();
         context.arc(particle.currentX, particle.currentY, particle.size * pulse, 0, Math.PI * 2);
         context.fill();
@@ -419,11 +434,7 @@ function ParticleWordmark({ wordmark }: { wordmark: string }) {
       if (phaseRef.current === "merge" && elapsed > 1200 && maxDistance < 5.5) {
         phaseRef.current = "hold";
         phaseStartedAtRef.current = now;
-      } else if (phaseRef.current === "hold" && elapsed > 2600) {
-        phaseRef.current = "explode";
-        phaseStartedAtRef.current = now;
-        explodeParticles();
-      } else if (phaseRef.current === "explode" && elapsed > 620) {
+      } else if (phaseRef.current === "explode" && elapsed > 1300 && !pointerInsideRef.current) {
         phaseRef.current = "merge";
         phaseStartedAtRef.current = now;
       }
@@ -446,7 +457,19 @@ function ParticleWordmark({ wordmark }: { wordmark: string }) {
   }, [createAnimatedParticles]);
 
   return (
-    <div ref={frameRef} className="relative mx-auto aspect-[1.25/1] w-full max-w-[880px] overflow-hidden rounded-[2rem] bg-[linear-gradient(145deg,rgba(255,255,255,0.92),rgba(239,246,255,0.72)_48%,rgba(255,255,255,0.96))]">
+    <div
+      ref={frameRef}
+      role="button"
+      tabIndex={0}
+      aria-label="Canal Plus 粒子"
+      onClick={handleClick}
+      onKeyDown={handleKeyDown}
+      onMouseEnter={markPointerInside}
+      onMouseLeave={mergeParticles}
+      onPointerEnter={markPointerInside}
+      onPointerLeave={mergeParticles}
+      className="relative mx-auto aspect-[2.05/1] w-full max-w-[940px] cursor-pointer outline-none"
+    >
       <canvas ref={canvasRef} className="absolute inset-0 h-full w-full" />
     </div>
   );
@@ -2980,63 +3003,57 @@ function LoginScreen({ onLogin }: { onLogin: (username: string, password: string
   };
 
   return (
-    <div className="min-h-[100dvh] bg-mist text-ink">
-      <div className="page-shell">
-        <div className="mx-auto grid min-h-[calc(100dvh-2rem)] max-w-[1400px] items-center gap-6 lg:grid-cols-[1.18fr_0.82fr]">
-        <section className="order-2 flex min-h-[420px] items-center justify-center overflow-hidden rounded-[2rem] bg-white/55 p-4 md:min-h-[560px] md:p-8 lg:order-1 lg:min-h-[720px]">
-          <ParticleWordmark wordmark="CANAL PLUS" />
+    <div className="min-h-[100dvh] overflow-hidden bg-[radial-gradient(circle_at_18%_22%,rgba(96,165,250,0.34),transparent_34%),radial-gradient(circle_at_78%_76%,rgba(191,219,254,0.58),transparent_38%),linear-gradient(135deg,#dbeafe_0%,#eff6ff_44%,#cfe6ff_100%)] text-ink">
+      <div className="mx-auto grid min-h-[100dvh] max-w-[1400px] items-center gap-8 px-5 py-6 md:px-8 lg:grid-cols-[1.2fr_0.8fr] lg:gap-10">
+        <section className="order-2 flex min-h-[340px] items-center justify-center overflow-hidden py-8 md:min-h-[480px] lg:order-1 lg:min-h-[640px]">
+          <ParticleWordmark wordmark="Canal Plus" />
         </section>
 
-        <form onSubmit={submit} className="order-1 flex lg:order-2">
-          <div className="flex w-full items-center rounded-[2rem] bg-white/80 p-6 shadow-panel md:p-8 lg:min-h-[720px] lg:p-10">
-            <div className="flex h-full w-full items-center">
-              <div className="mx-auto w-full max-w-[360px]">
-                <h2
-                  style={{ fontFamily: "var(--font-display)" }}
-                  className="text-4xl font-semibold tracking-[-0.05em] text-coal"
-                >
-                  登录
-                </h2>
+        <form onSubmit={submit} className="order-1 flex items-center lg:order-2 lg:min-h-[640px]">
+          <div className="mx-auto w-full max-w-[390px] px-1 py-10 md:px-0">
+            <h2
+              style={{ fontFamily: "var(--font-display)" }}
+              className="text-4xl font-semibold tracking-[-0.05em] text-coal"
+            >
+              登录
+            </h2>
 
-                <div className="mt-8 grid gap-5">
-                  <label className="block">
-                    <span className="mb-2 block text-xs font-medium uppercase tracking-[0.18em] text-slate-500">账号</span>
-                    <TextInput
-                      className="input"
-                      value={username}
-                      onChange={(event) => setUsername(event.target.value)}
-                    />
-                  </label>
+            <div className="mt-8 grid gap-5">
+              <label className="block">
+                <span className="mb-2 block text-xs font-medium uppercase tracking-[0.18em] text-slate-500">账号</span>
+                <TextInput
+                  className="input bg-white/70 backdrop-blur-sm"
+                  value={username}
+                  onChange={(event) => setUsername(event.target.value)}
+                />
+              </label>
 
-                  <label className="block">
-                    <span className="mb-2 block text-xs font-medium uppercase tracking-[0.18em] text-slate-500">密码</span>
-                    <TextInput
-                      className="input"
-                      type="password"
-                      value={password}
-                      onChange={(event) => setPassword(event.target.value)}
-                    />
-                  </label>
+              <label className="block">
+                <span className="mb-2 block text-xs font-medium uppercase tracking-[0.18em] text-slate-500">密码</span>
+                <TextInput
+                  className="input bg-white/70 backdrop-blur-sm"
+                  type="password"
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                />
+              </label>
 
-                  {error && (
-                    <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-                      {error}
-                    </div>
-                  )}
-
-                  <Button
-                    disabled={loading}
-                    className="btn-primary w-full justify-center py-3.5"
-                  >
-                    {loading ? <ArrowsClockwise size={16} /> : <ArrowRight size={16} />}
-                    {loading ? "登录中" : "登录"}
-                  </Button>
+              {error && (
+                <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                  {error}
                 </div>
-              </div>
+              )}
+
+              <Button
+                disabled={loading}
+                className="btn-primary w-full justify-center py-3.5"
+              >
+                {loading ? <ArrowsClockwise size={16} /> : <ArrowRight size={16} />}
+                {loading ? "登录中" : "登录"}
+              </Button>
             </div>
           </div>
         </form>
-      </div>
       </div>
     </div>
   );
