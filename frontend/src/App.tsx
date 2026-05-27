@@ -85,8 +85,7 @@ type ClusterHandoffReport = {
 
 const navItems: Array<{ id: MainPage; label: string; icon: typeof Database }> = [
   { id: "datasources", label: "数据源", icon: Database },
-  { id: "nodes", label: "节点", icon: HardDrives },
-  { id: "settings", label: "告警", icon: GearSix }
+  { id: "nodes", label: "节点", icon: HardDrives }
 ];
 
 const emptyDatasourceForm = {
