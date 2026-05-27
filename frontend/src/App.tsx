@@ -48,7 +48,6 @@ import type {
   ClusterNodeInput,
   ClusterSnapshot,
   Datasource,
-  DatasourceStatus,
   NodeConnectionTestResult,
   NodeOperationResult,
   NodeStatusChangeResult,
@@ -755,13 +754,11 @@ function SystemOverview({
   alertEvents: AlertEvent[];
   serviceUnavailable: boolean;
 }) {
-  const datasourceOnline = datasources.filter((item) => item.connectionStatus === "online").length;
   const datasourceTotal = datasources.length;
   const nodeOnline = cluster?.onlineNodes ?? 0;
   const nodeTotal = cluster?.totalNodes ?? 0;
   const triggeredAlerts = alertEvents.filter((event) => event.status === "triggered").length;
   const nodeRatio = percent(nodeOnline, nodeTotal);
-  const datasourceRatio = percent(datasourceOnline, datasourceTotal);
   const healthText = serviceUnavailable
     ? "API 异常"
     : triggeredAlerts > 0
@@ -787,9 +784,10 @@ function SystemOverview({
           />
           <OverviewGauge
             label="数据源"
-            value={`${datasourceOnline}/${datasourceTotal}`}
-            ratio={datasourceRatio}
-            tone={datasourceRatio >= 80 || datasourceTotal === 0 ? "green" : "yellow"}
+            value={`${datasourceTotal}`}
+            ratio={100}
+            tone="green"
+            showBar={false}
           />
         </div>
       </div>
@@ -817,12 +815,14 @@ function OverviewGauge({
   label,
   value,
   ratio,
-  tone
+  tone,
+  showBar = true
 }: {
   label: string;
   value: string;
   ratio: number;
   tone: "green" | "yellow" | "red";
+  showBar?: boolean;
 }) {
   const barClass = tone === "green" ? "bg-emerald-500" : tone === "yellow" ? "bg-amber-500" : "bg-red-500";
   return (
@@ -831,9 +831,11 @@ function OverviewGauge({
         <div className="text-sm font-medium text-slate-600">{label}</div>
         <div className="font-mono text-2xl font-semibold tracking-tight text-coal">{value}</div>
       </div>
-      <div className="mt-4 h-2 overflow-hidden rounded-full bg-slate-100">
-        <div className={cx("h-full rounded-full transition-all", barClass)} style={{ width: `${Math.min(100, Math.max(0, ratio))}%` }} />
-      </div>
+      {showBar && (
+        <div className="mt-4 h-2 overflow-hidden rounded-full bg-slate-100">
+          <div className={cx("h-full rounded-full transition-all", barClass)} style={{ width: `${Math.min(100, Math.max(0, ratio))}%` }} />
+        </div>
+      )}
     </div>
   );
 }
@@ -863,7 +865,6 @@ function DatasourcePage({
   onOpenDatasource: (datasourceId: string) => void;
 }) {
   const [keyword, setKeyword] = useState("");
-  const [statusFilter, setStatusFilter] = useState<"all" | DatasourceStatus>("all");
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState({ ...emptyDatasourceForm });
@@ -871,13 +872,6 @@ function DatasourcePage({
   const [testingId, setTestingId] = useState<string | null>(null);
   const [confirmation, setConfirmation] = useState<ConfirmationDialogState | null>(null);
   const [selectedDatasourceId, setSelectedDatasourceId] = useState<string | null>(null);
-
-  const datasourceStats = useMemo(() => ({
-    online: datasources.filter((item) => item.connectionStatus === "online").length,
-    offline: datasources.filter((item) => item.connectionStatus === "offline").length,
-    untested: datasources.filter((item) => item.connectionStatus === "untested").length,
-    total: datasources.length
-  }), [datasources]);
 
   useEffect(() => {
     if (openCreateToken === 0) return;
@@ -888,11 +882,9 @@ function DatasourcePage({
 
   const visibleDatasources = useMemo(() => datasources
     .filter((item) => {
-      const matchesKeyword = !keyword.trim() || datasourceSearchText(item).includes(keyword.trim().toLowerCase());
-      const matchesStatus = statusFilter === "all" || item.connectionStatus === statusFilter;
-      return matchesKeyword && matchesStatus;
+      return !keyword.trim() || datasourceSearchText(item).includes(keyword.trim().toLowerCase());
     })
-    .sort((left, right) => left.name.localeCompare(right.name, "zh-Hans-CN")), [datasources, keyword, statusFilter]);
+    .sort((left, right) => left.name.localeCompare(right.name, "zh-Hans-CN")), [datasources, keyword]);
 
   useEffect(() => {
     if (visibleDatasources.length === 0) {
@@ -1007,18 +999,10 @@ function DatasourcePage({
               </span>
             </label>
 
-            <div className={cx("mt-3 grid gap-2", canManage ? "grid-cols-[minmax(0,1fr)_44px]" : "grid-cols-1")}>
-              <SelectInput
-                className="select"
-                value={statusFilter}
-                onChange={(event) => setStatusFilter(event.target.value as "all" | DatasourceStatus)}
-                aria-label="状态"
-              >
-                <option value="all">全部</option>
-                <option value="online">在线</option>
-                <option value="offline">离线</option>
-                <option value="untested">未测试</option>
-              </SelectInput>
+            <div className="mt-3 flex items-center justify-between gap-3">
+              <div className="text-sm text-slate-500">
+                {visibleDatasources.length}/{datasources.length} 连接
+              </div>
               {canManage && (
                 <Button
                   type="button"
@@ -1036,13 +1020,6 @@ function DatasourcePage({
               )}
             </div>
 
-            <div className="mt-4 grid grid-cols-4 divide-x divide-line rounded-lg border border-line bg-white text-center">
-              <DatasourceCounter label="全部" value={datasourceStats.total} />
-              <DatasourceCounter label="在线" value={datasourceStats.online} />
-              <DatasourceCounter label="离线" value={datasourceStats.offline} />
-              <DatasourceCounter label="未测" value={datasourceStats.untested} />
-            </div>
-
             <div className="mt-4 max-h-[460px] space-y-1 overflow-y-auto pr-1">
               {datasources.length === 0 ? (
                 <div className="rounded-lg border border-dashed border-line bg-white px-4 py-8 text-center text-sm text-slate-500">
@@ -1055,7 +1032,6 @@ function DatasourcePage({
                     type="button"
                     onClick={() => {
                       setKeyword("");
-                      setStatusFilter("all");
                     }}
                     className="btn-compact mt-4"
                   >
@@ -1080,16 +1056,8 @@ function DatasourcePage({
                   >
                     <Database className={cx("mt-0.5 shrink-0", active ? "text-accent" : "text-slate-400 group-hover:text-accent")} size={18} />
                     <span className="min-w-0 flex-1">
-                      <span className="flex items-center justify-between gap-3">
+                      <span className="flex items-center gap-3">
                         <span className="truncate font-medium text-coal">{item.name}</span>
-                        <span className={cx(
-                          "h-2 w-2 shrink-0 rounded-full",
-                          item.connectionStatus === "online"
-                            ? "bg-emerald-500"
-                            : item.connectionStatus === "offline"
-                              ? "bg-red-500"
-                              : "bg-slate-300"
-                        )} />
                       </span>
                       <span className="mt-1 block truncate font-mono text-xs text-slate-500">
                         {item.host}:{item.port}
@@ -1122,12 +1090,9 @@ function DatasourcePage({
                 <div className="flex flex-col gap-4 border-b border-line pb-5 xl:flex-row xl:items-start xl:justify-between">
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
-                      <Badge tone={datasourceTone(selectedDatasource.connectionStatus)}>
-                        {datasourceStatusText(selectedDatasource.connectionStatus)}
-                      </Badge>
                       {selectedDatasource.isDemo && <Badge tone="blue">Demo</Badge>}
                     </div>
-                    <h3 className="mt-3 truncate text-2xl font-semibold tracking-tight text-coal">
+                    <h3 className={cx("truncate text-2xl font-semibold tracking-tight text-coal", selectedDatasource.isDemo ? "mt-3" : "mt-0")}>
                       {selectedDatasource.name}
                     </h3>
                     <div className="mt-2 font-mono text-sm text-slate-500">
@@ -1179,18 +1144,12 @@ function DatasourcePage({
                   </div>
 
                   <div>
-                    <div className="label">连接</div>
+                    <div className="label">测试</div>
                     <div className="mt-3 border-y border-line py-4">
                       <div className="flex items-center justify-between gap-4">
-                        <span className="text-sm text-slate-500">状态</span>
-                        <Badge tone={datasourceTone(selectedDatasource.connectionStatus)}>
-                          {datasourceStatusText(selectedDatasource.connectionStatus)}
-                        </Badge>
-                      </div>
-                      <div className="mt-4 flex items-center justify-between gap-4">
                         <span className="text-sm text-slate-500">最近测试</span>
                         <span className="text-right text-sm font-medium text-coal">
-                          {selectedDatasource.lastTestedAt ? formatDateTime(selectedDatasource.lastTestedAt) : "未测试"}
+                          {selectedDatasource.lastTestedAt ? formatDateTime(selectedDatasource.lastTestedAt) : "-"}
                         </span>
                       </div>
                       <div className="mt-4 border-t border-line pt-4 text-sm text-slate-500">
@@ -1395,7 +1354,6 @@ function DatasourceDetailPage({
           )}
         />
         <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          <DetailCard label="连接状态" value={datasourceStatusText(selected.connectionStatus)} />
           <DetailCard label="地址" value={`${selected.host}:${selected.port}`} mono />
           <DetailCard label="账号" value={selected.username} mono />
           <DetailCard label="默认库" value={selected.defaultSchema || "未设置"} mono />
@@ -2412,15 +2370,6 @@ function MetricMini({ label, value }: { label: string; value: string }) {
   );
 }
 
-function DatasourceCounter({ label, value }: { label: string; value: number }) {
-  return (
-    <div className="px-2 py-2.5">
-      <div className="font-mono text-lg font-semibold text-coal">{value}</div>
-      <div className="mt-0.5 text-[11px] text-slate-500">{label}</div>
-    </div>
-  );
-}
-
 function DetailCard({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
   return (
     <div className="border-b border-line px-0 py-3">
@@ -2971,22 +2920,10 @@ function pageTitle(page: Page) {
 }
 
 function pageDescription(page: Page) {
-  if (page === "datasources") return "连接与状态";
+  if (page === "datasources") return "连接";
   if (page === "nodes") return "运维区";
   if (page === "settings") return "告警";
   return "";
-}
-
-function datasourceStatusText(value: DatasourceStatus) {
-  if (value === "online") return "在线";
-  if (value === "offline") return "离线";
-  return "未测试";
-}
-
-function datasourceTone(value: DatasourceStatus) {
-  if (value === "online") return "green";
-  if (value === "offline") return "red";
-  return "neutral";
 }
 
 function nodeStatusText(status: ClusterNode["status"]) {
