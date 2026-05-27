@@ -314,13 +314,13 @@ function ParticleWordmark({ wordmark }: { wordmark: string }) {
 
         const pulse = phaseRef.current === "hold" ? 0.9 + Math.sin(now / 320 + index * 0.45) * 0.12 : 1;
         context.globalAlpha = particle.opacity * 0.2;
-        context.fillStyle = "#99f6e4";
+        context.fillStyle = "#bfdbfe";
         context.beginPath();
         context.arc(particle.currentX, particle.currentY, particle.size * 2.1 * pulse, 0, Math.PI * 2);
         context.fill();
 
         context.globalAlpha = particle.opacity;
-        context.fillStyle = "#0f766e";
+        context.fillStyle = "#2563eb";
         context.beginPath();
         context.arc(particle.currentX, particle.currentY, particle.size * pulse, 0, Math.PI * 2);
         context.fill();
@@ -588,7 +588,7 @@ function App() {
                     className={cx(
                       "flex min-h-12 items-center justify-start gap-3 rounded-lg px-3 py-3 text-left text-sm font-medium transition",
                       navPage(page) === item.id
-                        ? "border border-teal-100 bg-teal-50 text-accent shadow-[inset_3px_0_0_#0f766e]"
+                        ? "border border-blue-100 bg-blue-50 text-accent shadow-[inset_3px_0_0_#2563eb]"
                         : "border border-transparent text-slate-600 hover:border-line hover:bg-slate-50 hover:text-coal"
                     )}
                   >
@@ -1701,7 +1701,7 @@ function NodeDetailPage({
             <DetailCard label="最近心跳" value={`${formatDateTime(selected.lastHeartbeatAt)} · ${secondsSince(selected.lastHeartbeatAt)} 秒前`} />
           </div>
           {localNodeId === selected.id && (
-            <div className="rounded-lg border border-teal-200 bg-teal-50 px-4 py-3 text-sm text-teal-700">
+            <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-700">
               本机节点不支持自卸载或自下线。
             </div>
           )}
@@ -1858,7 +1858,7 @@ function SettingsPage({
                     onClick={() => setEditingId(rule.id)}
                     className={cx(
                       "w-full self-start border-l-4 px-4 py-4 text-left transition",
-                      editingId === rule.id ? "border-teal-300 bg-teal-50" : "border-line bg-white hover:bg-slate-50"
+                      editingId === rule.id ? "border-blue-300 bg-blue-50" : "border-line bg-white hover:bg-slate-50"
                     )}
                   >
                     <div className="flex flex-wrap items-center gap-2">
@@ -1963,19 +1963,10 @@ function LoginScreen({ onLogin }: { onLogin: (username: string, password: string
   };
 
   return (
-    <div className="relative min-h-[100dvh] overflow-hidden bg-[linear-gradient(135deg,#f7f8fa_0%,#eef2f1_46%,#dfe7e4_100%)] text-ink">
+    <div className="relative min-h-[100dvh] overflow-hidden bg-[linear-gradient(135deg,#f8fbff_0%,#eff6ff_46%,#dbeafe_100%)] text-ink">
       <ParticleWordmark wordmark="Canal Plus" />
       <div className="pointer-events-none relative grid min-h-[100dvh] max-w-[1400px] items-center gap-8 px-5 py-6 md:px-8 lg:mx-auto lg:grid-cols-[1.2fr_0.8fr] lg:gap-10">
-        <section aria-hidden="true" className="order-2 min-h-[340px] py-8 md:min-h-[480px] lg:order-1 lg:min-h-[640px]">
-          <div className="mt-auto hidden max-w-md rounded-lg border border-white/70 bg-white/55 p-5 shadow-panel backdrop-blur-sm lg:block">
-            <div className="label">Console</div>
-            <div className="mt-3 grid grid-cols-3 gap-4">
-              <OverviewStat label="节点" value="3" />
-              <OverviewStat label="数据源" value="2" />
-              <OverviewStat label="刷新" value="8s" />
-            </div>
-          </div>
-        </section>
+        <section aria-hidden="true" className="order-2 min-h-[340px] py-8 md:min-h-[480px] lg:order-1 lg:min-h-[640px]" />
 
         <form onSubmit={submit} className="pointer-events-auto order-1 flex items-center lg:order-2 lg:min-h-[640px]">
           <div className="surface mx-auto w-full max-w-[410px] p-6 md:p-8">
@@ -2385,7 +2376,7 @@ function BackendUnavailableScreen({
 
 function Badge({ tone, children }: { tone: "blue" | "green" | "yellow" | "red" | "neutral"; children: ReactNode }) {
   const className = tone === "blue"
-    ? "border-teal-200 bg-teal-50 text-teal-700"
+    ? "border-blue-200 bg-blue-50 text-blue-700"
     : tone === "green"
       ? "border-emerald-200 bg-emerald-50 text-emerald-700"
       : tone === "yellow"
@@ -2741,8 +2732,8 @@ function UserProfileMenu({
         aria-expanded={open}
         onClick={() => setOpen((current) => !current)}
         className={cx(
-          "flex w-full items-center justify-start gap-3 rounded-lg border border-line bg-slate-50/80 px-3 py-3 text-left transition hover:border-teal-200 hover:bg-white",
-          open && "border-teal-200 bg-white"
+          "flex w-full items-center justify-start gap-3 rounded-lg border border-line bg-slate-50/80 px-3 py-3 text-left transition hover:border-blue-200 hover:bg-white",
+          open && "border-blue-200 bg-white"
         )}
       >
         <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-coal text-lg font-semibold text-white">
