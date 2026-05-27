@@ -2,6 +2,7 @@ import {
   useCallback,
   useEffect,
   useId,
+  useMemo,
   useRef,
   useState,
   type FormEvent,
@@ -869,6 +870,14 @@ function DatasourcePage({
   const [submitting, setSubmitting] = useState(false);
   const [testingId, setTestingId] = useState<string | null>(null);
   const [confirmation, setConfirmation] = useState<ConfirmationDialogState | null>(null);
+  const [selectedDatasourceId, setSelectedDatasourceId] = useState<string | null>(null);
+
+  const datasourceStats = useMemo(() => ({
+    online: datasources.filter((item) => item.connectionStatus === "online").length,
+    offline: datasources.filter((item) => item.connectionStatus === "offline").length,
+    untested: datasources.filter((item) => item.connectionStatus === "untested").length,
+    total: datasources.length
+  }), [datasources]);
 
   useEffect(() => {
     if (openCreateToken === 0) return;
@@ -877,13 +886,25 @@ function DatasourcePage({
     setForm({ ...emptyDatasourceForm });
   }, [openCreateToken]);
 
-  const visibleDatasources = datasources
+  const visibleDatasources = useMemo(() => datasources
     .filter((item) => {
       const matchesKeyword = !keyword.trim() || datasourceSearchText(item).includes(keyword.trim().toLowerCase());
       const matchesStatus = statusFilter === "all" || item.connectionStatus === statusFilter;
       return matchesKeyword && matchesStatus;
     })
-    .sort((left, right) => left.name.localeCompare(right.name, "zh-Hans-CN"));
+    .sort((left, right) => left.name.localeCompare(right.name, "zh-Hans-CN")), [datasources, keyword, statusFilter]);
+
+  useEffect(() => {
+    if (visibleDatasources.length === 0) {
+      setSelectedDatasourceId(null);
+      return;
+    }
+    if (!selectedDatasourceId || !visibleDatasources.some((item) => item.id === selectedDatasourceId)) {
+      setSelectedDatasourceId(visibleDatasources[0].id);
+    }
+  }, [selectedDatasourceId, visibleDatasources]);
+
+  const selectedDatasource = visibleDatasources.find((item) => item.id === selectedDatasourceId) ?? visibleDatasources[0] ?? null;
 
   const openEdit = (item: Datasource) => {
     setEditingId(item.id);
@@ -966,108 +987,222 @@ function DatasourcePage({
 
   return (
     <div className="space-y-5">
-      <section className="surface min-w-0 p-6">
-        <SectionHeader title="连接池" description="MySQL 接入与连通性" />
-
-        <div className="mt-5 grid gap-3 rounded-lg border border-line bg-slate-50/70 p-3 lg:grid-cols-[minmax(0,1fr)_180px]">
-          <label className="block">
-            <span className="label mb-2 block">搜索</span>
-            <span className="relative block">
-              <MagnifyingGlass className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-              <TextInput
-                className="input pl-9"
-                value={keyword}
-                onChange={(event) => setKeyword(event.target.value)}
-                placeholder="名称 / 地址 / 库名"
-              />
-            </span>
-          </label>
-          <Field label="状态">
-            <SelectInput className="select" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as "all" | DatasourceStatus)}>
-              <option value="all">全部</option>
-              <option value="online">在线</option>
-              <option value="offline">离线</option>
-              <option value="untested">未测试</option>
-            </SelectInput>
-          </Field>
+      <section className="surface min-w-0 overflow-hidden">
+        <div className="border-b border-line px-5 py-4 md:px-6">
+          <SectionHeader title="连接" />
         </div>
 
-        {datasources.length === 0 ? (
-          <EmptyPanel
-            icon={Database}
-            title="无数据源"
-            action={canManage ? (
-              <Button onClick={() => {
-                setEditingId(null);
-                setForm({ ...emptyDatasourceForm });
-                setEditorOpen(true);
-              }} className="btn-primary">
-                <Plus size={16} />
-                新增
-              </Button>
-            ) : <PermissionNotice compact description="仅管理员可新增数据源。" />}
-          />
-        ) : (
-          <div className="table-shell mt-5">
-            <table className="w-full min-w-[680px] text-left text-sm">
-              <thead className="bg-slate-50 text-xs uppercase tracking-[0.18em] text-slate-500">
-                <tr>
-	                  <th className="px-4 py-3">名称</th>
-	                  <th className="px-4 py-3">连接</th>
-                  <th className="px-4 py-3">地址</th>
-                  <th className="px-4 py-3 text-right">操作</th>
-                </tr>
-              </thead>
-              <tbody>
-                {visibleDatasources.map((item) => (
-                  <tr key={item.id} className="table-row hover:bg-slate-50/70">
-                    <td className="px-4 py-4">
-                      <Button onClick={() => onOpenDatasource(item.id)} className="link-button">
-                        <div className="font-medium text-coal">{item.name}</div>
-                        <div className="mt-1 text-xs text-slate-500">{item.defaultSchema || "未设置默认库"}</div>
-                      </Button>
-                    </td>
-	                    <td className="px-4 py-4">
-                      <Badge tone={datasourceTone(item.connectionStatus)}>
-                        {datasourceStatusText(item.connectionStatus)}
+        <div className="grid min-h-[560px] lg:grid-cols-[320px_minmax(0,1fr)]">
+          <aside className="border-b border-line bg-slate-50/70 p-4 lg:border-b-0 lg:border-r">
+            <label className="block">
+              <span className="label mb-2 block">搜索</span>
+              <span className="relative block">
+                <MagnifyingGlass className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                <TextInput
+                  className="input pl-9"
+                  value={keyword}
+                  onChange={(event) => setKeyword(event.target.value)}
+                  placeholder="名称 / 地址 / 库"
+                />
+              </span>
+            </label>
+
+            <div className={cx("mt-3 grid gap-2", canManage ? "grid-cols-[minmax(0,1fr)_44px]" : "grid-cols-1")}>
+              <SelectInput
+                className="select"
+                value={statusFilter}
+                onChange={(event) => setStatusFilter(event.target.value as "all" | DatasourceStatus)}
+                aria-label="状态"
+              >
+                <option value="all">全部</option>
+                <option value="online">在线</option>
+                <option value="offline">离线</option>
+                <option value="untested">未测试</option>
+              </SelectInput>
+              {canManage && (
+                <Button
+                  type="button"
+                  aria-label="新增数据源"
+                  title="新增数据源"
+                  onClick={() => {
+                    setEditingId(null);
+                    setForm({ ...emptyDatasourceForm });
+                    setEditorOpen(true);
+                  }}
+                  className="btn-primary px-0"
+                >
+                  <Plus size={16} />
+                </Button>
+              )}
+            </div>
+
+            <div className="mt-4 grid grid-cols-4 divide-x divide-line rounded-lg border border-line bg-white text-center">
+              <DatasourceCounter label="全部" value={datasourceStats.total} />
+              <DatasourceCounter label="在线" value={datasourceStats.online} />
+              <DatasourceCounter label="离线" value={datasourceStats.offline} />
+              <DatasourceCounter label="未测" value={datasourceStats.untested} />
+            </div>
+
+            <div className="mt-4 max-h-[460px] space-y-1 overflow-y-auto pr-1">
+              {datasources.length === 0 ? (
+                <div className="rounded-lg border border-dashed border-line bg-white px-4 py-8 text-center text-sm text-slate-500">
+                  无数据源
+                </div>
+              ) : visibleDatasources.length === 0 ? (
+                <div className="rounded-lg border border-dashed border-line bg-white px-4 py-8 text-center">
+                  <div className="text-sm text-slate-500">无匹配</div>
+                  <Button
+                    type="button"
+                    onClick={() => {
+                      setKeyword("");
+                      setStatusFilter("all");
+                    }}
+                    className="btn-compact mt-4"
+                  >
+                    清除
+                  </Button>
+                </div>
+              ) : visibleDatasources.map((item) => {
+                const active = selectedDatasource?.id === item.id;
+                return (
+                  <Button
+                    key={item.id}
+                    type="button"
+                    aria-pressed={active}
+                    onClick={() => setSelectedDatasourceId(item.id)}
+                    onDoubleClick={() => onOpenDatasource(item.id)}
+                    className={cx(
+                      "group w-full justify-start rounded-lg border px-3 py-3 text-left transition",
+                      active
+                        ? "border-blue-200 bg-white shadow-[inset_3px_0_0_#2563eb]"
+                        : "border-transparent bg-transparent hover:border-line hover:bg-white"
+                    )}
+                  >
+                    <Database className={cx("mt-0.5 shrink-0", active ? "text-accent" : "text-slate-400 group-hover:text-accent")} size={18} />
+                    <span className="min-w-0 flex-1">
+                      <span className="flex items-center justify-between gap-3">
+                        <span className="truncate font-medium text-coal">{item.name}</span>
+                        <span className={cx(
+                          "h-2 w-2 shrink-0 rounded-full",
+                          item.connectionStatus === "online"
+                            ? "bg-emerald-500"
+                            : item.connectionStatus === "offline"
+                              ? "bg-red-500"
+                              : "bg-slate-300"
+                        )} />
+                      </span>
+                      <span className="mt-1 block truncate font-mono text-xs text-slate-500">
+                        {item.host}:{item.port}
+                      </span>
+                    </span>
+                  </Button>
+                );
+              })}
+            </div>
+          </aside>
+
+          <div className="min-w-0 p-5 md:p-6">
+            {!selectedDatasource ? (
+              <EmptyPanel
+                icon={Database}
+                title={datasources.length === 0 ? "无数据源" : "无匹配"}
+                action={canManage && datasources.length === 0 ? (
+                  <Button onClick={() => {
+                    setEditingId(null);
+                    setForm({ ...emptyDatasourceForm });
+                    setEditorOpen(true);
+                  }} className="btn-primary">
+                    <Plus size={16} />
+                    新增
+                  </Button>
+                ) : !canManage && datasources.length === 0 ? <PermissionNotice compact description="仅管理员可新增数据源。" /> : undefined}
+              />
+            ) : (
+              <div>
+                <div className="flex flex-col gap-4 border-b border-line pb-5 xl:flex-row xl:items-start xl:justify-between">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge tone={datasourceTone(selectedDatasource.connectionStatus)}>
+                        {datasourceStatusText(selectedDatasource.connectionStatus)}
                       </Badge>
-                    </td>
-                    <td className="px-4 py-4">
-                      <div className="mono text-slate-700">{item.host}:{item.port}</div>
-                    </td>
-                    <td className="px-4 py-4">
-                      <div className="flex justify-end gap-2">
-                        <Button
-                          onClick={() => void testConnection(item)}
-                          disabled={testingId === item.id}
-                          className="btn-compact"
-                        >
-                          {testingId === item.id ? <ArrowsClockwise size={14} /> : <ShieldCheck size={14} />}
-                          {testingId === item.id ? "测试中" : "测试"}
+                      {selectedDatasource.isDemo && <Badge tone="blue">Demo</Badge>}
+                    </div>
+                    <h3 className="mt-3 truncate text-2xl font-semibold tracking-tight text-coal">
+                      {selectedDatasource.name}
+                    </h3>
+                    <div className="mt-2 font-mono text-sm text-slate-500">
+                      {selectedDatasource.username}@{selectedDatasource.host}:{selectedDatasource.port}
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-2 xl:justify-end">
+                    <Button onClick={() => onOpenDatasource(selectedDatasource.id)} className="btn-secondary">
+                      详情
+                    </Button>
+                    <Button
+                      onClick={() => void testConnection(selectedDatasource)}
+                      disabled={testingId === selectedDatasource.id}
+                      className="btn-secondary"
+                    >
+                      {testingId === selectedDatasource.id ? <ArrowsClockwise size={16} /> : <ShieldCheck size={16} />}
+                      {testingId === selectedDatasource.id ? "测试中" : "测试"}
+                    </Button>
+                    {canManage && (
+                      <>
+                        <Button onClick={() => openEdit(selectedDatasource)} className="btn-primary">
+                          编辑
                         </Button>
                         <ActionMenu
                           items={[
                             {
-                              label: "编辑",
-                              disabled: !canManage,
-                              onSelect: () => openEdit(item)
-                            },
-                            {
                               label: "删除",
                               danger: true,
-                              disabled: !canManage,
-                              onSelect: () => requestRemoveDatasource(item)
+                              onSelect: () => requestRemoveDatasource(selectedDatasource)
                             }
                           ]}
                         />
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                <div className="mt-5 grid gap-5 xl:grid-cols-[1.08fr_0.92fr]">
+                  <div>
+                    <div className="label">属性</div>
+                    <div className="mt-3 grid gap-x-6 sm:grid-cols-2">
+                      <DetailCard label="主机" value={selectedDatasource.host} mono />
+                      <DetailCard label="端口" value={`${selectedDatasource.port}`} mono />
+                      <DetailCard label="账号" value={selectedDatasource.username} mono />
+                      <DetailCard label="默认库" value={selectedDatasource.defaultSchema || "未设置"} mono />
+                      <DetailCard label="创建" value={formatDate(selectedDatasource.createdAt)} />
+                      <DetailCard label="更新" value={formatDate(selectedDatasource.updatedAt)} />
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="label">连接</div>
+                    <div className="mt-3 border-y border-line py-4">
+                      <div className="flex items-center justify-between gap-4">
+                        <span className="text-sm text-slate-500">状态</span>
+                        <Badge tone={datasourceTone(selectedDatasource.connectionStatus)}>
+                          {datasourceStatusText(selectedDatasource.connectionStatus)}
+                        </Badge>
                       </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                      <div className="mt-4 flex items-center justify-between gap-4">
+                        <span className="text-sm text-slate-500">最近测试</span>
+                        <span className="text-right text-sm font-medium text-coal">
+                          {selectedDatasource.lastTestedAt ? formatDateTime(selectedDatasource.lastTestedAt) : "未测试"}
+                        </span>
+                      </div>
+                      <div className="mt-4 border-t border-line pt-4 text-sm text-slate-500">
+                        {selectedDatasource.lastTestMessage || "暂无记录"}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
-        )}
+        </div>
       </section>
 
       <Modal
@@ -2273,6 +2408,15 @@ function MetricMini({ label, value }: { label: string; value: string }) {
     <div className="border-t border-line px-0 py-4">
       <div className="label">{label}</div>
       <div className="mt-3 font-mono text-2xl font-semibold tracking-tight text-coal">{value}</div>
+    </div>
+  );
+}
+
+function DatasourceCounter({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="px-2 py-2.5">
+      <div className="font-mono text-lg font-semibold text-coal">{value}</div>
+      <div className="mt-0.5 text-[11px] text-slate-500">{label}</div>
     </div>
   );
 }
