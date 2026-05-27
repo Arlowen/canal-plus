@@ -85,7 +85,8 @@ type ClusterHandoffReport = {
 
 const navItems: Array<{ id: MainPage; label: string; icon: typeof Database }> = [
   { id: "datasources", label: "数据源", icon: Database },
-  { id: "nodes", label: "节点", icon: HardDrives }
+  { id: "nodes", label: "节点", icon: HardDrives },
+  { id: "settings", label: "告警", icon: GearSix }
 ];
 
 const emptyDatasourceForm = {
@@ -314,13 +315,13 @@ function ParticleWordmark({ wordmark }: { wordmark: string }) {
 
         const pulse = phaseRef.current === "hold" ? 0.9 + Math.sin(now / 320 + index * 0.45) * 0.12 : 1;
         context.globalAlpha = particle.opacity * 0.2;
-        context.fillStyle = "#bfdbfe";
+        context.fillStyle = "#99f6e4";
         context.beginPath();
         context.arc(particle.currentX, particle.currentY, particle.size * 2.1 * pulse, 0, Math.PI * 2);
         context.fill();
 
         context.globalAlpha = particle.opacity;
-        context.fillStyle = "#60a5fa";
+        context.fillStyle = "#0f766e";
         context.beginPath();
         context.arc(particle.currentX, particle.currentY, particle.size * pulse, 0, Math.PI * 2);
         context.fill();
@@ -561,16 +562,24 @@ function App() {
   return (
     <div className="min-h-[100dvh] bg-mist text-ink">
       <div className="page-shell">
-        <div className="grid gap-5 lg:grid-cols-[240px_minmax(0,1fr)]">
-          <aside className="flex h-fit flex-col border-r border-line bg-white/35 p-3 lg:sticky lg:top-5 lg:min-h-[calc(100dvh-3rem)]">
-            <div className="border-b border-line pb-4">
-              <div className="brand-wordmark" aria-label="Canal Plus">
-                <span>Canal</span>
-                <span>Plus</span>
+        <div className="grid gap-4 lg:grid-cols-[260px_minmax(0,1fr)]">
+          <aside className="surface flex h-fit flex-col p-3 lg:sticky lg:top-3 lg:min-h-[calc(100dvh-1.5rem)]">
+            <div className="border-b border-line/80 px-2 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-coal text-sm font-semibold text-white">
+                  CP
+                </div>
+                <div>
+                  <div className="brand-wordmark" aria-label="Canal Plus">
+                    <span>Canal</span>
+                    <span>Plus</span>
+                  </div>
+                  <div className="mt-1 text-xs font-medium text-slate-500">Control Plane</div>
+                </div>
               </div>
             </div>
 
-            <nav className="mt-4 grid grid-cols-2 gap-2 lg:grid-cols-1">
+            <nav className="mt-4 grid grid-cols-3 gap-2 lg:grid-cols-1">
               {navItems.map((item) => {
                 const Icon = item.icon;
                 return (
@@ -578,10 +587,10 @@ function App() {
                     key={item.id}
                     onClick={() => setPage(item.id)}
                     className={cx(
-                      "flex items-center gap-3 rounded-lg px-3 py-3 text-left text-sm font-medium transition",
+                      "flex min-h-12 items-center justify-start gap-3 rounded-lg px-3 py-3 text-left text-sm font-medium transition",
                       navPage(page) === item.id
-                        ? "bg-blue-600 text-white"
-                        : "text-slate-600 hover:bg-slate-50 hover:text-coal"
+                        ? "border border-teal-100 bg-teal-50 text-accent shadow-[inset_3px_0_0_#0f766e]"
+                        : "border border-transparent text-slate-600 hover:border-line hover:bg-slate-50 hover:text-coal"
                     )}
                   >
                     <Icon size={18} />
@@ -591,6 +600,24 @@ function App() {
               })}
             </nav>
 
+            <div className="mt-4 rounded-lg border border-line/80 bg-slate-50/80 p-4">
+              <div className="label">状态</div>
+              <div className="mt-3 flex items-center justify-between gap-3">
+                <div>
+                  <div className="text-sm font-semibold text-coal">
+                    {serviceUnavailable ? "异常" : "运行中"}
+                  </div>
+                  <div className="mt-1 text-xs text-slate-500">
+                    {cluster?.onlineNodes ?? 0}/{cluster?.totalNodes ?? 0} 节点
+                  </div>
+                </div>
+                <span className={cx(
+                  "h-2.5 w-2.5 rounded-full",
+                  serviceUnavailable ? "bg-red-500" : "bg-emerald-500"
+                )} />
+              </div>
+            </div>
+
             <UserProfileMenu
               user={user}
               onOpenSettings={() => setPage("settings")}
@@ -599,9 +626,10 @@ function App() {
           </aside>
 
           <main className="min-w-0">
-            <div className="mb-5 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+            <div className="surface mb-4 flex flex-col gap-5 p-5 md:p-6 xl:flex-row xl:items-start xl:justify-between">
               <div>
-                <h1 className="text-3xl font-semibold tracking-tight text-coal md:text-4xl">
+                <div className="label">Console</div>
+                <h1 className="mt-2 text-3xl font-semibold tracking-tight text-coal md:text-4xl">
                   {pageTitle(page)}
                 </h1>
                 {pageDescription(page) && (
@@ -610,7 +638,7 @@ function App() {
                   </p>
                 )}
               </div>
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap gap-2 xl:justify-end">
                 <Button onClick={() => void refresh()} className="btn-secondary">
                   <ArrowsClockwise size={16} />
                   刷新
@@ -618,17 +646,24 @@ function App() {
                 {page === "datasources" && canManage && (
                   <Button onClick={openDatasourceCreator} className="btn-primary">
                     <Plus size={16} />
-                    添加数据源
+                    新增
                   </Button>
                 )}
                 {page === "nodes" && canManage && (
                   <Button onClick={openNodeCreator} className="btn-primary">
                     <Plus size={16} />
-                    添加节点
+                    新增
                   </Button>
                 )}
               </div>
             </div>
+
+            <SystemOverview
+              datasources={datasources}
+              cluster={cluster}
+              alertEvents={alertEvents}
+              serviceUnavailable={serviceUnavailable}
+            />
 
             {serviceUnavailable && (
               <NoticeBanner
@@ -705,6 +740,109 @@ function App() {
           </main>
         </div>
       </div>
+    </div>
+  );
+}
+
+function SystemOverview({
+  datasources,
+  cluster,
+  alertEvents,
+  serviceUnavailable
+}: {
+  datasources: Datasource[];
+  cluster: ClusterSnapshot | null;
+  alertEvents: AlertEvent[];
+  serviceUnavailable: boolean;
+}) {
+  const datasourceOnline = datasources.filter((item) => item.connectionStatus === "online").length;
+  const datasourceTotal = datasources.length;
+  const nodeOnline = cluster?.onlineNodes ?? 0;
+  const nodeTotal = cluster?.totalNodes ?? 0;
+  const triggeredAlerts = alertEvents.filter((event) => event.status === "triggered").length;
+  const nodeRatio = percent(nodeOnline, nodeTotal);
+  const datasourceRatio = percent(datasourceOnline, datasourceTotal);
+  const healthText = serviceUnavailable
+    ? "API 异常"
+    : triggeredAlerts > 0
+      ? "需关注"
+      : "健康";
+
+  return (
+    <section className="mb-5 grid gap-4 xl:grid-cols-[1.35fr_0.65fr]">
+      <div className="surface p-5 md:p-6">
+        <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+          <div>
+            <div className="label">运行概览</div>
+            <h2 className="mt-2 text-xl font-semibold tracking-tight text-coal">集群控制台</h2>
+          </div>
+          <Badge tone={serviceUnavailable ? "red" : triggeredAlerts > 0 ? "yellow" : "green"}>{healthText}</Badge>
+        </div>
+        <div className="mt-5 grid gap-5 md:grid-cols-[1.15fr_0.85fr]">
+          <OverviewGauge
+            label="节点在线"
+            value={`${nodeOnline}/${nodeTotal}`}
+            ratio={nodeRatio}
+            tone={serviceUnavailable ? "red" : nodeRatio >= 80 ? "green" : "yellow"}
+          />
+          <OverviewGauge
+            label="数据源"
+            value={`${datasourceOnline}/${datasourceTotal}`}
+            ratio={datasourceRatio}
+            tone={datasourceRatio >= 80 || datasourceTotal === 0 ? "green" : "yellow"}
+          />
+        </div>
+      </div>
+
+      <div className="surface p-5 md:p-6">
+        <div className="label">事件</div>
+        <div className="mt-4 grid grid-cols-2 gap-4">
+          <OverviewStat label="告警" value={`${triggeredAlerts}`} />
+          <OverviewStat label="刷新" value="8s" />
+        </div>
+        <div className="mt-5 border-t border-line pt-4">
+          <div className="flex items-center justify-between gap-3 text-sm">
+            <span className="text-slate-500">后端</span>
+            <span className={cx("font-medium", serviceUnavailable ? "text-red-700" : "text-emerald-700")}>
+              {serviceUnavailable ? "断开" : "可用"}
+            </span>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function OverviewGauge({
+  label,
+  value,
+  ratio,
+  tone
+}: {
+  label: string;
+  value: string;
+  ratio: number;
+  tone: "green" | "yellow" | "red";
+}) {
+  const barClass = tone === "green" ? "bg-emerald-500" : tone === "yellow" ? "bg-amber-500" : "bg-red-500";
+  return (
+    <div className="border-t border-line pt-4">
+      <div className="flex items-end justify-between gap-4">
+        <div className="text-sm font-medium text-slate-600">{label}</div>
+        <div className="font-mono text-2xl font-semibold tracking-tight text-coal">{value}</div>
+      </div>
+      <div className="mt-4 h-2 overflow-hidden rounded-full bg-slate-100">
+        <div className={cx("h-full rounded-full transition-all", barClass)} style={{ width: `${Math.min(100, Math.max(0, ratio))}%` }} />
+      </div>
+    </div>
+  );
+}
+
+function OverviewStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="border-t border-line pt-4">
+      <div className="text-sm text-slate-500">{label}</div>
+      <div className="mt-2 font-mono text-2xl font-semibold tracking-tight text-coal">{value}</div>
     </div>
   );
 }
@@ -830,24 +968,24 @@ function DatasourcePage({
   return (
     <div className="space-y-5">
       <section className="surface min-w-0 p-6">
-        <SectionHeader title="数据源" />
+        <SectionHeader title="连接池" description="MySQL 接入与连通性" />
 
-        <div className="mt-5 grid gap-3 lg:grid-cols-[minmax(0,1fr)_180px]">
+        <div className="mt-5 grid gap-3 rounded-lg border border-line bg-slate-50/70 p-3 lg:grid-cols-[minmax(0,1fr)_180px]">
           <label className="block">
-            <span className="mb-2 block text-xs font-medium uppercase tracking-[0.18em] text-slate-500">搜索</span>
+            <span className="label mb-2 block">搜索</span>
             <span className="relative block">
               <MagnifyingGlass className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
               <TextInput
                 className="input pl-9"
                 value={keyword}
                 onChange={(event) => setKeyword(event.target.value)}
-                placeholder="名称、地址、库名"
+                placeholder="名称 / 地址 / 库名"
               />
             </span>
           </label>
           <Field label="状态">
             <SelectInput className="select" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as "all" | DatasourceStatus)}>
-              <option value="all">全部状态</option>
+              <option value="all">全部</option>
               <option value="online">在线</option>
               <option value="offline">离线</option>
               <option value="untested">未测试</option>
@@ -858,7 +996,7 @@ function DatasourcePage({
         {datasources.length === 0 ? (
           <EmptyPanel
             icon={Database}
-            title="暂无数据源"
+            title="无数据源"
             action={canManage ? (
               <Button onClick={() => {
                 setEditingId(null);
@@ -866,7 +1004,7 @@ function DatasourcePage({
                 setEditorOpen(true);
               }} className="btn-primary">
                 <Plus size={16} />
-                添加数据源
+                新增
               </Button>
             ) : <PermissionNotice compact description="仅管理员可新增数据源。" />}
           />
@@ -906,7 +1044,7 @@ function DatasourcePage({
                           className="btn-compact"
                         >
                           {testingId === item.id ? <ArrowsClockwise size={14} /> : <ShieldCheck size={14} />}
-                          {testingId === item.id ? "测试中" : "测试连接"}
+                          {testingId === item.id ? "测试中" : "测试"}
                         </Button>
                         <ActionMenu
                           items={[
@@ -1322,17 +1460,17 @@ function NodesPage({
   return (
     <div className="space-y-5">
         <section className="surface min-w-0 p-6">
-          <SectionHeader title="节点" />
+          <SectionHeader title="节点池" description="部署、容量与心跳" />
 
-        <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <div className="mt-5 grid gap-4 md:grid-cols-[1fr_1fr_0.7fr]">
           <MetricMini label="节点总数" value={`${cluster?.totalNodes ?? 0}`} />
           <MetricMini label="在线节点" value={`${cluster?.onlineNodes ?? 0}`} />
           <MetricMini label="离线" value={`${nodes.filter((node) => node.status === "offline").length}`} />
         </div>
 
-        <div className="mt-5 grid gap-3 lg:grid-cols-[minmax(0,1fr)_220px]">
+        <div className="mt-5 grid gap-3 rounded-lg border border-line bg-slate-50/70 p-3 lg:grid-cols-[minmax(0,1fr)_220px]">
           <label className="block">
-            <span className="mb-2 block text-xs font-medium uppercase tracking-[0.18em] text-slate-500">搜索</span>
+            <span className="label mb-2 block">搜索</span>
             <span className="relative block">
               <MagnifyingGlass className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
               <TextInput
@@ -1345,7 +1483,7 @@ function NodesPage({
           </label>
           <Field label="状态">
             <SelectInput className="select" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as "all" | ClusterNode["status"])}>
-              <option value="all">全部状态</option>
+              <option value="all">全部</option>
               <option value="online">在线</option>
               <option value="offline">离线</option>
             </SelectInput>
@@ -1359,11 +1497,11 @@ function NodesPage({
         {nodes.length === 0 ? (
           <EmptyPanel
             icon={HardDrives}
-            title="暂无节点"
+            title="无节点"
             action={canManage ? (
               <Button onClick={() => setCreatorOpen(true)} className="btn-primary">
                 <Plus size={16} />
-                添加节点
+                新增
               </Button>
             ) : <PermissionNotice compact description="仅管理员可管节点。" />}
           />
@@ -1564,7 +1702,7 @@ function NodeDetailPage({
             <DetailCard label="最近心跳" value={`${formatDateTime(selected.lastHeartbeatAt)} · ${secondsSince(selected.lastHeartbeatAt)} 秒前`} />
           </div>
           {localNodeId === selected.id && (
-            <div className="border-l-4 border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-700">
+            <div className="rounded-lg border border-teal-200 bg-teal-50 px-4 py-3 text-sm text-teal-700">
               本机节点不支持自卸载或自下线。
             </div>
           )}
@@ -1690,7 +1828,7 @@ function SettingsPage({
           onClick={() => setActiveTab("alerts")}
           className={cx(
             "rounded-lg px-4 py-2 text-sm font-medium transition",
-            activeTab === "alerts" ? "bg-blue-600 text-white" : "text-slate-600 hover:bg-slate-50"
+            activeTab === "alerts" ? "bg-accent text-white" : "text-slate-600 hover:bg-slate-50"
           )}
         >
           告警
@@ -1720,8 +1858,8 @@ function SettingsPage({
                     key={rule.id}
                     onClick={() => setEditingId(rule.id)}
                     className={cx(
-                      "border-l-4 px-4 py-4 text-left transition",
-                      editingId === rule.id ? "border-blue-200 bg-blue-50" : "border-line bg-white hover:bg-slate-50"
+                      "w-full self-start border-l-4 px-4 py-4 text-left transition",
+                      editingId === rule.id ? "border-teal-300 bg-teal-50" : "border-line bg-white hover:bg-slate-50"
                     )}
                   >
                     <div className="flex flex-wrap items-center gap-2">
@@ -1826,16 +1964,37 @@ function LoginScreen({ onLogin }: { onLogin: (username: string, password: string
   };
 
   return (
-    <div className="relative min-h-[100dvh] overflow-hidden bg-[radial-gradient(circle_at_18%_22%,rgba(96,165,250,0.34),transparent_34%),radial-gradient(circle_at_78%_76%,rgba(191,219,254,0.58),transparent_38%),linear-gradient(135deg,#dbeafe_0%,#eff6ff_44%,#cfe6ff_100%)] text-ink">
+    <div className="relative min-h-[100dvh] overflow-hidden bg-[linear-gradient(135deg,#f7f8fa_0%,#eef2f1_46%,#dfe7e4_100%)] text-ink">
       <ParticleWordmark wordmark="Canal Plus" />
       <div className="pointer-events-none relative grid min-h-[100dvh] max-w-[1400px] items-center gap-8 px-5 py-6 md:px-8 lg:mx-auto lg:grid-cols-[1.2fr_0.8fr] lg:gap-10">
-        <section aria-hidden="true" className="order-2 min-h-[340px] py-8 md:min-h-[480px] lg:order-1 lg:min-h-[640px]" />
+        <section aria-hidden="true" className="order-2 min-h-[340px] py-8 md:min-h-[480px] lg:order-1 lg:min-h-[640px]">
+          <div className="mt-auto hidden max-w-md rounded-lg border border-white/70 bg-white/55 p-5 shadow-panel backdrop-blur-sm lg:block">
+            <div className="label">Console</div>
+            <div className="mt-3 grid grid-cols-3 gap-4">
+              <OverviewStat label="节点" value="3" />
+              <OverviewStat label="数据源" value="2" />
+              <OverviewStat label="刷新" value="8s" />
+            </div>
+          </div>
+        </section>
 
         <form onSubmit={submit} className="pointer-events-auto order-1 flex items-center lg:order-2 lg:min-h-[640px]">
-          <div className="mx-auto w-full max-w-[390px] px-1 py-10 md:px-0">
+          <div className="surface mx-auto w-full max-w-[410px] p-6 md:p-8">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-coal text-sm font-semibold text-white">
+                CP
+              </div>
+              <div>
+                <div className="brand-wordmark" aria-label="Canal Plus">
+                  <span>Canal</span>
+                  <span>Plus</span>
+                </div>
+                <div className="mt-1 text-xs font-medium text-slate-500">Control Plane</div>
+              </div>
+            </div>
             <h2
               style={{ fontFamily: "var(--font-display)" }}
-              className="text-4xl font-semibold tracking-[-0.05em] text-coal"
+              className="mt-10 text-3xl font-semibold tracking-tight text-coal"
             >
               登录
             </h2>
@@ -1844,7 +2003,7 @@ function LoginScreen({ onLogin }: { onLogin: (username: string, password: string
               <label className="block">
                 <span className="mb-2 block text-xs font-medium uppercase tracking-[0.18em] text-slate-500">账号</span>
                 <TextInput
-                  className="input bg-white/70 backdrop-blur-sm"
+                  className="input"
                   value={username}
                   onChange={(event) => setUsername(event.target.value)}
                 />
@@ -1853,7 +2012,7 @@ function LoginScreen({ onLogin }: { onLogin: (username: string, password: string
               <label className="block">
                 <span className="mb-2 block text-xs font-medium uppercase tracking-[0.18em] text-slate-500">密码</span>
                 <TextInput
-                  className="input bg-white/70 backdrop-blur-sm"
+                  className="input"
                   type="password"
                   value={password}
                   onChange={(event) => setPassword(event.target.value)}
@@ -2109,9 +2268,9 @@ function DetailPageHeader({
       <div>
         <Button type="button" onClick={onBack} className="btn-compact">
           <ArrowRight size={14} className="rotate-180" />
-          返回列表
+          返回
         </Button>
-        {subtitle && <div className="mt-4 text-xs font-medium uppercase tracking-[0.18em] text-slate-500">{subtitle}</div>}
+        {subtitle && <div className="label mt-4">{subtitle}</div>}
         <h2 className="mt-2 text-2xl font-semibold tracking-tight text-coal">{title}</h2>
       </div>
       {actions}
@@ -2121,9 +2280,9 @@ function DetailPageHeader({
 
 function MetricMini({ label, value }: { label: string; value: string }) {
   return (
-    <div className="border-b border-line px-0 py-4">
-      <div className="text-xs uppercase tracking-[0.18em] text-slate-500">{label}</div>
-      <div className="mt-3 text-2xl font-semibold tracking-tight text-coal">{value}</div>
+    <div className="border-t border-line px-0 py-4">
+      <div className="label">{label}</div>
+      <div className="mt-3 font-mono text-2xl font-semibold tracking-tight text-coal">{value}</div>
     </div>
   );
 }
@@ -2131,7 +2290,7 @@ function MetricMini({ label, value }: { label: string; value: string }) {
 function DetailCard({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
   return (
     <div className="border-b border-line px-0 py-3">
-      <div className="text-xs uppercase tracking-[0.18em] text-slate-500">{label}</div>
+      <div className="label">{label}</div>
       <div className={cx("mt-2 text-sm font-medium text-coal", mono && "mono")}>{value}</div>
     </div>
   );
@@ -2140,7 +2299,7 @@ function DetailCard({ label, value, mono }: { label: string; value: string; mono
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
     <label className="block">
-      <span className="mb-2 block text-xs font-medium uppercase tracking-[0.18em] text-slate-500">{label}</span>
+      <span className="label mb-2 block">{label}</span>
       {children}
     </label>
   );
@@ -2158,8 +2317,8 @@ function EmptyPanel({
   action?: ReactNode;
 }) {
   return (
-    <div className="mt-5 border-y border-dashed border-line bg-slate-50/60 p-8 text-center">
-      <div className="mx-auto flex h-12 w-12 items-center justify-center text-blue-700">
+    <div className="mt-5 rounded-lg border border-dashed border-line bg-slate-50/70 p-8 text-center">
+      <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-lg border border-line bg-white text-accent">
         <Icon size={20} />
       </div>
       <div className="mt-4 text-lg font-semibold text-coal">{title}</div>
@@ -2184,7 +2343,7 @@ function NoticeBanner({
       ? "border-amber-200 bg-amber-50 text-amber-700"
       : "border-red-200 bg-red-50 text-red-700";
   return (
-    <div className={cx("mb-5 flex flex-col gap-3 border-l-4 px-4 py-3 text-sm sm:flex-row sm:items-start sm:justify-between", className)}>
+    <div className={cx("mb-5 flex flex-col gap-3 rounded-lg border px-4 py-3 text-sm sm:flex-row sm:items-start sm:justify-between", className)}>
       <div className="flex items-start gap-2">
         {tone === "success" ? <CheckCircle size={18} /> : tone === "warning" ? <WarningCircle size={18} /> : <XCircle size={18} />}
         <div>{children}</div>
@@ -2205,12 +2364,11 @@ function BackendUnavailableScreen({
     <div className="min-h-[100dvh] bg-mist px-4 py-8 text-ink">
       <div className="mx-auto flex min-h-[calc(100dvh-4rem)] max-w-3xl items-center justify-center">
         <section className="surface w-full p-8 text-center md:p-12">
-          <div className="mx-auto flex h-16 w-16 items-center justify-center bg-red-50 text-red-600">
+          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-lg border border-red-100 bg-red-50 text-red-600">
             <WarningCircle size={28} />
           </div>
-          <div className="mt-6 text-xs font-medium uppercase tracking-[0.28em] text-slate-500">Canal Plus</div>
-          <div className="mt-4 text-6xl font-semibold tracking-tight text-coal md:text-7xl">500</div>
-          <h1 className="mt-4 text-2xl font-semibold tracking-tight text-coal md:text-3xl">后端服务暂时不可用</h1>
+          <div className="label mt-6">Canal Plus</div>
+          <h1 className="mt-4 text-2xl font-semibold tracking-tight text-coal md:text-3xl">后端不可用</h1>
           <p className="mx-auto mt-4 max-w-2xl text-sm leading-7 text-slate-500 md:text-base">
             API 未响应。确认后端后重试。
           </p>
@@ -2228,14 +2386,14 @@ function BackendUnavailableScreen({
 
 function Badge({ tone, children }: { tone: "blue" | "green" | "yellow" | "red" | "neutral"; children: ReactNode }) {
   const className = tone === "blue"
-    ? "border-blue-200 bg-blue-50 text-blue-700"
+    ? "border-teal-200 bg-teal-50 text-teal-700"
     : tone === "green"
       ? "border-emerald-200 bg-emerald-50 text-emerald-700"
       : tone === "yellow"
         ? "border-amber-200 bg-amber-50 text-amber-700"
         : tone === "red"
           ? "border-red-200 bg-red-50 text-red-700"
-          : "border-slate-200 bg-slate-100 text-slate-600";
+          : "border-slate-200 bg-slate-50 text-slate-600";
   return <span className={cx("chip", className)}>{children}</span>;
 }
 
@@ -2314,7 +2472,7 @@ function Modal({
   const sizeClass = size === "md" ? "max-w-xl" : size === "lg" ? "max-w-3xl" : "max-w-5xl";
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/35 px-4 py-8"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 px-4 py-8 backdrop-blur-sm"
       onMouseDown={(event) => {
         if (closeOnOverlay && event.target === event.currentTarget) {
           onClose();
@@ -2328,15 +2486,15 @@ function Modal({
         aria-labelledby={titleId}
         aria-describedby={description ? descriptionId : undefined}
         tabIndex={-1}
-        className={cx("max-h-[90dvh] w-full overflow-auto rounded-lg border border-line bg-white p-6 shadow-panel md:p-8", sizeClass)}
+        className={cx("max-h-[90dvh] w-full overflow-auto rounded-lg border border-line bg-white p-6 shadow-raised outline-none md:p-8", sizeClass)}
       >
         <div className="flex items-start justify-between gap-4">
           <div>
             <h3 id={titleId} className="text-2xl font-semibold tracking-tight text-coal">{title}</h3>
             {description && <p id={descriptionId} className="mt-2 text-sm text-slate-500">{description}</p>}
           </div>
-          <Button onClick={onClose} className="btn-compact">
-            关闭
+          <Button onClick={onClose} className="btn-compact px-2.5" aria-label="关闭">
+            <XCircle size={16} />
           </Button>
         </div>
         <div className="mt-6">{children}</div>
@@ -2430,6 +2588,7 @@ function ActionMenu({
       <Button
         ref={buttonRef}
         type="button"
+        aria-label="更多操作"
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => setOpen((current) => !current)}
@@ -2440,10 +2599,9 @@ function ActionMenu({
             window.requestAnimationFrame(() => focusMenuItem(0));
           }
         }}
-        className="btn-compact"
+        className="btn-compact px-2.5"
       >
         <DotsThree size={14} />
-        更多
       </Button>
       {open && (
         <div
@@ -2468,7 +2626,7 @@ function ActionMenu({
               setOpen(false);
             }
           }}
-          className="absolute right-0 top-11 z-20 w-40 rounded-lg border border-line bg-white p-2 shadow-panel"
+          className="absolute right-0 top-11 z-20 w-40 rounded-lg border border-line bg-white p-2 shadow-raised"
         >
           {items.map((item) => (
             <Button
@@ -2551,7 +2709,7 @@ function UserProfileMenu({
       {open && (
         <div
           role="menu"
-          className="absolute bottom-[calc(100%+0.75rem)] left-0 z-30 w-full min-w-[14rem] overflow-hidden rounded-lg border border-line bg-white p-2 shadow-panel"
+          className="absolute bottom-[calc(100%+0.75rem)] left-0 z-30 w-full min-w-[14rem] overflow-hidden rounded-lg border border-line bg-white p-2 shadow-raised"
         >
           {menuItems.map((item) => {
             const Icon = item.icon;
@@ -2584,11 +2742,11 @@ function UserProfileMenu({
         aria-expanded={open}
         onClick={() => setOpen((current) => !current)}
         className={cx(
-          "flex w-full items-center justify-start gap-3 rounded-lg border border-line bg-slate-50/80 px-3 py-3 text-left transition hover:border-blue-200 hover:bg-white",
-          open && "border-blue-200 bg-white"
+          "flex w-full items-center justify-start gap-3 rounded-lg border border-line bg-slate-50/80 px-3 py-3 text-left transition hover:border-teal-200 hover:bg-white",
+          open && "border-teal-200 bg-white"
         )}
       >
-        <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-red-600 text-xl font-semibold text-white">
+        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-coal text-lg font-semibold text-white">
           {initial}
         </span>
         <span className="min-w-0">
@@ -2657,6 +2815,11 @@ function datasourceSearchText(item: Datasource) {
     item.defaultSchema,
     item.username
   ].filter(Boolean).join(" ").toLowerCase();
+}
+
+function percent(value: number, total: number) {
+  if (total <= 0) return 100;
+  return Math.round((value / total) * 100);
 }
 
 function navPage(page: Page): MainPage {

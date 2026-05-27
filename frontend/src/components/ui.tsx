@@ -24,5 +24,5 @@ export const TextareaInput = forwardRef<HTMLTextAreaElement, TextareaInputProps>
 });
 
 export const CheckboxInput = forwardRef<HTMLInputElement, CheckboxInputProps>(function CheckboxInput({ className, ...props }, ref) {
-  return <input ref={ref} type="checkbox" className={cx("h-4 w-4 rounded border-line text-accent focus:ring-blue-100", className)} {...props} />;
+  return <input ref={ref} type="checkbox" className={cx("h-4 w-4 rounded border-line text-accent focus:ring-teal-100", className)} {...props} />;
 });
