@@ -110,7 +110,6 @@ func toPublicDatasource(datasource Datasource) PublicDatasource {
 	return PublicDatasource{
 		ID:               datasource.ID,
 		Name:             datasource.Name,
-		Purpose:          datasource.Purpose,
 		Host:             datasource.Host,
 		Port:             datasource.Port,
 		Username:         datasource.Username,

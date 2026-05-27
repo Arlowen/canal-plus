@@ -1,9 +1,6 @@
 package app
 
 import (
-	"encoding/json"
-	"errors"
-	"fmt"
 	"net/http"
 	"os"
 	"regexp"
@@ -14,9 +11,7 @@ import (
 
 type Server struct {
 	store           *Store
-	taskLogs        *TaskLogService
-	taskStatus      *TaskStatusService
-	processes       *TaskProcessManager
+	localNodeID     string
 	port            string
 	frontendOrigins []string
 	runtimeConfig   RuntimeConfig
@@ -33,14 +28,7 @@ func NewServer() (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	binaryPath, err := os.Executable()
-	if err != nil {
-		return nil, err
-	}
-	taskLogs := NewTaskLogService(store)
-	taskStatus := NewTaskStatusService(store)
 	localNodeID := resolveLocalNodeID(store, os.Getenv("CANAL_PLUS_NODE_ID"))
-	processes := NewTaskProcessManager(store, taskLogs, taskStatus, binaryPath, localNodeID)
 	clusterSupervisorEnabled := os.Getenv("CANAL_PLUS_CLUSTER_SUPERVISOR") != "false"
 	clusterSupervisorInterval := envDurationSeconds("CANAL_PLUS_CLUSTER_SUPERVISOR_INTERVAL_SECONDS", 5*time.Second)
 	if clusterSupervisorEnabled {
@@ -51,8 +39,6 @@ func NewServer() (*Server, error) {
 	if embeddedHeartbeatEnabled {
 		store.StartEmbeddedNodeHeartbeat(localNodeID, embeddedHeartbeatInterval)
 	}
-	taskProcessSupervisorInterval := envDurationSeconds("CANAL_PLUS_TASK_PROCESS_SUPERVISOR_INTERVAL_SECONDS", 2*time.Second)
-	processes.StartSupervisor(taskProcessSupervisorInterval)
 
 	frontendOrigin := os.Getenv("FRONTEND_ORIGIN")
 	if frontendOrigin == "" {
@@ -73,26 +59,22 @@ func NewServer() (*Server, error) {
 
 	server := &Server{
 		store:           store,
-		taskLogs:        taskLogs,
-		taskStatus:      taskStatus,
-		processes:       processes,
+		localNodeID:     localNodeID,
 		port:            port,
 		frontendOrigins: frontendOrigins,
 		allowedOrigins:  allowedOrigins,
 		runtimeConfig: RuntimeConfig{
-			BackendPort:                          port,
-			FrontendOrigins:                      frontendOrigins,
-			StorageBackend:                       storageBackend,
-			StorageLocation:                      storageLocation,
-			LocalNodeID:                          localNodeID,
-			ClusterSupervisorEnabled:             clusterSupervisorEnabled,
-			ClusterSupervisorIntervalSeconds:     int(clusterSupervisorInterval.Seconds()),
-			EmbeddedHeartbeatEnabled:             embeddedHeartbeatEnabled,
-			EmbeddedHeartbeatIntervalSeconds:     int(embeddedHeartbeatInterval.Seconds()),
-			TaskProcessSupervisorIntervalSeconds: int(taskProcessSupervisorInterval.Seconds()),
+			BackendPort:                      port,
+			FrontendOrigins:                  frontendOrigins,
+			StorageBackend:                   storageBackend,
+			StorageLocation:                  storageLocation,
+			LocalNodeID:                      localNodeID,
+			ClusterSupervisorEnabled:         clusterSupervisorEnabled,
+			ClusterSupervisorIntervalSeconds: int(clusterSupervisorInterval.Seconds()),
+			EmbeddedHeartbeatEnabled:         embeddedHeartbeatEnabled,
+			EmbeddedHeartbeatIntervalSeconds: int(embeddedHeartbeatInterval.Seconds()),
 		},
 	}
-	server.processes.RecoverActiveTasks()
 	return server, nil
 }
 
@@ -106,6 +88,23 @@ func envDurationSeconds(name string, fallback time.Duration) time.Duration {
 		return fallback
 	}
 	return time.Duration(seconds) * time.Second
+}
+
+func resolveLocalNodeID(store *Store, preferred string) string {
+	preferred = strings.TrimSpace(preferred)
+	if preferred != "" {
+		return preferred
+	}
+	snapshot := store.ClusterSnapshot()
+	for _, node := range snapshot.Nodes {
+		if node.Status == NodeOnline {
+			return node.ID
+		}
+	}
+	if len(snapshot.Nodes) > 0 {
+		return snapshot.Nodes[0].ID
+	}
+	return ""
 }
 
 func (s *Server) Port() string {
@@ -160,24 +159,14 @@ func (s *Server) ServeHTTP(response http.ResponseWriter, request *http.Request) 
 		writeJSON(response, http.StatusOK, toPublicUser(user))
 	case len(parts) == 2 && parts[0] == "runtime" && parts[1] == "config" && request.Method == http.MethodGet:
 		writeJSON(response, http.StatusOK, s.runtimeConfig)
-	case len(parts) == 2 && parts[0] == "dashboard" && parts[1] == "summary" && request.Method == http.MethodGet:
-		s.handleDashboardSummary(response)
 	case len(parts) >= 1 && parts[0] == "datasources":
 		s.handleDatasources(response, request, parts)
-	case len(parts) >= 1 && parts[0] == "sync-tasks":
-		s.handleSyncTasks(response, request, parts)
-	case len(parts) >= 1 && parts[0] == "error-events":
-		s.handleErrorEvents(response, request, parts)
 	case len(parts) >= 1 && parts[0] == "cluster":
 		s.handleCluster(response, request, parts)
-	case len(parts) >= 1 && parts[0] == "capability-jobs":
-		s.handleCapabilityJobs(response, request, parts)
 	case len(parts) == 1 && parts[0] == "operation-logs" && request.Method == http.MethodGet:
 		writeJSON(response, http.StatusOK, firstN(s.store.Logs(), 200))
 	case len(parts) >= 1 && parts[0] == "alert-rules":
 		s.handleAlertRules(response, request, parts)
-	case len(parts) == 2 && parts[0] == "sync-strategy" && parts[1] == "default" && request.Method == http.MethodGet:
-		writeJSON(response, http.StatusOK, defaultStrategy())
 	default:
 		writeError(response, http.StatusNotFound, "not found")
 	}
@@ -200,71 +189,6 @@ func (s *Server) handleLogin(response http.ResponseWriter, request *http.Request
 	writeJSON(response, http.StatusOK, map[string]any{
 		"token": "dev-token:" + user.ID,
 		"user":  toPublicUser(user),
-	})
-}
-
-func (s *Server) handleDashboardSummary(response http.ResponseWriter) {
-	snapshot := s.store.Snapshot()
-	runtimeByTask := map[string]TaskRuntimeState{}
-	for _, runtime := range snapshot.RuntimeStates {
-		runtimeByTask[runtime.TaskID] = runtime
-	}
-
-	var runningTasks []SyncTask
-	failedTasks := 0
-	for _, task := range snapshot.SyncTasks {
-		if task.Status == TaskIncrementalRunning || task.Status == TaskFullSyncing {
-			runningTasks = append(runningTasks, task)
-		}
-		if task.Status == TaskFailed {
-			failedTasks++
-		}
-	}
-
-	delaySum := 0
-	for _, task := range runningTasks {
-		delaySum += runtimeByTask[task.ID].DelaySeconds
-	}
-	averageDelay := 0
-	if len(runningTasks) > 0 {
-		averageDelay = delaySum / len(runningTasks)
-	}
-
-	eventsPerSecond := 0
-	progressSum := 0
-	progressCount := 0
-	for _, runtime := range snapshot.RuntimeStates {
-		eventsPerSecond += runtime.EventsPerSecond
-		if runtime.FullTotalRows > 0 {
-			progressSum += int((runtime.FullSyncedRows * 100) / runtime.FullTotalRows)
-			progressCount++
-		}
-	}
-	fullSyncProgress := 0
-	if progressCount > 0 {
-		fullSyncProgress = progressSum / progressCount
-	}
-
-	cutoff := time.Now().Add(-24 * time.Hour)
-	failuresLast24Hours := 0
-	for _, event := range snapshot.ErrorEvents {
-		createdAt, err := time.Parse(time.RFC3339Nano, event.CreatedAt)
-		if err == nil && createdAt.After(cutoff) {
-			failuresLast24Hours++
-		}
-	}
-
-	writeJSON(response, http.StatusOK, DashboardSummary{
-		TaskTotal:           len(snapshot.SyncTasks),
-		RunningTasks:        len(runningTasks),
-		FailedTasks:         failedTasks,
-		AverageDelaySeconds: averageDelay,
-		EventsPerSecond:     eventsPerSecond,
-		FailuresLast24Hours: failuresLast24Hours,
-		FullSyncProgress:    fullSyncProgress,
-		OnlineNodes:         clusterOnline(snapshot.Nodes),
-		TotalNodes:          len(snapshot.Nodes),
-		FailoverCount:       failoverCount(snapshot.TaskLeases),
 	})
 }
 
@@ -314,13 +238,12 @@ func (s *Server) handleDatasources(response http.ResponseWriter, request *http.R
 
 func (s *Server) createDatasource(response http.ResponseWriter, request *http.Request) {
 	var input struct {
-		Name          string            `json:"name"`
-		Purpose       DatasourcePurpose `json:"purpose"`
-		Host          string            `json:"host"`
-		Port          int               `json:"port"`
-		Username      string            `json:"username"`
-		Password      string            `json:"password"`
-		DefaultSchema string            `json:"defaultSchema"`
+		Name          string `json:"name"`
+		Host          string `json:"host"`
+		Port          int    `json:"port"`
+		Username      string `json:"username"`
+		Password      string `json:"password"`
+		DefaultSchema string `json:"defaultSchema"`
 	}
 	if err := decodeJSON(request, &input); err != nil {
 		writeError(response, http.StatusBadRequest, "请求体格式错误")
@@ -337,7 +260,6 @@ func (s *Server) createDatasource(response http.ResponseWriter, request *http.Re
 	}
 	datasource, err := s.store.CreateDatasource(Datasource{
 		Name:           input.Name,
-		Purpose:        input.Purpose,
 		Host:           input.Host,
 		Port:           input.Port,
 		Username:       input.Username,
@@ -353,13 +275,12 @@ func (s *Server) createDatasource(response http.ResponseWriter, request *http.Re
 
 func (s *Server) updateDatasource(response http.ResponseWriter, request *http.Request, id string) {
 	var input struct {
-		Name          string            `json:"name"`
-		Purpose       DatasourcePurpose `json:"purpose"`
-		Host          string            `json:"host"`
-		Port          int               `json:"port"`
-		Username      string            `json:"username"`
-		Password      string            `json:"password"`
-		DefaultSchema string            `json:"defaultSchema"`
+		Name          string `json:"name"`
+		Host          string `json:"host"`
+		Port          int    `json:"port"`
+		Username      string `json:"username"`
+		Password      string `json:"password"`
+		DefaultSchema string `json:"defaultSchema"`
 	}
 	if err := decodeJSON(request, &input); err != nil {
 		writeError(response, http.StatusBadRequest, "请求体格式错误")
@@ -367,7 +288,6 @@ func (s *Server) updateDatasource(response http.ResponseWriter, request *http.Re
 	}
 	patch := Datasource{
 		Name:          input.Name,
-		Purpose:       input.Purpose,
 		Host:          input.Host,
 		Port:          input.Port,
 		Username:      input.Username,
@@ -456,451 +376,6 @@ func (s *Server) listColumns(response http.ResponseWriter, id string, schema str
 		return
 	}
 	writeJSON(response, http.StatusOK, columns)
-}
-
-func (s *Server) handleSyncTasks(response http.ResponseWriter, request *http.Request, parts []string) {
-	switch {
-	case len(parts) == 1 && request.Method == http.MethodGet:
-		tasks := s.store.Tasks()
-		filtered := make([]TaskResponse, 0, len(tasks))
-		status := request.URL.Query().Get("status")
-		owner := request.URL.Query().Get("owner")
-		keyword := request.URL.Query().Get("keyword")
-		for _, task := range tasks {
-			if status != "" && string(task.Status) != status {
-				continue
-			}
-			if owner != "" && !stringContainsFold(task.Owner, owner) {
-				continue
-			}
-			if keyword != "" && !stringContainsFold(task.Name, keyword) && !stringContainsFold(task.Description, keyword) {
-				continue
-			}
-			filtered = append(filtered, s.taskResponse(task))
-		}
-		writeJSON(response, http.StatusOK, filtered)
-	case len(parts) == 1 && request.Method == http.MethodPost:
-		s.createTask(response, request)
-	case len(parts) == 2 && parts[1] == "preflight" && request.Method == http.MethodPost:
-		s.preflightTask(response, request)
-	case len(parts) == 2 && request.Method == http.MethodGet:
-		task, ok := s.store.GetTask(parts[1])
-		if !ok {
-			writeError(response, http.StatusNotFound, "同步任务不存在")
-			return
-		}
-		writeJSON(response, http.StatusOK, s.taskResponse(task))
-	case len(parts) == 2 && request.Method == http.MethodPut:
-		s.updateTask(response, request, parts[1])
-	case len(parts) == 2 && request.Method == http.MethodDelete:
-		if s.processes != nil {
-			s.processes.EnsureTaskStopped(parts[1], "Task deleted; process reclaimed")
-		}
-		deleted, err := s.store.DeleteTask(parts[1])
-		if err != nil {
-			writeError(response, http.StatusBadRequest, err.Error())
-			return
-		}
-		if !deleted {
-			writeError(response, http.StatusNotFound, "同步任务不存在")
-			return
-		}
-		response.WriteHeader(http.StatusNoContent)
-	case len(parts) == 3 && isTaskAction(parts[2]) && request.Method == http.MethodPost:
-		s.transitionTask(response, parts[1], parts[2])
-	case len(parts) == 3 && parts[2] == "params" && request.Method == http.MethodPost:
-		s.updateTaskParameters(response, request, parts[1])
-	case len(parts) == 3 && parts[2] == "reset-position" && request.Method == http.MethodPost:
-		s.resetTaskPosition(response, request, parts[1])
-	case len(parts) == 3 && parts[2] == "rerun" && request.Method == http.MethodPost:
-		s.rerunTask(response, parts[1])
-	case len(parts) == 3 && parts[2] == "export" && request.Method == http.MethodGet:
-		s.exportTask(response, parts[1])
-	case len(parts) == 3 && parts[2] == "revisions" && request.Method == http.MethodGet:
-		s.listTaskRevisions(response, parts[1])
-	case len(parts) == 3 && parts[2] == "checkpoints" && request.Method == http.MethodGet:
-		s.listTaskCheckpoints(response, parts[1])
-	case len(parts) == 5 && parts[2] == "revisions" && parts[4] == "rollback" && request.Method == http.MethodPost:
-		s.rollbackTaskRevision(response, parts[1], parts[3])
-	case len(parts) == 3 && parts[2] == "copy" && request.Method == http.MethodPost:
-		task, ok, err := s.store.CopyTask(parts[1])
-		if err != nil {
-			writeError(response, http.StatusInternalServerError, err.Error())
-			return
-		}
-		if !ok {
-			writeError(response, http.StatusNotFound, "同步任务不存在")
-			return
-		}
-		writeJSON(response, http.StatusCreated, s.taskResponse(task))
-	case len(parts) == 3 && parts[2] == "runtime" && request.Method == http.MethodGet:
-		runtime, ok := s.store.Runtime(parts[1])
-		if !ok {
-			writeError(response, http.StatusNotFound, "同步任务不存在")
-			return
-		}
-		writeJSON(response, http.StatusOK, s.decorateRuntime(runtime))
-	case len(parts) == 3 && parts[2] == "logs" && request.Method == http.MethodGet:
-		if ok, message := s.canAccessTaskLogs(parts[1]); !ok {
-			writeError(response, http.StatusConflict, message)
-			return
-		}
-		limit := 120
-		if value := strings.TrimSpace(request.URL.Query().Get("limit")); value != "" {
-			if parsed, err := strconv.Atoi(value); err == nil && parsed > 0 {
-				limit = parsed
-			}
-		}
-		if s.taskLogs == nil {
-			writeJSON(response, http.StatusOK, []TaskLogEntry{})
-			return
-		}
-		writeJSON(response, http.StatusOK, s.taskLogs.List(parts[1], limit))
-	case len(parts) == 4 && parts[2] == "logs" && parts[3] == "stream" && request.Method == http.MethodGet:
-		if s.taskLogs == nil {
-			writeError(response, http.StatusServiceUnavailable, "日志流未启用")
-			return
-		}
-		if ok, message := s.canAccessTaskLogs(parts[1]); !ok {
-			writeError(response, http.StatusConflict, message)
-			return
-		}
-		s.streamTaskLogs(response, request, parts[1])
-	default:
-		writeError(response, http.StatusNotFound, "not found")
-	}
-}
-
-func (s *Server) createTask(response http.ResponseWriter, request *http.Request) {
-	var input SyncTask
-	if err := decodeJSON(request, &input); err != nil {
-		writeError(response, http.StatusBadRequest, "请求体格式错误")
-		return
-	}
-	if err := validateTask(input); err != nil {
-		writeError(response, http.StatusBadRequest, err.Error())
-		return
-	}
-	preflight := s.buildTaskPreflight(input)
-	if !preflight.OK {
-		writeJSON(response, http.StatusUnprocessableEntity, map[string]any{
-			"message":   "任务预检未通过",
-			"preflight": preflight,
-		})
-		return
-	}
-	task, err := s.store.CreateTask(input)
-	if err != nil {
-		writeError(response, http.StatusInternalServerError, err.Error())
-		return
-	}
-	writeJSON(response, http.StatusCreated, s.taskResponse(task))
-}
-
-func (s *Server) preflightTask(response http.ResponseWriter, request *http.Request) {
-	var input SyncTask
-	if err := decodeJSON(request, &input); err != nil {
-		writeError(response, http.StatusBadRequest, "请求体格式错误")
-		return
-	}
-	report := s.buildTaskPreflight(input)
-	writeJSON(response, http.StatusOK, report)
-}
-
-func (s *Server) updateTask(response http.ResponseWriter, request *http.Request, id string) {
-	var input SyncTask
-	if err := decodeJSON(request, &input); err != nil {
-		writeError(response, http.StatusBadRequest, "请求体格式错误")
-		return
-	}
-	task, ok, err := s.store.UpdateTask(id, input)
-	if err != nil {
-		writeError(response, http.StatusInternalServerError, err.Error())
-		return
-	}
-	if !ok {
-		writeError(response, http.StatusNotFound, "同步任务不存在")
-		return
-	}
-	writeJSON(response, http.StatusOK, s.taskResponse(task))
-}
-
-func (s *Server) transitionTask(response http.ResponseWriter, id string, action string) {
-	task, ok, err := s.store.TransitionTask(id, action)
-	if err != nil {
-		writeError(response, http.StatusBadRequest, err.Error())
-		return
-	}
-	if !ok {
-		writeError(response, http.StatusNotFound, "同步任务不存在")
-		return
-	}
-	if (action == "start" || action == "resume") && s.processes != nil {
-		if err := s.processes.StartTask(id); err != nil {
-			writeError(response, http.StatusBadRequest, err.Error())
-			return
-		}
-	}
-	if action == "pause" && s.processes != nil {
-		_ = s.processes.StopTask(id, "Task paused")
-	}
-	if action == "stop" && s.processes != nil {
-		_ = s.processes.StopTask(id, "Task stopped")
-	}
-	if refreshed, exists := s.store.GetTask(id); exists {
-		task = refreshed
-	}
-	writeJSON(response, http.StatusOK, s.taskResponse(task))
-}
-
-func (s *Server) updateTaskParameters(response http.ResponseWriter, request *http.Request, id string) {
-	var input TaskParameterPatch
-	if err := decodeJSON(request, &input); err != nil {
-		writeError(response, http.StatusBadRequest, "请求体格式错误")
-		return
-	}
-	task, ok, err := s.store.UpdateTaskParameters(id, input)
-	if err != nil {
-		writeError(response, http.StatusBadRequest, err.Error())
-		return
-	}
-	if !ok {
-		writeError(response, http.StatusNotFound, "同步任务不存在")
-		return
-	}
-	writeJSON(response, http.StatusOK, TaskOperationResult{
-		Task:    s.taskResponse(task),
-		Message: "任务参数已生效",
-		Meta: map[string]string{
-			"configVersion": intToString(task.ConfigVersion),
-		},
-	})
-}
-
-func (s *Server) resetTaskPosition(response http.ResponseWriter, request *http.Request, id string) {
-	var input PositionResetInput
-	if err := decodeJSON(request, &input); err != nil {
-		writeError(response, http.StatusBadRequest, "请求体格式错误")
-		return
-	}
-	task, ok, err := s.store.ResetTaskPosition(id, input)
-	if err != nil {
-		writeError(response, http.StatusBadRequest, err.Error())
-		return
-	}
-	if !ok {
-		writeError(response, http.StatusNotFound, "同步任务不存在")
-		return
-	}
-	writeJSON(response, http.StatusOK, TaskOperationResult{
-		Task:    s.taskResponse(task),
-		Message: "任务位点已重置",
-		Meta: map[string]string{
-			"binlogFile":     input.BinlogFile,
-			"binlogPosition": intToString(int(input.BinlogPosition)),
-		},
-	})
-}
-
-func (s *Server) rerunTask(response http.ResponseWriter, id string) {
-	task, ok, err := s.store.RerunTask(id)
-	if err != nil {
-		writeError(response, http.StatusBadRequest, err.Error())
-		return
-	}
-	if !ok {
-		writeError(response, http.StatusNotFound, "同步任务不存在")
-		return
-	}
-	if s.processes != nil && (task.Status == TaskFullSyncing || task.Status == TaskIncrementalRunning) {
-		if err := s.processes.StartTask(id); err != nil {
-			writeError(response, http.StatusBadRequest, err.Error())
-			return
-		}
-	}
-	if refreshed, exists := s.store.GetTask(id); exists {
-		task = refreshed
-	}
-	writeJSON(response, http.StatusOK, TaskOperationResult{
-		Task:    s.taskResponse(task),
-		Message: "任务已按原配置重跑",
-		Meta: map[string]string{
-			"status": string(task.Status),
-		},
-	})
-}
-
-func (s *Server) streamTaskLogs(response http.ResponseWriter, request *http.Request, taskID string) {
-	response.Header().Set("Content-Type", "text/event-stream")
-	response.Header().Set("Cache-Control", "no-cache")
-	response.Header().Set("Connection", "keep-alive")
-	response.Header().Set("X-Accel-Buffering", "no")
-	flusher, ok := response.(http.Flusher)
-	if !ok {
-		writeError(response, http.StatusInternalServerError, "stream not supported")
-		return
-	}
-
-	channel, unsubscribe := s.taskLogs.Subscribe(taskID)
-	defer unsubscribe()
-
-	fmt.Fprintf(response, ": connected\n\n")
-	flusher.Flush()
-
-	keepalive := time.NewTicker(15 * time.Second)
-	defer keepalive.Stop()
-	for {
-		select {
-		case <-request.Context().Done():
-			return
-		case entry, ok := <-channel:
-			if !ok {
-				return
-			}
-			payload, _ := json.Marshal(entry)
-			fmt.Fprintf(response, "data: %s\n\n", string(payload))
-			flusher.Flush()
-		case <-keepalive.C:
-			fmt.Fprintf(response, ": keepalive\n\n")
-			flusher.Flush()
-		}
-	}
-}
-
-func (s *Server) exportTask(response http.ResponseWriter, id string) {
-	task, ok := s.store.GetTask(id)
-	if !ok {
-		writeError(response, http.StatusNotFound, "同步任务不存在")
-		return
-	}
-	runtime, _ := s.store.Runtime(id)
-	taskResponse := s.taskResponse(task)
-	exported := TaskExport{
-		ExportedAt: now(),
-		Task:       taskResponse,
-		Runtime:    runtime,
-	}
-	exported.Checksum = checksumJSON(struct {
-		Task    TaskResponse     `json:"task"`
-		Runtime TaskRuntimeState `json:"runtime"`
-	}{
-		Task:    exported.Task,
-		Runtime: exported.Runtime,
-	})
-	writeJSON(response, http.StatusOK, exported)
-}
-
-func (s *Server) listTaskRevisions(response http.ResponseWriter, id string) {
-	if _, ok := s.store.GetTask(id); !ok {
-		writeError(response, http.StatusNotFound, "同步任务不存在")
-		return
-	}
-	writeJSON(response, http.StatusOK, s.store.TaskRevisions(id))
-}
-
-func (s *Server) listTaskCheckpoints(response http.ResponseWriter, id string) {
-	if _, ok := s.store.GetTask(id); !ok {
-		writeError(response, http.StatusNotFound, "同步任务不存在")
-		return
-	}
-	writeJSON(response, http.StatusOK, s.store.TaskCheckpoints(id))
-}
-
-func (s *Server) rollbackTaskRevision(response http.ResponseWriter, id string, versionValue string) {
-	version, err := strconv.Atoi(versionValue)
-	if err != nil || version <= 0 {
-		writeError(response, http.StatusBadRequest, "版本号不正确")
-		return
-	}
-	task, ok, err := s.store.RollbackTaskRevision(id, version)
-	if err != nil {
-		writeError(response, http.StatusBadRequest, err.Error())
-		return
-	}
-	if !ok {
-		writeError(response, http.StatusNotFound, "任务版本不存在")
-		return
-	}
-	writeJSON(response, http.StatusOK, TaskOperationResult{
-		Task:    s.taskResponse(task),
-		Message: "任务配置已回滚到 v" + intToString(version),
-		Meta: map[string]string{
-			"configVersion": intToString(task.ConfigVersion),
-		},
-	})
-}
-
-func (s *Server) handleErrorEvents(response http.ResponseWriter, request *http.Request, parts []string) {
-	switch {
-	case len(parts) == 1 && request.Method == http.MethodGet:
-		status := request.URL.Query().Get("status")
-		events := s.store.ErrorEvents()
-		filtered := make([]ErrorEvent, 0, len(events))
-		for _, event := range events {
-			if status == "" || string(event.Status) == status {
-				filtered = append(filtered, event)
-			}
-		}
-		writeJSON(response, http.StatusOK, filtered)
-	case len(parts) == 2 && parts[1] == "batch-retry" && request.Method == http.MethodPost:
-		var input struct {
-			IDs []string `json:"ids"`
-		}
-		if err := decodeJSON(request, &input); err != nil {
-			writeError(response, http.StatusBadRequest, "请求体格式错误")
-			return
-		}
-		events := make([]ErrorEvent, 0, len(input.IDs))
-		for _, id := range input.IDs {
-			event, ok, _ := s.store.RetryError(id)
-			if ok {
-				events = append(events, event)
-			}
-		}
-		writeJSON(response, http.StatusOK, events)
-	case len(parts) == 2 && request.Method == http.MethodGet:
-		event, ok := s.store.GetErrorEvent(parts[1])
-		if !ok {
-			writeError(response, http.StatusNotFound, "错误事件不存在")
-			return
-		}
-		writeJSON(response, http.StatusOK, event)
-	case len(parts) == 3 && parts[2] == "retry" && request.Method == http.MethodPost:
-		event, ok, err := s.store.RetryError(parts[1])
-		if err != nil {
-			writeError(response, http.StatusInternalServerError, err.Error())
-			return
-		}
-		if !ok {
-			writeError(response, http.StatusNotFound, "错误事件不存在")
-			return
-		}
-		writeJSON(response, http.StatusOK, event)
-	case len(parts) == 3 && parts[2] == "skip" && request.Method == http.MethodPost:
-		var input struct {
-			Reason string `json:"reason"`
-		}
-		if err := decodeJSON(request, &input); err != nil {
-			writeError(response, http.StatusBadRequest, "请求体格式错误")
-			return
-		}
-		if strings.TrimSpace(input.Reason) == "" {
-			writeError(response, http.StatusBadRequest, "跳过原因不能为空")
-			return
-		}
-		event, ok, err := s.store.SkipError(parts[1], input.Reason)
-		if err != nil {
-			writeError(response, http.StatusInternalServerError, err.Error())
-			return
-		}
-		if !ok {
-			writeError(response, http.StatusNotFound, "错误事件不存在")
-			return
-		}
-		writeJSON(response, http.StatusOK, event)
-	default:
-		writeError(response, http.StatusNotFound, "not found")
-	}
 }
 
 func (s *Server) handleAlertRules(response http.ResponseWriter, request *http.Request, parts []string) {
@@ -992,60 +467,10 @@ func (s *Server) handleCluster(response http.ResponseWriter, request *http.Reque
 			return
 		}
 		if created {
-			if s.processes != nil {
-				s.processes.Reconcile()
-			}
 			writeJSON(response, http.StatusCreated, node)
 			return
 		}
-		if s.processes != nil {
-			s.processes.Reconcile()
-		}
 		writeJSON(response, http.StatusOK, node)
-	case len(parts) == 2 && parts[1] == "leases" && request.Method == http.MethodGet:
-		writeJSON(response, http.StatusOK, s.clusterResponse().Leases)
-	case len(parts) == 2 && parts[1] == "rebalance" && request.Method == http.MethodPost:
-		report, err := s.store.RebalanceCluster()
-		if err != nil {
-			writeError(response, http.StatusInternalServerError, err.Error())
-			return
-		}
-		if s.processes != nil {
-			s.processes.Reconcile()
-		}
-		writeJSON(response, http.StatusOK, report)
-	case len(parts) == 4 && parts[1] == "nodes" && parts[3] == "failover-drill" && request.Method == http.MethodPost:
-		if s.isLocalControlNode(parts[2]) {
-			writeError(response, http.StatusBadRequest, "当前控制节点不支持在本机控制台发起故障演练")
-			return
-		}
-		report, ok, err := s.store.FailoverDrill(parts[2])
-		if err != nil {
-			writeError(response, http.StatusBadRequest, err.Error())
-			return
-		}
-		if !ok {
-			writeError(response, http.StatusNotFound, "节点不存在")
-			return
-		}
-		if s.processes != nil {
-			s.processes.Reconcile()
-		}
-		writeJSON(response, http.StatusOK, report)
-	case len(parts) == 4 && parts[1] == "nodes" && parts[3] == "drain" && request.Method == http.MethodPost:
-		report, ok, err := s.store.DrainNode(parts[2])
-		if err != nil {
-			writeError(response, http.StatusBadRequest, err.Error())
-			return
-		}
-		if !ok {
-			writeError(response, http.StatusNotFound, "节点不存在")
-			return
-		}
-		if s.processes != nil {
-			s.processes.Reconcile()
-		}
-		writeJSON(response, http.StatusOK, report)
 	case len(parts) == 4 && parts[1] == "nodes" && parts[3] == "upgrade" && request.Method == http.MethodPost:
 		result, ok, err := s.store.UpgradeNode(parts[2])
 		if err != nil {
@@ -1055,9 +480,6 @@ func (s *Server) handleCluster(response http.ResponseWriter, request *http.Reque
 		if !ok {
 			writeError(response, http.StatusNotFound, "节点不存在")
 			return
-		}
-		if s.processes != nil {
-			s.processes.Reconcile()
 		}
 		writeJSON(response, http.StatusOK, result)
 	case len(parts) == 4 && parts[1] == "nodes" && parts[3] == "uninstall" && request.Method == http.MethodPost:
@@ -1074,9 +496,6 @@ func (s *Server) handleCluster(response http.ResponseWriter, request *http.Reque
 			writeError(response, http.StatusNotFound, "节点不存在")
 			return
 		}
-		if s.processes != nil {
-			s.processes.Reconcile()
-		}
 		writeJSON(response, http.StatusOK, result)
 	case len(parts) == 4 && parts[1] == "nodes" && request.Method == http.MethodPost:
 		switch parts[3] {
@@ -1089,9 +508,6 @@ func (s *Server) handleCluster(response http.ResponseWriter, request *http.Reque
 			if !ok {
 				writeError(response, http.StatusNotFound, "节点不存在")
 				return
-			}
-			if s.processes != nil {
-				s.processes.Reconcile()
 			}
 			writeJSON(response, http.StatusOK, result)
 			return
@@ -1121,9 +537,6 @@ func (s *Server) handleCluster(response http.ResponseWriter, request *http.Reque
 				writeError(response, http.StatusNotFound, "节点不存在")
 				return
 			}
-			if s.processes != nil {
-				s.processes.Reconcile()
-			}
 			writeJSON(response, http.StatusOK, result)
 			return
 		default:
@@ -1135,127 +548,9 @@ func (s *Server) handleCluster(response http.ResponseWriter, request *http.Reque
 	}
 }
 
-func (s *Server) handleCapabilityJobs(response http.ResponseWriter, request *http.Request, parts []string) {
-	switch {
-	case len(parts) == 1 && request.Method == http.MethodGet:
-		jobType := CapabilityJobType(request.URL.Query().Get("type"))
-		if jobType != "" && !validCapabilityType(jobType) {
-			writeError(response, http.StatusBadRequest, "能力任务类型不支持")
-			return
-		}
-		writeJSON(response, http.StatusOK, s.store.CapabilityJobs(jobType))
-	case len(parts) == 1 && request.Method == http.MethodPost:
-		var input CapabilityJob
-		if err := decodeJSON(request, &input); err != nil {
-			writeError(response, http.StatusBadRequest, "请求体格式错误")
-			return
-		}
-		if !validCapabilityType(input.Type) {
-			writeError(response, http.StatusBadRequest, "能力任务类型不支持")
-			return
-		}
-		job, err := s.store.CreateCapabilityJob(input)
-		if err != nil {
-			writeError(response, http.StatusBadRequest, err.Error())
-			return
-		}
-		writeJSON(response, http.StatusCreated, job)
-	case len(parts) == 3 && parts[2] == "run" && request.Method == http.MethodPost:
-		job, ok, err := s.store.RunCapabilityJob(parts[1])
-		if err != nil {
-			writeError(response, http.StatusInternalServerError, err.Error())
-			return
-		}
-		if !ok {
-			writeError(response, http.StatusNotFound, "能力任务不存在")
-			return
-		}
-		writeJSON(response, http.StatusOK, job)
-	case len(parts) == 3 && parts[2] == "structure-ddl" && request.Method == http.MethodGet:
-		statements, ok := s.store.StructureDDLs(parts[1])
-		if !ok {
-			writeError(response, http.StatusNotFound, "结构迁移任务不存在")
-			return
-		}
-		writeJSON(response, http.StatusOK, statements)
-	case len(parts) == 4 && parts[2] == "structure-ddl" && parts[3] == "apply" && request.Method == http.MethodPost:
-		var input StructureDDLApplyInput
-		if request.Body != nil && request.ContentLength != 0 {
-			if err := decodeJSON(request, &input); err != nil {
-				writeError(response, http.StatusBadRequest, "请求体格式错误")
-				return
-			}
-		}
-		job, ok, err := s.store.ApplyStructureDDLs(parts[1], input)
-		if err != nil {
-			writeError(response, http.StatusBadRequest, err.Error())
-			return
-		}
-		if !ok {
-			writeError(response, http.StatusNotFound, "结构迁移任务不存在")
-			return
-		}
-		writeJSON(response, http.StatusOK, job)
-	case len(parts) == 3 && parts[2] == "quality-diffs" && request.Method == http.MethodGet:
-		diffs, ok := s.store.QualityDiffs(parts[1])
-		if !ok {
-			writeError(response, http.StatusNotFound, "数据校验任务不存在")
-			return
-		}
-		writeJSON(response, http.StatusOK, diffs)
-	case len(parts) == 4 && parts[2] == "quality-diffs" && parts[3] == "correct" && request.Method == http.MethodPost:
-		var input QualityDiffCorrectionInput
-		if request.Body != nil && request.ContentLength != 0 {
-			if err := decodeJSON(request, &input); err != nil {
-				writeError(response, http.StatusBadRequest, "请求体格式错误")
-				return
-			}
-		}
-		job, ok, err := s.store.CorrectQualityDiffs(parts[1], input)
-		if err != nil {
-			writeError(response, http.StatusBadRequest, err.Error())
-			return
-		}
-		if !ok {
-			writeError(response, http.StatusNotFound, "数据校验任务不存在")
-			return
-		}
-		writeJSON(response, http.StatusOK, job)
-	case len(parts) == 3 && parts[2] == "subscription-changes" && request.Method == http.MethodGet:
-		changes, ok := s.store.SubscriptionChanges(parts[1])
-		if !ok {
-			writeError(response, http.StatusNotFound, "订阅变更任务不存在")
-			return
-		}
-		writeJSON(response, http.StatusOK, changes)
-	default:
-		writeError(response, http.StatusNotFound, "not found")
-	}
-}
-
-func (s *Server) taskResponse(task SyncTask) TaskResponse {
-	runtime, _ := s.store.Runtime(task.ID)
-	response := TaskResponse{
-		SyncTask: task,
-		Runtime:  s.decorateRuntime(runtime),
-	}
-	if datasource, ok := s.store.GetDatasource(task.SourceDatasourceID); ok {
-		public := toPublicDatasource(datasource)
-		response.SourceDatasource = &public
-	}
-	if datasource, ok := s.store.GetDatasource(task.TargetDatasourceID); ok {
-		public := toPublicDatasource(datasource)
-		response.TargetDatasource = &public
-	}
-	return response
-}
-
 func (s *Server) clusterResponse() ClusterSnapshot {
 	snapshot := s.store.ClusterSnapshot()
-	if s.processes == nil {
-		return snapshot
-	}
-	snapshot.LocalNodeID = s.processes.LocalNodeID()
+	snapshot.LocalNodeID = s.localNodeID
 	for _, node := range snapshot.Nodes {
 		if node.ID == snapshot.LocalNodeID {
 			snapshot.LocalNodeName = node.Name
@@ -1265,75 +560,8 @@ func (s *Server) clusterResponse() ClusterSnapshot {
 	return snapshot
 }
 
-func (s *Server) decorateRuntime(runtime TaskRuntimeState) TaskRuntimeState {
-	decorated := runtime
-	if s.processes == nil {
-		decorated.ManagedByLocalNode = true
-		decorated.LocalLogAccessible = true
-		return decorated
-	}
-	localNodeID := s.processes.LocalNodeID()
-	if decorated.NodeID == "" {
-		decorated.ManagedByLocalNode = true
-		decorated.LocalLogAccessible = true
-		return decorated
-	}
-	cluster := s.store.ClusterSnapshot()
-	nodeLabel := decorated.NodeID
-	for _, node := range cluster.Nodes {
-		if node.ID == decorated.NodeID {
-			nodeLabel = valueOr(node.Name, node.ID)
-			break
-		}
-	}
-	decorated.ExecutionNodeName = nodeLabel
-	decorated.ManagedByLocalNode = decorated.NodeID == localNodeID
-	decorated.LocalLogAccessible = decorated.ManagedByLocalNode
-	if !decorated.ManagedByLocalNode {
-		decorated.LogAccessMessage = fmt.Sprintf("当前任务由节点 %s 托管，请切换到该节点查看实时日志", nodeLabel)
-		decorated.ProcessStatus = "remote"
-	}
-	return decorated
-}
-
 func (s *Server) isLocalControlNode(nodeID string) bool {
-	if s.processes == nil {
-		return false
-	}
-	return nodeID != "" && nodeID == s.processes.LocalNodeID()
-}
-
-func (s *Server) canAccessTaskLogs(taskID string) (bool, string) {
-	if s.processes == nil {
-		return true, ""
-	}
-	runtime, ok := s.store.Runtime(taskID)
-	if !ok {
-		return false, "同步任务不存在"
-	}
-	if runtime.NodeID == "" || runtime.NodeID == s.processes.LocalNodeID() {
-		return true, ""
-	}
-	decorated := s.decorateRuntime(runtime)
-	return false, decorated.LogAccessMessage
-}
-
-func clusterOnline(nodes []ClusterNode) int {
-	count := 0
-	for _, node := range nodes {
-		if node.Status == NodeOnline {
-			count++
-		}
-	}
-	return count
-}
-
-func failoverCount(leases []TaskLease) int {
-	count := 0
-	for _, lease := range leases {
-		count += lease.TakeoverCount
-	}
-	return count
+	return nodeID != "" && nodeID == s.localNodeID
 }
 
 func (s *Server) currentUser(request *http.Request) (User, bool) {
@@ -1369,14 +597,6 @@ func operatorCanMutate(method string, parts []string) bool {
 	switch {
 	case len(parts) == 3 && parts[0] == "datasources" && parts[2] == "test":
 		return true
-	case len(parts) == 3 && parts[0] == "sync-tasks" && isTaskAction(parts[2]):
-		return true
-	case len(parts) == 2 && parts[0] == "error-events" && parts[1] == "batch-retry":
-		return true
-	case len(parts) == 3 && parts[0] == "error-events" && (parts[2] == "retry" || parts[2] == "skip"):
-		return true
-	case len(parts) == 3 && parts[0] == "capability-jobs" && parts[2] == "run":
-		return true
 	default:
 		return false
 	}
@@ -1394,32 +614,6 @@ func (s *Server) applyCORS(response http.ResponseWriter, request *http.Request) 
 		response.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 		response.Header().Set("Vary", "Origin")
 	}
-}
-
-func validateTask(task SyncTask) error {
-	if task.Name == "" || task.Owner == "" || task.SourceDatasourceID == "" || task.TargetDatasourceID == "" {
-		return errors.New("同步任务必填项缺失")
-	}
-	if len(task.TableMappings) == 0 {
-		return errors.New("至少需要一个表映射")
-	}
-	for _, mapping := range task.TableMappings {
-		if mapping.SourceSchema == "" || mapping.SourceTable == "" || mapping.TargetSchema == "" || mapping.TargetTable == "" {
-			return errors.New("表映射必填项缺失")
-		}
-		if len(mapping.Fields) == 0 {
-			return errors.New("至少需要一个字段映射")
-		}
-	}
-	return nil
-}
-
-func isTaskAction(action string) bool {
-	return action == "start" || action == "pause" || action == "resume" || action == "stop"
-}
-
-func validCapabilityType(jobType CapabilityJobType) bool {
-	return jobType == CapabilityStructure || jobType == CapabilityQuality || jobType == CapabilitySubscription
 }
 
 func firstN[T any](items []T, count int) []T {

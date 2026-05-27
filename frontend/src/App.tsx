@@ -12,26 +12,20 @@ import {
   ArrowsClockwise,
   ArrowRight,
   CheckCircle,
-  ClipboardText,
   Database,
   DotsThree,
-  FlowArrow,
   GearSix,
   HardDrives,
   MagnifyingGlass,
-  Pause,
-  Play,
   Plus,
   RocketLaunch,
   ShieldCheck,
   SignOut,
-  Stop,
   Trash,
   WarningCircle,
   XCircle
 } from "@phosphor-icons/react";
 import { PermissionNotice } from "./components/PermissionNotice";
-import { StatusBadge } from "./components/StatusBadge";
 import { Button, CheckboxInput, SelectInput, TextareaInput, TextInput } from "./components/ui";
 import {
   api,
@@ -42,61 +36,28 @@ import {
   setToken,
   subscribeBackendAvailability
 } from "./lib/api";
-import { cx, formatDate, formatDateTime, formatNumber, secondsSince } from "./lib/format";
+import { cx, formatDate, formatDateTime, secondsSince } from "./lib/format";
 import { canManageConfig, roleLabel } from "./lib/permissions";
-import { taskStatusText } from "./lib/taskStatus";
 import type {
   AlertEvent,
   AlertRule,
   AlertRuleEvaluation,
   AlertRuleInput,
-  CapabilityJob,
-  ClusterRebalanceReport,
   ClusterNode,
   ClusterNodeInput,
   ClusterSnapshot,
-  DashboardSummary,
   Datasource,
-  DatasourcePurpose,
   DatasourceStatus,
-  ErrorEvent,
-  FieldMapping,
-  FailoverDrillReport,
-  FailoverDrillTask,
   NodeConnectionTestResult,
-  NodeDrainReport,
   NodeOperationResult,
   NodeStatusChangeResult,
   OperationLog,
-  SyncStrategy,
-  SyncTask,
-  TableColumn,
-  TableInfo,
-  TaskCheckpoint,
-  TaskLogEntry,
-  TaskPreflightReport,
-  TaskRevision,
-  TaskRuntimeState,
   User
 } from "./types/api";
 
-type MainPage = "dashboard" | "datasources" | "tasks" | "nodes" | "settings";
-type Page = MainPage | "datasourceDetail" | "taskDetail" | "nodeDetail" | "capabilityJobDetail";
+type MainPage = "datasources" | "nodes" | "settings";
+type Page = MainPage | "datasourceDetail" | "nodeDetail";
 type NoticeTone = "success" | "error" | "warning";
-type TaskBlueprintType = "full_migration" | "incremental_sync" | "data_validation" | "data_correction" | "structure_compare";
-type TaskStateFilter = "all" | "running" | "paused" | "failed" | "stopped" | "pending";
-type WorkloadItem = {
-  id: string;
-  key: string;
-  kind: "sync" | "capability";
-  type: string;
-  title: string;
-  detail: string;
-  updatedAt: string;
-  statusText: string;
-  rawTask?: SyncTask;
-  rawJob?: CapabilityJob;
-};
 
 type Notice = {
   tone: NoticeTone;
@@ -113,77 +74,22 @@ type ConfirmationDialogState = {
 
 type ClusterHandoffReport = {
   id: string;
-  kind: "drain" | "drill" | "rebalance" | "offline" | "online";
+  kind: "offline" | "online";
   happenedAt: string;
   node?: ClusterNode;
   success: boolean;
   message: string;
-  affectedTasks: FailoverDrillTask[];
   before: ClusterSnapshot;
   after: ClusterSnapshot;
 };
 
-const navItems: Array<{ id: MainPage; label: string; icon: typeof FlowArrow }> = [
-  { id: "tasks", label: "任务", icon: FlowArrow },
+const navItems: Array<{ id: MainPage; label: string; icon: typeof Database }> = [
   { id: "datasources", label: "数据源", icon: Database },
   { id: "nodes", label: "节点", icon: HardDrives }
 ];
 
-const taskBlueprints: Array<{
-  type: TaskBlueprintType;
-  name: string;
-  description: string;
-  tag: string;
-}> = [
-  {
-    type: "full_migration",
-    name: "全量迁移",
-    description: "存量迁移",
-    tag: "全量"
-  },
-  {
-    type: "incremental_sync",
-    name: "增量同步",
-    description: "持续同步",
-    tag: "增量"
-  },
-  {
-    type: "data_validation",
-    name: "数据校验",
-    description: "一致性校验",
-    tag: "校验"
-  },
-  {
-    type: "data_correction",
-    name: "数据订正",
-    description: "差异订正",
-    tag: "订正"
-  },
-  {
-    type: "structure_compare",
-    name: "结构对比",
-    description: "结构差异",
-    tag: "结构"
-  }
-];
-
-const defaultStrategy: SyncStrategy = {
-  initMode: "full_then_incremental",
-  writeMode: {
-    insert: true,
-    update: true,
-    delete: true
-  },
-  conflictStrategy: "overwrite",
-  deleteStrategy: "physical",
-  batchSize: 1000,
-  retryTimes: 3,
-  retryIntervalSeconds: 10
-};
-
 const emptyDatasourceForm = {
   name: "",
-  purpose: "source" as DatasourcePurpose,
   host: "",
   port: 3306,
   username: "",
@@ -470,14 +376,10 @@ function ParticleWordmark({ wordmark }: { wordmark: string }) {
 function App() {
   const [tokenState, setTokenState] = useState(getToken());
   const [user, setUser] = useState<User | null>(null);
-  const [page, setPage] = useState<Page>("tasks");
-  const [summary, setSummary] = useState<DashboardSummary | null>(null);
+  const [page, setPage] = useState<Page>("datasources");
   const [datasources, setDatasources] = useState<Datasource[]>([]);
-  const [tasks, setTasks] = useState<SyncTask[]>([]);
-  const [errors, setErrors] = useState<ErrorEvent[]>([]);
   const [logs, setLogs] = useState<OperationLog[]>([]);
   const [cluster, setCluster] = useState<ClusterSnapshot | null>(null);
-  const [capabilityJobs, setCapabilityJobs] = useState<CapabilityJob[]>([]);
   const [alertRules, setAlertRules] = useState<AlertRule[]>([]);
   const [alertEvents, setAlertEvents] = useState<AlertEvent[]>([]);
   const [alertEvaluations, setAlertEvaluations] = useState<AlertRuleEvaluation[]>([]);
@@ -487,12 +389,9 @@ function App() {
   const [serviceUnavailable, setServiceUnavailable] = useState(false);
   const [serviceRecoveryPending, setServiceRecoveryPending] = useState(false);
   const [datasourceCreateToken, setDatasourceCreateToken] = useState(0);
-  const [taskCreateToken, setTaskCreateToken] = useState(0);
   const [nodeCreateToken, setNodeCreateToken] = useState(0);
   const [focusedDatasourceId, setFocusedDatasourceId] = useState<string | null>(null);
   const [focusedNodeId, setFocusedNodeId] = useState<string | null>(null);
-  const [focusedTaskId, setFocusedTaskId] = useState<string | null>(null);
-  const [focusedCapabilityJobId, setFocusedCapabilityJobId] = useState<string | null>(null);
   const previousServiceUnavailable = useRef(false);
   const canManage = canManageConfig(user);
 
@@ -506,35 +405,23 @@ function App() {
     setGlobalError(null);
     try {
       const [
-        nextSummary,
         nextDatasources,
-        nextTasks,
-        nextErrors,
         nextLogs,
         nextCluster,
-        nextCapabilityJobs,
         nextAlertRules,
         nextAlertEvaluations,
         nextAlertEvents
       ] = await Promise.all([
-        api.summary(),
         api.datasources(),
-        api.tasks(),
-        api.errors(),
         api.logs(),
         api.cluster(),
-        api.capabilityJobs(),
         api.alertRules(),
         api.alertEvaluations(),
         api.alertEvents()
       ]);
-      setSummary(nextSummary);
       setDatasources(nextDatasources);
-      setTasks(nextTasks);
-      setErrors(nextErrors);
       setLogs(nextLogs);
       setCluster(nextCluster);
-      setCapabilityJobs(nextCapabilityJobs);
       setAlertRules(nextAlertRules);
       setAlertEvaluations(nextAlertEvaluations);
       setAlertEvents(nextAlertEvents);
@@ -634,7 +521,7 @@ function App() {
     setToken(response.token);
     setTokenState(response.token);
     setUser(response.user);
-    setPage("tasks");
+    setPage("datasources");
   };
 
   const handleLogout = () => {
@@ -652,22 +539,6 @@ function App() {
   const openDatasourceDetail = (datasourceId: string) => {
     setFocusedDatasourceId(datasourceId);
     setPage("datasourceDetail");
-  };
-
-  const openTaskCreator = () => {
-    setPage("tasks");
-    setTaskCreateToken((value) => value + 1);
-  };
-
-  const openTaskDetail = (taskID: string) => {
-    setFocusedTaskId(taskID);
-    setFocusedCapabilityJobId(null);
-    setPage("taskDetail");
-  };
-
-  const openCapabilityJobDetail = (jobId: string) => {
-    setFocusedCapabilityJobId(jobId);
-    setPage("capabilityJobDetail");
   };
 
   const openNodeCreator = () => {
@@ -750,12 +621,6 @@ function App() {
                     添加数据源
                   </Button>
                 )}
-                {page === "tasks" && canManage && (
-                  <Button onClick={openTaskCreator} className="btn-primary">
-                    <Plus size={16} />
-                    创建任务
-                  </Button>
-                )}
                 {page === "nodes" && canManage && (
                   <Button onClick={openNodeCreator} className="btn-primary">
                     <Plus size={16} />
@@ -791,25 +656,11 @@ function App() {
               </NoticeBanner>
             )}
 
-            {loading && !summary && datasources.length === 0 && tasks.length === 0 ? (
+            {loading && datasources.length === 0 ? (
               <ShellSkeleton />
-            ) : page === "dashboard" ? (
-              <DashboardPage
-                summary={summary}
-                datasources={datasources}
-                tasks={tasks}
-                errors={errors}
-                cluster={cluster}
-                onCreateDatasource={openDatasourceCreator}
-                onCreateTask={openTaskCreator}
-                onOpenTasks={() => setPage("tasks")}
-                onOpenTask={openTaskDetail}
-                onOpenNodes={() => setPage("nodes")}
-              />
             ) : page === "datasources" ? (
               <DatasourcePage
                 datasources={datasources}
-                tasks={tasks}
                 canManage={canManage}
                 onChanged={refresh}
                 pushNotice={pushNotice}
@@ -819,50 +670,15 @@ function App() {
             ) : page === "datasourceDetail" ? (
               <DatasourceDetailPage
                 datasources={datasources}
-                tasks={tasks}
                 canManage={canManage}
                 onChanged={refresh}
                 pushNotice={pushNotice}
                 datasourceId={focusedDatasourceId}
                 onBack={() => setPage("datasources")}
               />
-            ) : page === "tasks" ? (
-              <TasksPage
-                datasources={datasources}
-                tasks={tasks}
-                capabilityJobs={capabilityJobs}
-                canManage={canManage}
-                onChanged={refresh}
-                pushNotice={pushNotice}
-                openCreateToken={taskCreateToken}
-                onCreateDatasource={openDatasourceCreator}
-                onOpenTask={openTaskDetail}
-                onOpenCapabilityJob={openCapabilityJobDetail}
-              />
-            ) : page === "taskDetail" ? (
-              <TaskDetailPage
-                taskId={focusedTaskId}
-                tasks={tasks}
-                capabilityJobs={capabilityJobs}
-                errors={errors}
-                cluster={cluster}
-                canManage={canManage}
-                onOpenNode={openNodeDetail}
-                onChanged={refresh}
-                pushNotice={pushNotice}
-                onBack={() => setPage("tasks")}
-              />
-            ) : page === "capabilityJobDetail" ? (
-              <CapabilityJobDetailPage
-                jobId={focusedCapabilityJobId}
-                tasks={tasks}
-                capabilityJobs={capabilityJobs}
-                onBack={() => setPage("tasks")}
-              />
             ) : page === "nodes" ? (
               <NodesPage
                 cluster={cluster}
-                tasks={tasks}
                 canManage={canManage}
                 onChanged={refresh}
                 pushNotice={pushNotice}
@@ -873,14 +689,11 @@ function App() {
               <NodeDetailPage
                 nodeId={focusedNodeId}
                 cluster={cluster}
-                tasks={tasks}
                 logs={logs}
-                onOpenTask={openTaskDetail}
                 onBack={() => setPage("nodes")}
               />
             ) : (
               <SettingsPage
-                tasks={tasks}
                 alertRules={alertRules}
                 alertEvents={alertEvents}
                 evaluations={alertEvaluations}
@@ -896,152 +709,8 @@ function App() {
   );
 }
 
-function DashboardPage({
-  summary,
-  datasources,
-  tasks,
-  errors,
-  cluster,
-  onCreateDatasource,
-  onCreateTask,
-  onOpenTasks,
-  onOpenTask,
-  onOpenNodes
-}: {
-  summary: DashboardSummary | null;
-  datasources: Datasource[];
-  tasks: SyncTask[];
-  errors: ErrorEvent[];
-  cluster: ClusterSnapshot | null;
-  onCreateDatasource: () => void;
-  onCreateTask: () => void;
-  onOpenTasks: () => void;
-  onOpenTask: (taskID: string) => void;
-  onOpenNodes: () => void;
-}) {
-  const failedTasks = tasks.filter((task) => task.status === "failed").length;
-  const awaitingTasks = tasks.filter(taskAwaitingNode).length;
-  const runningTasks = tasks.filter((task) => task.status === "full_syncing" || task.status === "incremental_running").length;
-  const pendingErrors = errors.filter((item) => item.status === "pending").length;
-  const onlineNodes = cluster?.onlineNodes ?? summary?.onlineNodes ?? 0;
-  const totalNodes = cluster?.totalNodes ?? summary?.totalNodes ?? 0;
-  const hasCreatedTasks = tasks.length > 0;
-  const readyDatasources = datasources.filter((item) => item.connectionStatus === "online").length;
-  const attentionTasks = [...tasks]
-    .filter((task) => task.status === "failed" || taskAwaitingNode(task) || (task.runtime?.delaySeconds ?? 0) >= 180)
-    .sort((left, right) => new Date(taskActivityAt(right)).getTime() - new Date(taskActivityAt(left)).getTime())
-    .slice(0, 4);
-
-  const overviewActions: Array<{ title: string; description: string; actionLabel: string; onClick: () => void }> = [];
-  if (datasources.length < 2) {
-    overviewActions.push({
-      title: "数据源未就绪",
-      description: "添加源端和目标端",
-      actionLabel: "添加数据源",
-      onClick: onCreateDatasource
-    });
-  }
-  if (onlineNodes === 0) {
-    overviewActions.push({
-      title: "节点离线",
-      description: "进入运维区",
-      actionLabel: "查看节点",
-      onClick: onOpenNodes
-    });
-  }
-  if (awaitingTasks > 0) {
-    overviewActions.push({
-      title: "任务待处理",
-      description: `${awaitingTasks} 条`,
-      actionLabel: "查看任务",
-      onClick: onOpenTasks
-    });
-  }
-  if (failedTasks + pendingErrors > 0) {
-    overviewActions.push({
-      title: "发现异常",
-      description: `${failedTasks + pendingErrors} 条`,
-      actionLabel: "查看任务",
-      onClick: onOpenTasks
-    });
-  }
-  if (overviewActions.length === 0) {
-    overviewActions.push({
-      title: hasCreatedTasks ? "运行正常" : "暂无任务",
-      description: hasCreatedTasks
-        ? "继续查看"
-        : "创建第一条同步",
-      actionLabel: hasCreatedTasks ? "查看任务" : "创建任务",
-      onClick: hasCreatedTasks ? onOpenTasks : onCreateTask
-    });
-  }
-
-  return (
-    <div className="space-y-5">
-      <div className="grid gap-5 xl:grid-cols-[1.08fr_0.92fr]">
-        <section className="surface p-6">
-          <SectionHeader title="待处理" />
-          <div className="mt-5 grid gap-3">
-            {overviewActions.map((item) => (
-              <NextStepCard
-                key={item.title}
-                title={item.title}
-                description={item.description}
-                actionLabel={item.actionLabel}
-                onClick={item.onClick}
-              />
-            ))}
-          </div>
-        </section>
-
-        <section className="surface p-6">
-          <SectionHeader title="概览" />
-          <div className="mt-5 grid gap-3 sm:grid-cols-2">
-            <MetricMini label="数据源就绪" value={`${readyDatasources}/${datasources.length || 0}`} />
-            <MetricMini label="运行任务" value={`${runningTasks}/${tasks.length || 0}`} />
-            <MetricMini label="异常" value={`${failedTasks + pendingErrors}`} />
-            <MetricMini label="在线节点" value={`${onlineNodes}/${totalNodes}`} />
-          </div>
-        </section>
-      </div>
-
-      <section className="surface p-6">
-        <SectionHeader title="需要关注的任务" />
-        {attentionTasks.length === 0 ? (
-          <EmptyPanel
-            icon={ShieldCheck}
-            title="暂无异常"
-          />
-        ) : (
-          <div className="mt-5 grid gap-3">
-            {attentionTasks.map((task) => (
-              <Button key={task.id} onClick={() => onOpenTask(task.id)} className="item-button">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="font-medium text-coal">{task.name}</span>
-                  <StatusBadge status={task.status} />
-                  {shouldShowTaskProcessBadge(task) && (
-                    <Badge tone={taskProcessTone(task.runtime?.processStatus)}>{taskProcessStatusText(task.runtime?.processStatus)}</Badge>
-                  )}
-                  {taskAwaitingNode(task) && <Badge tone="yellow">待接管</Badge>}
-                </div>
-                <div className="mt-2 text-sm text-slate-500">
-                  {task.runtime?.executionNodeName || task.runtime?.nodeId || "待分配"}
-                </div>
-                <div className="mt-2 text-xs text-slate-500">
-                  {formatDateTime(task.runtime?.lastLogAt || task.runtime?.updatedAt || task.updatedAt)}
-                </div>
-              </Button>
-            ))}
-          </div>
-        )}
-      </section>
-    </div>
-  );
-}
-
 function DatasourcePage({
   datasources,
-  tasks,
   canManage,
   onChanged,
   pushNotice,
@@ -1049,7 +718,6 @@ function DatasourcePage({
   onOpenDatasource
 }: {
   datasources: Datasource[];
-  tasks: SyncTask[];
   canManage: boolean;
   onChanged: (quiet?: boolean) => Promise<void>;
   pushNotice: (notice: Notice) => void;
@@ -1058,7 +726,6 @@ function DatasourcePage({
 }) {
   const [keyword, setKeyword] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | DatasourceStatus>("all");
-  const [purposeFilter, setPurposeFilter] = useState<"all" | DatasourcePurpose>("all");
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState({ ...emptyDatasourceForm });
@@ -1077,8 +744,7 @@ function DatasourcePage({
     .filter((item) => {
       const matchesKeyword = !keyword.trim() || datasourceSearchText(item).includes(keyword.trim().toLowerCase());
       const matchesStatus = statusFilter === "all" || item.connectionStatus === statusFilter;
-      const matchesPurpose = purposeFilter === "all" || item.purpose === purposeFilter;
-      return matchesKeyword && matchesStatus && matchesPurpose;
+      return matchesKeyword && matchesStatus;
     })
     .sort((left, right) => left.name.localeCompare(right.name, "zh-Hans-CN"));
 
@@ -1086,7 +752,6 @@ function DatasourcePage({
     setEditingId(item.id);
     setForm({
       name: item.name,
-      purpose: item.purpose,
       host: item.host,
       port: item.port,
       username: item.username,
@@ -1153,7 +818,7 @@ function DatasourcePage({
   const requestRemoveDatasource = (item: Datasource) => {
     setConfirmation({
       title: `删除数据源“${item.name}”`,
-      description: "删除后，依赖它的任务配置会失去对应连接。确认继续吗？",
+      description: "删除后无法恢复。确认继续吗？",
       confirmLabel: "确认删除",
       confirmTone: "danger",
       onConfirm: () => {
@@ -1162,13 +827,12 @@ function DatasourcePage({
     });
   };
 
-  const usageCount = (item: Datasource) => tasks.filter((task) => task.sourceDatasourceId === item.id || task.targetDatasourceId === item.id).length;
   return (
     <div className="space-y-5">
       <section className="surface min-w-0 p-6">
         <SectionHeader title="数据源" />
 
-        <div className="mt-5 grid gap-3 lg:grid-cols-[minmax(0,1fr)_180px_180px]">
+        <div className="mt-5 grid gap-3 lg:grid-cols-[minmax(0,1fr)_180px]">
           <label className="block">
             <span className="mb-2 block text-xs font-medium uppercase tracking-[0.18em] text-slate-500">搜索</span>
             <span className="relative block">
@@ -1187,14 +851,6 @@ function DatasourcePage({
               <option value="online">在线</option>
               <option value="offline">离线</option>
               <option value="untested">未测试</option>
-            </SelectInput>
-          </Field>
-          <Field label="用途">
-            <SelectInput className="select" value={purposeFilter} onChange={(event) => setPurposeFilter(event.target.value as "all" | DatasourcePurpose)}>
-              <option value="all">全部用途</option>
-              <option value="source">源端</option>
-              <option value="target">目标端</option>
-              <option value="both">源端和目标端</option>
             </SelectInput>
           </Field>
         </div>
@@ -1216,14 +872,12 @@ function DatasourcePage({
           />
         ) : (
           <div className="table-shell mt-5">
-            <table className="w-full min-w-[780px] text-left text-sm">
+            <table className="w-full min-w-[680px] text-left text-sm">
               <thead className="bg-slate-50 text-xs uppercase tracking-[0.18em] text-slate-500">
                 <tr>
-                  <th className="px-4 py-3">名称</th>
-                  <th className="px-4 py-3">用途</th>
-                  <th className="px-4 py-3">连接</th>
+	                  <th className="px-4 py-3">名称</th>
+	                  <th className="px-4 py-3">连接</th>
                   <th className="px-4 py-3">地址</th>
-                  <th className="px-4 py-3">任务</th>
                   <th className="px-4 py-3 text-right">操作</th>
                 </tr>
               </thead>
@@ -1236,8 +890,7 @@ function DatasourcePage({
                         <div className="mt-1 text-xs text-slate-500">{item.defaultSchema || "未设置默认库"}</div>
                       </Button>
                     </td>
-                    <td className="px-4 py-4 text-slate-600">{purposeText(item.purpose)}</td>
-                    <td className="px-4 py-4">
+	                    <td className="px-4 py-4">
                       <Badge tone={datasourceTone(item.connectionStatus)}>
                         {datasourceStatusText(item.connectionStatus)}
                       </Badge>
@@ -1245,7 +898,6 @@ function DatasourcePage({
                     <td className="px-4 py-4">
                       <div className="mono text-slate-700">{item.host}:{item.port}</div>
                     </td>
-                    <td className="px-4 py-4 text-slate-600">{usageCount(item)}</td>
                     <td className="px-4 py-4">
                       <div className="flex justify-end gap-2">
                         <Button
@@ -1289,13 +941,6 @@ function DatasourcePage({
         <form onSubmit={saveDatasource} className="grid gap-4">
           <Field label="名称">
             <TextInput className="input" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} required />
-          </Field>
-          <Field label="用途">
-            <SelectInput className="select" value={form.purpose} onChange={(event) => setForm({ ...form, purpose: event.target.value as DatasourcePurpose })}>
-              <option value="source">源端</option>
-              <option value="target">目标端</option>
-              <option value="both">源端和目标端</option>
-            </SelectInput>
           </Field>
           <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_130px]">
             <Field label="主机地址">
@@ -1352,7 +997,6 @@ function DatasourcePage({
 
 function DatasourceDetailPage({
   datasources,
-  tasks,
   canManage,
   onChanged,
   pushNotice,
@@ -1360,7 +1004,6 @@ function DatasourceDetailPage({
   onBack
 }: {
   datasources: Datasource[];
-  tasks: SyncTask[];
   canManage: boolean;
   onChanged: (quiet?: boolean) => Promise<void>;
   pushNotice: (notice: Notice) => void;
@@ -1378,7 +1021,6 @@ function DatasourceDetailPage({
     if (!selected) return;
     setForm({
       name: selected.name,
-      purpose: selected.purpose,
       host: selected.host,
       port: selected.port,
       username: selected.username,
@@ -1386,10 +1028,6 @@ function DatasourceDetailPage({
       defaultSchema: selected.defaultSchema || ""
     });
   }, [selected]);
-
-  const usageCount = selected
-    ? tasks.filter((task) => task.sourceDatasourceId === selected.id || task.targetDatasourceId === selected.id).length
-    : 0;
 
   const saveDatasource = async (event: FormEvent) => {
     event.preventDefault();
@@ -1440,7 +1078,7 @@ function DatasourceDetailPage({
     if (!selected) return;
     setConfirmation({
       title: `删除数据源“${selected.name}”`,
-      description: "删除后，依赖它的任务配置会失去对应连接。确认继续吗？",
+      description: "删除后无法恢复。确认继续吗？",
       confirmLabel: "确认删除",
       confirmTone: "danger",
       onConfirm: () => {
@@ -1485,12 +1123,10 @@ function DatasourceDetailPage({
           )}
         />
         <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          <DetailCard label="用途" value={purposeText(selected.purpose)} />
           <DetailCard label="连接状态" value={datasourceStatusText(selected.connectionStatus)} />
           <DetailCard label="地址" value={`${selected.host}:${selected.port}`} mono />
           <DetailCard label="账号" value={selected.username} mono />
           <DetailCard label="默认库" value={selected.defaultSchema || "未设置"} mono />
-          <DetailCard label="关联任务" value={`${usageCount} 条`} />
         </div>
         <div className="mt-4 border-l border-line bg-slate-50/60 px-4 py-4 text-sm text-slate-500">
           {selected.lastTestMessage
@@ -1507,13 +1143,6 @@ function DatasourceDetailPage({
         <form onSubmit={saveDatasource} className="grid gap-4">
           <Field label="名称">
             <TextInput className="input" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} required />
-          </Field>
-          <Field label="用途">
-            <SelectInput className="select" value={form.purpose} onChange={(event) => setForm({ ...form, purpose: event.target.value as DatasourcePurpose })}>
-              <option value="source">源端</option>
-              <option value="target">目标端</option>
-              <option value="both">源端和目标端</option>
-            </SelectInput>
           </Field>
           <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_130px]">
             <Field label="主机地址">
@@ -1567,482 +1196,9 @@ function DatasourceDetailPage({
   );
 }
 
-function TasksPage({
-  datasources,
-  tasks,
-  capabilityJobs,
-  canManage,
-  onChanged,
-  pushNotice,
-  openCreateToken,
-  onCreateDatasource,
-  onOpenTask,
-  onOpenCapabilityJob
-}: {
-  datasources: Datasource[];
-  tasks: SyncTask[];
-  capabilityJobs: CapabilityJob[];
-  canManage: boolean;
-  onChanged: (quiet?: boolean) => Promise<void>;
-  pushNotice: (notice: Notice) => void;
-  openCreateToken: number;
-  onCreateDatasource: () => void;
-  onOpenTask: (taskID: string) => void;
-  onOpenCapabilityJob: (jobId: string) => void;
-}) {
-  const visibleCapabilityJobs = capabilityJobs.filter((job) => job.type !== "subscription");
-  const [keyword, setKeyword] = useState("");
-  const [typeFilter, setTypeFilter] = useState("all");
-  const [stateFilter, setStateFilter] = useState<TaskStateFilter>("all");
-  const [showCapabilityJobs, setShowCapabilityJobs] = useState(false);
-  const [creatorOpen, setCreatorOpen] = useState(false);
-  const [busyKey, setBusyKey] = useState<string | null>(null);
-  const [confirmation, setConfirmation] = useState<ConfirmationDialogState | null>(null);
-
-  useEffect(() => {
-    if (openCreateToken === 0) return;
-    setCreatorOpen(true);
-  }, [openCreateToken]);
-
-  const workloads = showCapabilityJobs ? buildWorkloads(tasks, visibleCapabilityJobs) : buildTaskItems(tasks);
-  const filtered = workloads.filter((item) => {
-    const matchesKeyword = !keyword.trim() || `${item.title} ${item.detail} ${item.type}`.toLowerCase().includes(keyword.trim().toLowerCase());
-    const matchesType = typeFilter === "all" || item.type === typeFilter;
-    const matchesState = item.rawTask
-      ? stateFilter === "all"
-        || (stateFilter === "running" && (item.rawTask.status === "full_syncing" || item.rawTask.status === "incremental_running"))
-        || (stateFilter === "paused" && item.rawTask.status === "paused")
-        || (stateFilter === "failed" && item.rawTask.status === "failed")
-        || (stateFilter === "stopped" && item.rawTask.status === "stopped")
-        || (stateFilter === "pending" && (item.rawTask.status === "draft" || item.rawTask.status === "pending"))
-      : stateFilter === "all";
-    return matchesKeyword && matchesType && matchesState;
-  });
-
-  const runTaskAction = async (task: SyncTask, action: "start" | "pause" | "resume" | "stop") => {
-    setBusyKey(`${task.id}:${action}`);
-    try {
-      const updated = await api.taskAction(task.id, action);
-      pushNotice({ tone: "success", message: taskActionNotice(updated, action) });
-      await onChanged();
-    } catch (requestError) {
-      pushNotice({ tone: "error", message: requestError instanceof Error ? requestError.message : "任务操作失败" });
-    } finally {
-      setBusyKey(null);
-    }
-  };
-
-  const rerunTask = async (task: SyncTask) => {
-    setBusyKey(`${task.id}:rerun`);
-    try {
-      await api.rerunTask(task.id);
-      pushNotice({ tone: "success", message: "已重跑" });
-      await onChanged();
-    } catch (requestError) {
-      pushNotice({ tone: "error", message: requestError instanceof Error ? requestError.message : "重跑失败" });
-    } finally {
-      setBusyKey(null);
-    }
-  };
-
-  const executeDeleteTask = async (task: SyncTask) => {
-    setBusyKey(`${task.id}:delete`);
-    try {
-      await api.deleteTask(task.id);
-      pushNotice({ tone: "success", message: "已删除" });
-      await onChanged();
-    } catch (requestError) {
-      pushNotice({ tone: "error", message: requestError instanceof Error ? requestError.message : "删除失败" });
-    } finally {
-      setBusyKey(null);
-    }
-  };
-
-  const requestDeleteTask = (task: SyncTask) => {
-    setConfirmation({
-      title: `删除任务“${task.name}”`,
-      description: "删除后，任务配置和运行入口都会一起移除。确认继续吗？",
-      confirmLabel: "确认删除",
-      confirmTone: "danger",
-      onConfirm: () => {
-        void executeDeleteTask(task);
-      }
-    });
-  };
-
-  const rerunJob = async (job: CapabilityJob) => {
-    setBusyKey(`${job.id}:job`);
-    try {
-      await api.runCapabilityJob(job.id);
-      pushNotice({ tone: "success", message: "已启动" });
-      await onChanged();
-    } catch (requestError) {
-      pushNotice({ tone: "error", message: requestError instanceof Error ? requestError.message : "启动失败" });
-    } finally {
-      setBusyKey(null);
-    }
-  };
-
-  const typeCounts = filteredTypeCounts(workloads);
-  return (
-    <div className="space-y-5">
-      <section className="min-w-0">
-        <SectionHeader
-          title="同步任务"
-          action={visibleCapabilityJobs.length > 0 ? (
-            <FilterChip
-              active={showCapabilityJobs}
-              onClick={() => setShowCapabilityJobs((value) => !value)}
-              label={showCapabilityJobs ? "隐藏扩展任务" : `扩展任务 ${visibleCapabilityJobs.length}`}
-            />
-          ) : undefined}
-        />
-
-        <div className="mt-5 grid gap-3 xl:grid-cols-[minmax(0,1.2fr)_180px_180px]">
-          <label className="block">
-            <span className="mb-2 block text-xs font-medium uppercase tracking-[0.18em] text-slate-500">搜索</span>
-            <span className="relative block">
-              <MagnifyingGlass className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-              <TextInput
-                className="input pl-9"
-                value={keyword}
-                onChange={(event) => setKeyword(event.target.value)}
-                placeholder="名称、类型、数据源"
-              />
-            </span>
-          </label>
-          <Field label="类型">
-            <SelectInput className="select" value={typeFilter} onChange={(event) => setTypeFilter(event.target.value)}>
-              <option value="all">全部类型</option>
-              {Object.keys(typeCounts).map((item) => (
-                <option key={item} value={item}>{item}</option>
-              ))}
-            </SelectInput>
-          </Field>
-          <Field label="状态">
-            <SelectInput className="select" value={stateFilter} onChange={(event) => setStateFilter(event.target.value as TaskStateFilter)}>
-              <option value="all">全部状态</option>
-              <option value="running">运行中</option>
-              <option value="paused">已暂停</option>
-              <option value="failed">异常</option>
-              <option value="stopped">已停止</option>
-              <option value="pending">待启动</option>
-            </SelectInput>
-          </Field>
-        </div>
-
-        {datasources.length === 0 ? (
-          <EmptyPanel
-            icon={Database}
-            title="暂无数据源"
-            action={
-              <Button onClick={onCreateDatasource} className="btn-primary">
-                <Plus size={16} />
-                添加数据源
-              </Button>
-            }
-          />
-        ) : workloads.length === 0 ? (
-          <EmptyPanel
-            icon={ClipboardText}
-            title="暂无任务"
-            action={canManage ? (
-              <Button onClick={() => setCreatorOpen(true)} className="btn-primary">
-                <Plus size={16} />
-                创建任务
-              </Button>
-            ) : <PermissionNotice compact description="仅管理员可新增任务。" />}
-          />
-        ) : (
-          <div className="mt-5 divide-y divide-line">
-            {filtered.map((item) => {
-              const task = item.rawTask;
-              const job = item.rawJob;
-              const primaryAction = task ? taskPrimaryAction(task) : null;
-              const taskHasException = Boolean(task && (task.status === "failed" || taskAwaitingNode(task) || task.runtime?.processStatus === "failed"));
-              return (
-                <div key={item.key} className="grid gap-3 py-4 lg:grid-cols-[1fr_auto] lg:items-center">
-                  <Button
-                    onClick={() => {
-                      if (item.rawTask) {
-                        onOpenTask(item.rawTask.id);
-                      } else if (item.rawJob) {
-                        onOpenCapabilityJob(item.rawJob.id);
-                      }
-                    }}
-                    className="panel-link"
-                  >
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="font-medium text-coal">{item.title}</span>
-                      <TypeBadge type={item.type} />
-                      {task && <StatusBadge status={task.status} />}
-                      {taskHasException && task && shouldShowTaskProcessBadge(task) && <Badge tone={taskProcessTone(task.runtime?.processStatus)}>{taskProcessStatusText(task.runtime?.processStatus)}</Badge>}
-                      {taskHasException && task && taskAwaitingNode(task) && <Badge tone="yellow">待处理</Badge>}
-                      {job && <Badge tone={capabilityJobTone(job.status)}>{capabilityJobStatusText(job.status)}</Badge>}
-                    </div>
-                    <div className="mt-1 text-sm text-slate-500">{item.detail}</div>
-                    {task && <div className="mt-2 text-xs text-slate-500">更新 {formatDate(item.updatedAt)}</div>}
-                    {!task && <div className="mt-2 text-xs text-slate-500">{formatDate(item.updatedAt)}</div>}
-                  </Button>
-                  <div className="flex flex-wrap justify-end gap-2">
-                    {task && primaryAction && (
-                      <Button
-                        onClick={() => void runTaskAction(task, primaryAction)}
-                        disabled={busyKey === `${task.id}:${primaryAction}`}
-                        className="btn-compact"
-                      >
-                        {primaryAction === "start" || primaryAction === "resume" ? <Play size={14} /> : primaryAction === "pause" ? <Pause size={14} /> : <Stop size={14} />}
-                        {taskActionLabel(primaryAction)}
-                      </Button>
-                    )}
-                    {job && (
-                      <Button
-                        onClick={() => void rerunJob(job)}
-                        disabled={job.status === "running" || busyKey === `${job.id}:job`}
-                        className="btn-compact"
-                      >
-                        <Play size={14} />
-                        {job.status === "running" ? "运行中" : "重跑"}
-                      </Button>
-                    )}
-                    <ActionMenu
-                      items={task ? [
-                        { label: "详情", onSelect: () => onOpenTask(task.id) },
-                        { label: "停止", onSelect: () => void runTaskAction(task, "stop"), disabled: !(task.status === "full_syncing" || task.status === "incremental_running") },
-                        { label: "重跑", onSelect: () => void rerunTask(task), disabled: !(task.status === "stopped" || task.status === "failed") },
-                        { label: "删除", onSelect: () => requestDeleteTask(task), danger: true, disabled: !canManage }
-                      ] : job ? [
-                        { label: "详情", onSelect: () => onOpenCapabilityJob(job.id) }
-                      ] : []}
-                    />
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </section>
-
-      <TaskCreatorModal
-        open={creatorOpen}
-        datasources={datasources}
-        tasks={tasks}
-        canManage={canManage}
-        onClose={() => setCreatorOpen(false)}
-        onChanged={onChanged}
-        pushNotice={pushNotice}
-      />
-
-      <ConfirmDialog
-        open={Boolean(confirmation)}
-        title={confirmation?.title || ""}
-        description={confirmation?.description || ""}
-        confirmLabel={confirmation?.confirmLabel || "确认"}
-        confirmTone={confirmation?.confirmTone}
-        onCancel={() => setConfirmation(null)}
-        onConfirm={() => {
-          const action = confirmation?.onConfirm;
-          setConfirmation(null);
-          action?.();
-        }}
-      />
-    </div>
-  );
-}
-
-function TaskDetailPage({
-  taskId,
-  tasks,
-  capabilityJobs,
-  errors,
-  cluster,
-  canManage,
-  onOpenNode,
-  onChanged,
-  pushNotice,
-  onBack
-}: {
-  taskId: string | null;
-  tasks: SyncTask[];
-  capabilityJobs: CapabilityJob[];
-  errors: ErrorEvent[];
-  cluster: ClusterSnapshot | null;
-  canManage: boolean;
-  onOpenNode: (nodeID: string) => void;
-  onChanged: (quiet?: boolean) => Promise<void>;
-  pushNotice: (notice: Notice) => void;
-  onBack: () => void;
-}) {
-  const task = tasks.find((item) => item.id === taskId) || null;
-  const [busyJobId, setBusyJobId] = useState<string | null>(null);
-
-  const rerunJob = async (job: CapabilityJob) => {
-    setBusyJobId(job.id);
-    try {
-      await api.runCapabilityJob(job.id);
-      pushNotice({ tone: "success", message: "已启动" });
-      await onChanged();
-    } catch (requestError) {
-      pushNotice({ tone: "error", message: requestError instanceof Error ? requestError.message : "启动失败" });
-    } finally {
-      setBusyJobId(null);
-    }
-  };
-
-  if (!task) {
-    return (
-      <section className="surface p-6">
-        <DetailPageHeader title="任务详情" onBack={onBack} />
-        <div className="mt-5 text-sm text-slate-500">任务不存在或已删除。</div>
-      </section>
-    );
-  }
-
-  return (
-    <section className="surface p-6">
-      <DetailPageHeader title={task.name} subtitle="任务详情" onBack={onBack} />
-      <SyncTaskDetail
-        task={task}
-        relatedJobs={capabilityJobs.filter((job) => job.taskId === task.id && job.type !== "subscription")}
-        errors={errors}
-        cluster={cluster}
-        canManage={canManage}
-        onOpenNode={onOpenNode}
-        onRunJob={(job) => void rerunJob(job)}
-        busyActionKey={busyJobId ? `${busyJobId}:job` : null}
-        onChanged={onChanged}
-        pushNotice={pushNotice}
-      />
-    </section>
-  );
-}
-
-function CapabilityJobDetailPage({
-  jobId,
-  tasks,
-  capabilityJobs,
-  onBack
-}: {
-  jobId: string | null;
-  tasks: SyncTask[];
-  capabilityJobs: CapabilityJob[];
-  onBack: () => void;
-}) {
-  const job = capabilityJobs.find((item) => item.id === jobId) || null;
-  const [qualityDiffs, setQualityDiffs] = useState<Array<{ id: string; sourceTable: string; targetTable: string; fieldName: string; status: string; severity: string }>>([]);
-  const [structureItems, setStructureItems] = useState<Array<{ id: string; sourceObject: string; targetObject: string; changeType: string; status: string; riskLevel: string }>>([]);
-
-  useEffect(() => {
-    if (!job) {
-      setQualityDiffs([]);
-      setStructureItems([]);
-      return;
-    }
-    if (job.type === "quality") {
-      api.qualityDiffs(job.id)
-        .then((items) => {
-          setQualityDiffs(items.slice(0, 6).map((item) => ({
-            id: item.id,
-            sourceTable: item.sourceTable,
-            targetTable: item.targetTable,
-            fieldName: item.fieldName,
-            status: item.status,
-            severity: item.severity
-          })));
-        })
-        .catch(() => setQualityDiffs([]));
-      setStructureItems([]);
-      return;
-    }
-    if (job.type === "structure") {
-      api.structureDDLs(job.id)
-        .then((items) => {
-          setStructureItems(items.slice(0, 6).map((item) => ({
-            id: item.id,
-            sourceObject: item.sourceObject,
-            targetObject: item.targetObject,
-            changeType: item.changeType,
-            status: item.status,
-            riskLevel: item.riskLevel
-          })));
-        })
-        .catch(() => setStructureItems([]));
-      setQualityDiffs([]);
-      return;
-    }
-    setQualityDiffs([]);
-    setStructureItems([]);
-  }, [job]);
-
-  if (!job) {
-    return (
-      <section className="surface p-6">
-        <DetailPageHeader title="扩展任务详情" onBack={onBack} />
-        <div className="mt-5 text-sm text-slate-500">扩展任务不存在或已删除。</div>
-      </section>
-    );
-  }
-
-  return (
-    <section className="surface p-6">
-      <DetailPageHeader title={job.name} subtitle="扩展任务详情" onBack={onBack} />
-      <CapabilityJobDetail job={job} qualityDiffs={qualityDiffs} structureItems={structureItems} tasks={tasks} />
-    </section>
-  );
-}
-
 function handoffTitle(kind: ClusterHandoffReport["kind"]) {
-  if (kind === "drain") return "排空结果";
-  if (kind === "drill") return "演练结果";
   if (kind === "offline") return "节点下线结果";
-  if (kind === "online") return "节点上线结果";
-  return "重新均衡结果";
-}
-
-function handoffTrackTitle(kind: ClusterHandoffReport["kind"]) {
-  if (kind === "rebalance") return "任务分布";
-  return "影响范围";
-}
-
-function fromDrainReport(report: NodeDrainReport): ClusterHandoffReport {
-  return {
-    id: report.id,
-    kind: "drain",
-    happenedAt: report.drainedAt,
-    node: report.node,
-    success: report.success,
-    message: report.message,
-    affectedTasks: report.affectedTasks,
-    before: report.before,
-    after: report.after
-  };
-}
-
-function fromFailoverDrillReport(report: FailoverDrillReport): ClusterHandoffReport {
-  return {
-    id: report.id,
-    kind: "drill",
-    happenedAt: report.drilledAt,
-    node: report.node,
-    success: report.success,
-    message: report.message,
-    affectedTasks: report.affectedTasks,
-    before: report.before,
-    after: report.after
-  };
-}
-
-function fromRebalanceReport(report: ClusterRebalanceReport): ClusterHandoffReport {
-  return {
-    id: report.id,
-    kind: "rebalance",
-    happenedAt: report.rebalancedAt,
-    success: report.success,
-    message: report.message,
-    affectedTasks: report.movedTasks,
-    before: report.before,
-    after: report.after
-  };
+  return "节点上线结果";
 }
 
 function fromNodeStatusChangeResult(report: NodeStatusChangeResult): ClusterHandoffReport {
@@ -2053,7 +1209,6 @@ function fromNodeStatusChangeResult(report: NodeStatusChangeResult): ClusterHand
     node: report.node,
     success: report.success,
     message: report.message,
-    affectedTasks: report.affectedTasks,
     before: report.before,
     after: report.after
   };
@@ -2061,7 +1216,6 @@ function fromNodeStatusChangeResult(report: NodeStatusChangeResult): ClusterHand
 
 function NodesPage({
   cluster,
-  tasks,
   canManage,
   onChanged,
   pushNotice,
@@ -2069,7 +1223,6 @@ function NodesPage({
   onOpenNode
 }: {
   cluster: ClusterSnapshot | null;
-  tasks: SyncTask[];
   canManage: boolean;
   onChanged: (quiet?: boolean) => Promise<void>;
   pushNotice: (notice: Notice) => void;
@@ -2082,10 +1235,9 @@ function NodesPage({
   const [creatorOpen, setCreatorOpen] = useState(false);
   const [operationResult, setOperationResult] = useState<NodeOperationResult | null>(null);
   const [handoffReport, setHandoffReport] = useState<ClusterHandoffReport | null>(null);
-  const [busyKey, setBusyKey] = useState<string | null>(null);
+  const [, setBusyKey] = useState<string | null>(null);
   const [confirmation, setConfirmation] = useState<ConfirmationDialogState | null>(null);
   const localNodeId = cluster?.localNodeId;
-  const awaitingTasks = tasks.filter(taskAwaitingNode);
 
   useEffect(() => {
     if (openCreateToken === 0) return;
@@ -2098,11 +1250,6 @@ function NodesPage({
     const matchesStatus = statusFilter === "all" || node.status === statusFilter;
     return matchesKeyword && matchesStatus;
   });
-  const nodeName = (nodeID?: string) => {
-    if (!nodeID) return "待分配";
-    return nodes.find((node) => node.id === nodeID)?.name || nodeID;
-  };
-
   const executeQuickAction = async (node: ClusterNode, action: "upgrade" | "uninstall") => {
     if (!canManage) {
       pushNotice({ tone: "warning", message: "节点运维需要管理员权限" });
@@ -2125,8 +1272,8 @@ function NodesPage({
     setConfirmation({
       title: action === "upgrade" ? `升级节点“${node.name}”` : `卸载节点“${node.name}”`,
       description: action === "upgrade"
-        ? "升级前会迁移该节点上的任务，过程可能影响运行。确认继续吗？"
-        : "卸载会迁移承载任务并移除节点安装，操作不可直接撤销。确认继续吗？",
+        ? "确认升级该节点？"
+        : "卸载会移除节点安装，操作不可直接撤销。确认继续吗？",
       confirmLabel: action === "upgrade" ? "确认升级" : "确认卸载",
       confirmTone: "danger",
       onConfirm: () => {
@@ -2135,29 +1282,19 @@ function NodesPage({
     });
   };
 
-  const executeMoreAction = async (node: ClusterNode, action: "drain" | "offline" | "online" | "drill") => {
+  const executeMoreAction = async (node: ClusterNode, action: "offline" | "online") => {
     if (!canManage) {
       pushNotice({ tone: "warning", message: "节点运维需要管理员权限" });
       return;
     }
     setBusyKey(`${node.id}:${action}`);
     try {
-      if (action === "drain") {
-        const report = await api.drainNode(node.id);
-        setHandoffReport(fromDrainReport(report));
-        pushNotice({ tone: report.success ? "success" : "warning", message: report.message });
-      } else if (action === "drill") {
-        const report = await api.failoverDrill(node.id);
-        setHandoffReport(fromFailoverDrillReport(report));
-        pushNotice({ tone: report.success ? "success" : "warning", message: report.message });
+      const result = await api.nodeAction(node.id, action);
+      if ("changedAt" in result) {
+        setHandoffReport(fromNodeStatusChangeResult(result));
+        pushNotice({ tone: result.success ? "success" : "warning", message: result.message });
       } else {
-        const result = await api.nodeAction(node.id, action);
-        if ("affectedTasks" in result) {
-          setHandoffReport(fromNodeStatusChangeResult(result));
-          pushNotice({ tone: result.success ? "success" : "warning", message: result.message });
-        } else {
-          pushNotice({ tone: "success", message: action === "online" ? "已上线" : "已下线" });
-        }
+        pushNotice({ tone: "success", message: action === "online" ? "已上线" : "已下线" });
       }
       await onChanged();
     } catch (requestError) {
@@ -2167,22 +1304,10 @@ function NodesPage({
     }
   };
 
-  const requestMoreAction = (node: ClusterNode, action: "drain" | "offline" | "online" | "drill") => {
-    const title = action === "drain"
-      ? `排空节点“${node.name}”`
-      : action === "offline"
-        ? `下线节点“${node.name}”`
-        : action === "online"
-          ? `恢复节点“${node.name}”`
-          : `对节点“${node.name}”执行故障演练`;
-    const description = action === "drain"
-      ? "该节点上的任务会迁移到其他节点，适合维护前使用。确认继续吗？"
-      : action === "offline"
-        ? "节点会被标记为离线，受影响任务会重新分配。确认继续吗？"
-        : action === "online"
-          ? "节点恢复上线后，待分配任务可能重新运行。确认继续吗？"
-          : "将模拟节点故障并触发切换，仅应在演练窗口执行。确认继续吗？";
-    const confirmLabel = action === "online" ? "确认上线" : action === "offline" ? "确认下线" : action === "drain" ? "确认排空" : "确认演练";
+  const requestMoreAction = (node: ClusterNode, action: "offline" | "online") => {
+    const title = action === "offline" ? `下线节点“${node.name}”` : `恢复节点“${node.name}”`;
+    const description = action === "offline" ? "节点会被标记为离线。确认继续吗？" : "确认上线该节点？";
+    const confirmLabel = action === "online" ? "确认上线" : "确认下线";
     setConfirmation({
       title,
       description,
@@ -2194,55 +1319,15 @@ function NodesPage({
     });
   };
 
-  const executeRebalanceCluster = async () => {
-    if (!canManage) {
-      pushNotice({ tone: "warning", message: "节点运维需要管理员权限" });
-      return;
-    }
-    setBusyKey("rebalance");
-    try {
-      const report = await api.rebalanceCluster();
-      setHandoffReport(fromRebalanceReport(report));
-      pushNotice({ tone: report.success ? "success" : "warning", message: report.message });
-      await onChanged();
-    } catch (requestError) {
-      pushNotice({ tone: "error", message: requestError instanceof Error ? requestError.message : "集群均衡失败" });
-    } finally {
-      setBusyKey(null);
-    }
-  };
-
-  const requestRebalanceCluster = () => {
-    setConfirmation({
-      title: "重新均衡任务",
-      description: "会重新分配节点上的任务，可能触发迁移。确认继续吗？",
-      confirmLabel: "确认均衡",
-      confirmTone: "danger",
-      onConfirm: () => {
-        void executeRebalanceCluster();
-      }
-    });
-  };
-
   return (
     <div className="space-y-5">
         <section className="surface min-w-0 p-6">
-          <SectionHeader
-            title="节点"
-            action={canManage ? (
-              <ActionMenu
-                items={[
-                  { label: busyKey === "rebalance" ? "均衡中" : "重新均衡", onSelect: requestRebalanceCluster, disabled: busyKey === "rebalance" }
-                ]}
-              />
-          ) : undefined}
-        />
+          <SectionHeader title="节点" />
 
         <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <MetricMini label="节点总数" value={`${cluster?.totalNodes ?? 0}`} />
           <MetricMini label="在线节点" value={`${cluster?.onlineNodes ?? 0}`} />
-          <MetricMini label="运行任务" value={`${tasks.filter((task) => task.runtime?.nodeId).length}`} />
-          <MetricMini label="待接管" value={`${awaitingTasks.length}`} />
+          <MetricMini label="离线" value={`${nodes.filter((node) => node.status === "offline").length}`} />
         </div>
 
         <div className="mt-5 grid gap-3 lg:grid-cols-[minmax(0,1fr)_220px]">
@@ -2262,14 +1347,13 @@ function NodesPage({
             <SelectInput className="select" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as "all" | ClusterNode["status"])}>
               <option value="all">全部状态</option>
               <option value="online">在线</option>
-              <option value="draining">排空中</option>
               <option value="offline">离线</option>
             </SelectInput>
           </Field>
         </div>
 
         <div className="mt-3 text-sm text-slate-500">
-          {`全部 ${nodes.length} · 在线 ${nodes.filter((node) => node.status === "online").length} · 排空中 ${nodes.filter((node) => node.status === "draining").length} · 离线 ${nodes.filter((node) => node.status === "offline").length}`}
+          {`全部 ${nodes.length} · 在线 ${nodes.filter((node) => node.status === "online").length} · 离线 ${nodes.filter((node) => node.status === "offline").length}`}
         </div>
 
         {nodes.length === 0 ? (
@@ -2291,7 +1375,6 @@ function NodesPage({
                   <th className="px-4 py-3">名称</th>
                   <th className="px-4 py-3">状态</th>
                   <th className="px-4 py-3">地址</th>
-                  <th className="px-4 py-3">任务</th>
                   <th className="px-4 py-3">资源</th>
                   <th className="px-4 py-3 text-right">操作</th>
                 </tr>
@@ -2313,7 +1396,6 @@ function NodesPage({
                       <td className="px-4 py-4">
                         <div className="mono text-slate-700">{node.endpoint}</div>
                       </td>
-                      <td className="px-4 py-4 text-slate-600">{node.runningTasks}/{node.capacity}</td>
                       <td className="px-4 py-4 text-slate-600">CPU {node.cpuPercent}% · 内存 {node.memoryPercent}%</td>
                       <td className="px-4 py-4">
                         <div className="flex justify-end">
@@ -2322,9 +1404,7 @@ function NodesPage({
                               { label: "详情", onSelect: () => onOpenNode(node.id) },
                               { label: "升级", onSelect: () => requestQuickAction(node, "upgrade"), disabled: !canManage },
                               { label: "卸载", onSelect: () => requestQuickAction(node, "uninstall"), danger: true, disabled: !canManage || isCurrentNode },
-                              { label: "排空", onSelect: () => requestMoreAction(node, "drain"), disabled: !canManage || node.status === "offline" },
                               { label: node.status === "online" ? "下线" : "上线", onSelect: () => requestMoreAction(node, node.status === "online" ? "offline" : "online"), disabled: !canManage || (isCurrentNode && node.status === "online") },
-                              { label: "故障演练", onSelect: () => requestMoreAction(node, "drill"), disabled: !canManage || node.status !== "online" || isCurrentNode }
                             ]}
                           />
                         </div>
@@ -2357,76 +1437,31 @@ function NodesPage({
             <div className="grid gap-3 sm:grid-cols-3">
               <DetailCard label="发生时间" value={formatDateTime(handoffReport.happenedAt)} />
               <DetailCard label="在线节点" value={`${handoffReport.after.onlineNodes}/${handoffReport.after.totalNodes}`} />
-              <DetailCard label="影响任务" value={`${handoffReport.affectedTasks.length} 条`} />
+              <DetailCard label="状态" value={handoffReport.success ? "完成" : "失败"} />
             </div>
 
             <div className="border-l border-line bg-slate-50/60 px-4 py-3">
-              <div className="text-sm font-medium text-coal">{handoffTrackTitle(handoffReport.kind)}</div>
-              <div className="mt-3 grid gap-3 sm:grid-cols-[1fr_auto_1fr] sm:items-center">
+              <div className="text-sm font-medium text-coal">结果</div>
+              <div className="mt-3 grid gap-3 sm:grid-cols-2">
                 <div className="border-t border-line px-0 py-4">
-                  <div className="text-xs uppercase tracking-[0.18em] text-slate-500">
-                    {handoffReport.kind === "drill"
-                      ? "故障节点"
-                      : handoffReport.kind === "drain"
-                        ? "排空节点"
-                        : handoffReport.kind === "offline"
-                          ? "下线节点"
-                          : handoffReport.kind === "online"
-                            ? "恢复节点"
-                            : "来源"}
-                  </div>
+                  <div className="text-xs uppercase tracking-[0.18em] text-slate-500">节点</div>
                   <div className="mt-2 text-sm font-medium text-coal">
-                    {handoffReport.node ? nodeName(handoffReport.node.id) : "多节点"}
+                    {handoffReport.node?.name || "-"}
                   </div>
-                </div>
-                <div className="hidden justify-center sm:flex">
-                  <ArrowRight size={18} className="text-slate-400" />
                 </div>
                 <div className="border-t border-line px-0 py-4">
                   <div className="text-xs uppercase tracking-[0.18em] text-slate-500">结果</div>
                   <div className="mt-2 text-sm font-medium text-coal">
-                    {handoffReport.affectedTasks.length === 0 ? "无任务迁移" : Array.from(new Set(handoffReport.affectedTasks.map((item) => nodeName(item.newNodeId)))).join(" / ")}
+                    {handoffReport.success ? "已完成" : "未完成"}
                   </div>
                 </div>
               </div>
             </div>
 
             <div className="grid gap-3">
-              {handoffReport.affectedTasks.length === 0 ? (
-                <div className="border-y border-dashed border-line bg-slate-50/60 px-4 py-6 text-center text-sm text-slate-500">
-                  {handoffReport.kind === "rebalance"
-                    ? "任务分布无需调整。"
-                    : handoffReport.kind === "online"
-                      ? "节点已上线，暂无待处理任务。"
-                      : "该节点暂无运行任务。"}
-                </div>
-              ) : handoffReport.affectedTasks.map((item) => (
-                <div key={item.taskId} className="border-t border-line py-4">
-                  <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <div className="font-medium text-coal">{item.taskName}</div>
-                        <Badge tone={item.newNodeId ? "green" : "red"}>{item.newNodeId ? "已接管" : "待处理"}</Badge>
-                      </div>
-                      <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-500">
-                        <span className="rounded-md bg-slate-50 px-2 py-1">{nodeName(item.previousNodeId)}</span>
-                        <ArrowRight size={14} className="text-slate-400" />
-                        <span className="rounded-md bg-slate-50 px-2 py-1">{nodeName(item.newNodeId)}</span>
-                      </div>
-                    </div>
-                    <div className="border-l border-line bg-slate-50/60 px-4 py-3">
-                      <div className="text-xs uppercase tracking-[0.18em] text-slate-500">恢复位点</div>
-                      <div className="mt-2 mono text-coal">{item.recoveryBinlogFile}:{formatNumber(item.recoveryBinlogPosition)}</div>
-                    </div>
-                  </div>
-                  <div className="mt-3 grid gap-3 sm:grid-cols-4">
-                    <DetailCard label="运行阶段" value={taskRuntimePhaseText(item.runtimePhase)} />
-                    <DetailCard label="调度版本" value={`${item.previousLeaseEpoch} -> ${item.leaseEpoch}`} mono />
-                    <DetailCard label="延迟" value={`${item.recoveryDelaySeconds}s`} />
-                    <DetailCard label="接管次数" value={`${item.takeoverCount}`} />
-                  </div>
-                </div>
-              ))}
+              <div className="border-y border-dashed border-line bg-slate-50/60 px-4 py-6 text-center text-sm text-slate-500">
+                {handoffReport.message}
+              </div>
             </div>
           </div>
         )}
@@ -2444,44 +1479,7 @@ function NodesPage({
               <div className="grid gap-3 sm:grid-cols-3">
                 <DetailCard label="发生时间" value={formatDateTime(operationResult.finishedAt)} />
                 <DetailCard label="在线节点" value={`${operationResult.after.onlineNodes}/${operationResult.after.totalNodes}`} />
-                <DetailCard label="影响任务" value={`${operationResult.affectedTasks?.length || 0} 条`} />
-              </div>
-            )}
-
-            {operationResult.affectedTasks && operationResult.affectedTasks.length > 0 && (
-              <div className="border-l border-line bg-slate-50/60 px-4 py-3">
-                <div className="text-sm font-medium text-coal">
-                  {operationResult.action === "upgrade" ? "升级前任务迁移" : "卸载前任务迁移"}
-                </div>
-                <div className="mt-3 grid gap-3">
-                  {operationResult.affectedTasks.map((task) => (
-                    <div key={task.taskId} className="border-t border-line py-4">
-                      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                        <div className="min-w-0">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <div className="font-medium text-coal">{task.taskName}</div>
-                            <Badge tone={task.newNodeId ? "green" : "red"}>{task.newNodeId ? "已接管" : "待处理"}</Badge>
-                          </div>
-                          <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-500">
-                            <span className="rounded-md bg-slate-50 px-2 py-1">{nodeName(task.previousNodeId)}</span>
-                            <ArrowRight size={14} className="text-slate-400" />
-                            <span className="rounded-md bg-slate-50 px-2 py-1">{nodeName(task.newNodeId)}</span>
-                          </div>
-                        </div>
-                        <div className="border-l border-line bg-slate-50/60 px-4 py-3">
-                          <div className="text-xs uppercase tracking-[0.18em] text-slate-500">恢复位点</div>
-                          <div className="mt-2 mono text-coal">{task.recoveryBinlogFile}:{formatNumber(task.recoveryBinlogPosition)}</div>
-                        </div>
-                      </div>
-                      <div className="mt-3 grid gap-3 sm:grid-cols-4">
-                        <DetailCard label="运行阶段" value={taskRuntimePhaseText(task.runtimePhase)} />
-                        <DetailCard label="调度版本" value={`${task.previousLeaseEpoch} -> ${task.leaseEpoch}`} mono />
-                        <DetailCard label="延迟" value={`${task.recoveryDelaySeconds}s`} />
-                        <DetailCard label="接管次数" value={`${task.takeoverCount}`} />
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                <DetailCard label="状态" value={operationResult.success ? "完成" : "失败"} />
               </div>
             )}
 
@@ -2520,42 +1518,25 @@ function NodesPage({
 function NodeDetailPage({
   nodeId,
   cluster,
-  tasks,
   logs,
-  onOpenTask,
   onBack
 }: {
   nodeId: string | null;
   cluster: ClusterSnapshot | null;
-  tasks: SyncTask[];
   logs: OperationLog[];
-  onOpenTask: (taskID: string) => void;
   onBack: () => void;
 }) {
   const nodes = cluster?.nodes ?? emptyNodes;
   const selected = nodes.find((item) => item.id === nodeId) || null;
   const localNodeId = cluster?.localNodeId;
-  const taskByNodeId = new Map<string, SyncTask[]>();
-  tasks.forEach((task) => {
-    if (!task.runtime?.nodeId) return;
-    const list = taskByNodeId.get(task.runtime.nodeId) || [];
-    list.push(task);
-    taskByNodeId.set(task.runtime.nodeId, list);
-  });
-  const awaitingTasks = tasks.filter(taskAwaitingNode);
   const nodeEvents = selected
     ? logs.filter((log) => {
       if (log.targetType === "cluster_node" && log.targetId === selected.id) {
         return true;
       }
-      if (log.targetType === "sync_task") {
-        return log.detail.includes(selected.id) || log.detail.includes(selected.name);
-      }
       return false;
     }).slice(0, 4)
     : [];
-  const selectedNodeTasks = selected ? (taskByNodeId.get(selected.id) || []) : [];
-  const visibleNodeTasks = selectedNodeTasks.slice(0, 4);
 
   if (!selected) {
     return (
@@ -2581,71 +1562,14 @@ function NodeDetailPage({
             <DetailCard label="安装目录" value={selected.installDir} mono />
             <DetailCard label="版本" value={selected.version} mono />
             <DetailCard label="最近心跳" value={`${formatDateTime(selected.lastHeartbeatAt)} · ${secondsSince(selected.lastHeartbeatAt)} 秒前`} />
-            <DetailCard label="运行任务" value={`${selected.runningTasks}/${selected.capacity}`} />
           </div>
           {localNodeId === selected.id && (
             <div className="border-l-4 border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-700">
-              本机节点不支持自卸载、自下线或故障演练。
+              本机节点不支持自卸载或自下线。
             </div>
           )}
         </div>
       </section>
-
-      {selectedNodeTasks.length > 0 && (
-        <section className="surface p-6">
-          <SectionHeader title="承载任务" />
-          {selectedNodeTasks.length > visibleNodeTasks.length && (
-            <div className="mt-3 text-sm text-slate-500">仅展示最近 {visibleNodeTasks.length} 条。</div>
-          )}
-          <div className="mt-3 grid gap-3">
-            {visibleNodeTasks.map((task) => (
-              <div key={task.id} className="border-t border-line px-0 py-4">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="font-medium text-coal">{task.name}</div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <StatusBadge status={task.status} />
-                    {shouldShowTaskProcessBadge(task) && (
-                      <Badge tone={taskProcessTone(task.runtime?.processStatus)}>{taskProcessStatusText(task.runtime?.processStatus)}</Badge>
-                    )}
-                  </div>
-                </div>
-                <div className="mt-2 text-sm text-slate-500">
-                  {(task.sourceDatasource?.name || task.sourceDatasourceId)} to {(task.targetDatasource?.name || task.targetDatasourceId)}
-                </div>
-                <div className="mt-3 flex justify-end">
-                  <Button type="button" onClick={() => onOpenTask(task.id)} className="btn-compact">
-                    查看任务
-                  </Button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </section>
-      )}
-
-      {awaitingTasks.length > 0 && (
-        <section className="surface p-6">
-          <SectionHeader title="待接管任务" />
-          <div className="mt-3 grid gap-3">
-            {awaitingTasks.slice(0, 6).map((task) => (
-              <div key={task.id} className="border-t border-line px-0 py-4">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="font-medium text-coal">{task.name}</div>
-                  <Badge tone="yellow">待接管</Badge>
-                </div>
-                <div className="mt-2 text-sm text-slate-500">
-                  {(task.sourceDatasource?.name || task.sourceDatasourceId)} to {(task.targetDatasource?.name || task.targetDatasourceId)}
-                </div>
-                <div className="mt-3 flex justify-end">
-                  <Button type="button" onClick={() => onOpenTask(task.id)} className="btn-compact">
-                    查看任务
-                  </Button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </section>
-      )}
 
       {nodeEvents.length > 0 && (
         <section className="surface p-6">
@@ -2668,7 +1592,6 @@ function NodeDetailPage({
 }
 
 function SettingsPage({
-  tasks,
   alertRules,
   alertEvents,
   evaluations,
@@ -2676,7 +1599,6 @@ function SettingsPage({
   onChanged,
   pushNotice
 }: {
-  tasks: SyncTask[];
   alertRules: AlertRule[];
   alertEvents: AlertEvent[];
   evaluations: AlertRuleEvaluation[];
@@ -2689,9 +1611,6 @@ function SettingsPage({
   const [form, setForm] = useState<AlertRuleInput>({
     name: "",
     enabled: true,
-    taskId: "",
-    delayThresholdSeconds: 300,
-    errorThreshold: 1,
     webhookUrl: ""
   });
   const [confirmation, setConfirmation] = useState<ConfirmationDialogState | null>(null);
@@ -2702,9 +1621,6 @@ function SettingsPage({
       setForm({
         name: "",
         enabled: true,
-        taskId: "",
-        delayThresholdSeconds: 300,
-        errorThreshold: 1,
         webhookUrl: ""
       });
       return;
@@ -2712,9 +1628,6 @@ function SettingsPage({
     setForm({
       name: editing.name,
       enabled: editing.enabled,
-      taskId: editing.taskId || "",
-      delayThresholdSeconds: editing.delayThresholdSeconds,
-      errorThreshold: editing.errorThreshold,
       webhookUrl: editing.webhookUrl || ""
     });
   }, [editing]);
@@ -2815,8 +1728,7 @@ function SettingsPage({
                       <span className="font-medium text-coal">{rule.name}</span>
                       <Badge tone={evaluation?.triggered ? "red" : "green"}>{evaluation?.triggered ? "触发中" : "正常"}</Badge>
                     </div>
-                    <div className="mt-2 text-sm text-slate-500">{rule.taskId ? tasks.find((task) => task.id === rule.taskId)?.name || rule.taskId : "全部任务"}</div>
-                    <div className="mt-2 text-xs text-slate-500">延迟 {rule.delayThresholdSeconds}s · 错误 {rule.errorThreshold}</div>
+                    <div className="mt-2 text-xs text-slate-500">{rule.webhookUrl ? "Webhook" : "未配置 Webhook"}</div>
                   </Button>
                 );
               })}
@@ -2830,20 +1742,6 @@ function SettingsPage({
                 <Field label="规则">
                   <TextInput className="input" value={form.name} disabled={!canManage} onChange={(event) => setForm({ ...form, name: event.target.value })} />
                 </Field>
-                <Field label="范围">
-                  <SelectInput className="select" value={form.taskId || ""} disabled={!canManage} onChange={(event) => setForm({ ...form, taskId: event.target.value })}>
-                    <option value="">全部任务</option>
-                    {tasks.map((task) => <option key={task.id} value={task.id}>{task.name}</option>)}
-                  </SelectInput>
-                </Field>
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <Field label="延迟秒">
-                    <TextInput className="input" type="number" min={1} value={form.delayThresholdSeconds} disabled={!canManage} onChange={(event) => setForm({ ...form, delayThresholdSeconds: Number(event.target.value) })} />
-                  </Field>
-                  <Field label="错误数">
-                    <TextInput className="input" type="number" min={0} value={form.errorThreshold} disabled={!canManage} onChange={(event) => setForm({ ...form, errorThreshold: Number(event.target.value) })} />
-                  </Field>
-                </div>
                 <Field label="Webhook">
                   <TextInput className="input" value={form.webhookUrl || ""} disabled={!canManage} onChange={(event) => setForm({ ...form, webhookUrl: event.target.value })} placeholder="https://example.com/webhook" />
                 </Field>
@@ -2980,736 +1878,6 @@ function LoginScreen({ onLogin }: { onLogin: (username: string, password: string
         </form>
       </div>
     </div>
-  );
-}
-
-function TaskCreatorModal({
-  open,
-  datasources,
-  tasks,
-  canManage,
-  onClose,
-  onChanged,
-  pushNotice
-}: {
-  open: boolean;
-  datasources: Datasource[];
-  tasks: SyncTask[];
-  canManage: boolean;
-  onClose: () => void;
-  onChanged: (quiet?: boolean) => Promise<void>;
-  pushNotice: (notice: Notice) => void;
-}) {
-  const sourceOptions = datasources.filter((item) => item.purpose === "source" || item.purpose === "both");
-  const targetOptions = datasources.filter((item) => item.purpose === "target" || item.purpose === "both");
-  const executableTasks = tasks.filter((task) => task.status !== "draft");
-  const [step, setStep] = useState(0);
-  const [selectedType, setSelectedType] = useState<TaskBlueprintType>("full_migration");
-  const [syncDraft, setSyncDraft] = useState({
-    name: "",
-    owner: "数据平台",
-    sourceDatasourceId: sourceOptions[0]?.id || "",
-    targetDatasourceId: targetOptions[0]?.id || "",
-    sourceSchema: "",
-    sourceTable: "",
-    targetSchema: "",
-    targetTable: ""
-  });
-  const [capabilityDraft, setCapabilityDraft] = useState({
-    name: "",
-    taskId: executableTasks[0]?.id || ""
-  });
-  const [defaultStrategyTemplate, setDefaultStrategyTemplate] = useState<SyncStrategy>(defaultStrategy);
-  const [strategy, setStrategy] = useState<SyncStrategy>(defaultStrategy);
-  const [sourceSchemas, setSourceSchemas] = useState<string[]>([]);
-  const [targetSchemas, setTargetSchemas] = useState<string[]>([]);
-  const [tables, setTables] = useState<TableInfo[]>([]);
-  const [columns, setColumns] = useState<TableColumn[]>([]);
-  const [fieldMappings, setFieldMappings] = useState<FieldMapping[]>([]);
-  const [showFieldMappings, setShowFieldMappings] = useState(false);
-  const [preflight, setPreflight] = useState<TaskPreflightReport | null>(null);
-  const [checking, setChecking] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
-  const [formError, setFormError] = useState<string | null>(null);
-  const [loadingSourceSchemas, setLoadingSourceSchemas] = useState(false);
-  const [loadingTargetSchemas, setLoadingTargetSchemas] = useState(false);
-  const [loadingTables, setLoadingTables] = useState(false);
-  const [loadingColumns, setLoadingColumns] = useState(false);
-  const initializedOpenRef = useRef(false);
-  const sourceSchemasRequestId = useRef(0);
-  const targetSchemasRequestId = useRef(0);
-  const tablesRequestId = useRef(0);
-  const columnsRequestId = useRef(0);
-
-  const isSyncType = selectedType === "full_migration" || selectedType === "incremental_sync";
-
-  useEffect(() => {
-    if (!open) {
-      initializedOpenRef.current = false;
-      return;
-    }
-    if (initializedOpenRef.current) return;
-    initializedOpenRef.current = true;
-    setStep(0);
-    setSelectedType("full_migration");
-    setFormError(null);
-    setPreflight(null);
-    setStrategy(defaultStrategyTemplate);
-    setLoadingSourceSchemas(false);
-    setLoadingTargetSchemas(false);
-    setLoadingTables(false);
-    setLoadingColumns(false);
-    setSourceSchemas([]);
-    setTargetSchemas([]);
-    setTables([]);
-    setColumns([]);
-    setFieldMappings([]);
-    setShowFieldMappings(false);
-    setSyncDraft({
-      name: "",
-      owner: "数据平台",
-      sourceDatasourceId: sourceOptions[0]?.id || "",
-      targetDatasourceId: targetOptions[0]?.id || "",
-      sourceSchema: "",
-      sourceTable: "",
-      targetSchema: "",
-      targetTable: ""
-    });
-    setCapabilityDraft({
-      name: "",
-      taskId: executableTasks[0]?.id || ""
-    });
-  }, [defaultStrategyTemplate, open, sourceOptions, targetOptions, executableTasks]);
-
-  useEffect(() => {
-    let cancelled = false;
-    api.defaultStrategy()
-      .then((nextStrategy) => {
-        if (!cancelled) {
-          setDefaultStrategyTemplate(nextStrategy);
-          setStrategy(nextStrategy);
-        }
-      })
-      .catch(() => undefined);
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!open) return;
-    const requestId = sourceSchemasRequestId.current + 1;
-    sourceSchemasRequestId.current = requestId;
-    setSourceSchemas([]);
-    setTables([]);
-    setColumns([]);
-    setFieldMappings([]);
-    setLoadingTables(false);
-    setLoadingColumns(false);
-    if (!syncDraft.sourceDatasourceId) {
-      setLoadingSourceSchemas(false);
-      return;
-    }
-    const controller = new AbortController();
-    const datasourceId = syncDraft.sourceDatasourceId;
-    setLoadingSourceSchemas(true);
-    api.schemas(datasourceId, { signal: controller.signal })
-      .then((items) => {
-        if (controller.signal.aborted || requestId !== sourceSchemasRequestId.current) return;
-        setSourceSchemas(items);
-        setSyncDraft((current) => {
-          if (current.sourceDatasourceId !== datasourceId) {
-            return current;
-          }
-          const nextSourceSchema = items.includes(current.sourceSchema) ? current.sourceSchema : items[0] || "";
-          return {
-            ...current,
-            sourceSchema: nextSourceSchema,
-            sourceTable: current.sourceSchema === nextSourceSchema ? current.sourceTable : ""
-          };
-        });
-      })
-      .catch((error) => {
-        if (controller.signal.aborted || requestId !== sourceSchemasRequestId.current) return;
-        setSourceSchemas([]);
-        if (error instanceof Error) {
-          setFormError(error.message);
-        }
-      })
-      .finally(() => {
-        if (!controller.signal.aborted && requestId === sourceSchemasRequestId.current) {
-          setLoadingSourceSchemas(false);
-        }
-      });
-    return () => {
-      controller.abort();
-    };
-  }, [open, syncDraft.sourceDatasourceId]);
-
-  useEffect(() => {
-    if (!open) return;
-    const requestId = targetSchemasRequestId.current + 1;
-    targetSchemasRequestId.current = requestId;
-    setTargetSchemas([]);
-    if (!syncDraft.targetDatasourceId) {
-      setLoadingTargetSchemas(false);
-      return;
-    }
-    const controller = new AbortController();
-    const datasourceId = syncDraft.targetDatasourceId;
-    setLoadingTargetSchemas(true);
-    api.schemas(datasourceId, { signal: controller.signal })
-      .then((items) => {
-        if (controller.signal.aborted || requestId !== targetSchemasRequestId.current) return;
-        setTargetSchemas(items);
-        setSyncDraft((current) => {
-          if (current.targetDatasourceId !== datasourceId) {
-            return current;
-          }
-          return {
-            ...current,
-            targetSchema: items.includes(current.targetSchema) ? current.targetSchema : items[0] || ""
-          };
-        });
-      })
-      .catch((error) => {
-        if (controller.signal.aborted || requestId !== targetSchemasRequestId.current) return;
-        setTargetSchemas([]);
-        if (error instanceof Error) {
-          setFormError(error.message);
-        }
-      })
-      .finally(() => {
-        if (!controller.signal.aborted && requestId === targetSchemasRequestId.current) {
-          setLoadingTargetSchemas(false);
-        }
-      });
-    return () => {
-      controller.abort();
-    };
-  }, [open, syncDraft.targetDatasourceId]);
-
-  useEffect(() => {
-    if (!open) return;
-    const requestId = tablesRequestId.current + 1;
-    tablesRequestId.current = requestId;
-    setTables([]);
-    setColumns([]);
-    setFieldMappings([]);
-    setLoadingColumns(false);
-    if (!syncDraft.sourceDatasourceId || !syncDraft.sourceSchema) {
-      setLoadingTables(false);
-      return;
-    }
-    const controller = new AbortController();
-    const datasourceId = syncDraft.sourceDatasourceId;
-    const sourceSchema = syncDraft.sourceSchema;
-    setLoadingTables(true);
-    api.tables(datasourceId, sourceSchema, { signal: controller.signal })
-      .then((items) => {
-        if (controller.signal.aborted || requestId !== tablesRequestId.current) return;
-        setTables(items);
-        setSyncDraft((current) => {
-          if (current.sourceDatasourceId !== datasourceId || current.sourceSchema !== sourceSchema) {
-            return current;
-          }
-          const nextSourceTable = items.some((item) => item.name === current.sourceTable) ? current.sourceTable : items[0]?.name || "";
-          return {
-            ...current,
-            sourceTable: nextSourceTable
-          };
-        });
-      })
-      .catch((error) => {
-        if (controller.signal.aborted || requestId !== tablesRequestId.current) return;
-        setTables([]);
-        if (error instanceof Error) {
-          setFormError(error.message);
-        }
-      })
-      .finally(() => {
-        if (!controller.signal.aborted && requestId === tablesRequestId.current) {
-          setLoadingTables(false);
-        }
-      });
-    return () => {
-      controller.abort();
-    };
-  }, [open, syncDraft.sourceDatasourceId, syncDraft.sourceSchema]);
-
-  useEffect(() => {
-    if (!open) return;
-    const requestId = columnsRequestId.current + 1;
-    columnsRequestId.current = requestId;
-    setColumns([]);
-    setFieldMappings([]);
-    if (!syncDraft.sourceDatasourceId || !syncDraft.sourceSchema || !syncDraft.sourceTable) {
-      setLoadingColumns(false);
-      return;
-    }
-    const controller = new AbortController();
-    const datasourceId = syncDraft.sourceDatasourceId;
-    const sourceSchema = syncDraft.sourceSchema;
-    const sourceTable = syncDraft.sourceTable;
-    setLoadingColumns(true);
-    api.columns(datasourceId, sourceSchema, sourceTable, { signal: controller.signal })
-      .then((items) => {
-        if (controller.signal.aborted || requestId !== columnsRequestId.current) return;
-        setColumns(items);
-        setFieldMappings(items.map((column) => ({
-          sourceField: column.name,
-          targetField: column.name,
-          sourceType: column.type,
-          targetType: column.type,
-          primaryKey: column.primaryKey,
-          nullable: column.nullable,
-          ignored: false
-        })));
-        setSyncDraft((current) => {
-          if (
-            current.sourceDatasourceId !== datasourceId
-            || current.sourceSchema !== sourceSchema
-            || current.sourceTable !== sourceTable
-          ) {
-            return current;
-          }
-          return {
-            ...current,
-            targetTable: current.targetTable || `ods_${sourceTable}`
-          };
-        });
-      })
-      .catch((error) => {
-        if (controller.signal.aborted || requestId !== columnsRequestId.current) return;
-        setColumns([]);
-        setFieldMappings([]);
-        if (error instanceof Error) {
-          setFormError(error.message);
-        }
-      })
-      .finally(() => {
-        if (!controller.signal.aborted && requestId === columnsRequestId.current) {
-          setLoadingColumns(false);
-        }
-      });
-    return () => {
-      controller.abort();
-    };
-  }, [open, syncDraft.sourceDatasourceId, syncDraft.sourceSchema, syncDraft.sourceTable]);
-
-  useEffect(() => {
-    setPreflight(null);
-    setFormError(null);
-  }, [selectedType, syncDraft, fieldMappings, capabilityDraft, strategy]);
-
-  const buildSyncInput = () => {
-    const mode = selectedType === "full_migration" ? "full_only" : "incremental_only";
-    const source = datasources.find((item) => item.id === syncDraft.sourceDatasourceId);
-    const target = datasources.find((item) => item.id === syncDraft.targetDatasourceId);
-    return {
-      name: syncDraft.name || `${source?.name || "源端"} to ${target?.name || "目标端"} ${selectedType === "full_migration" ? "全量迁移" : "增量同步"}`,
-      description: selectedType === "full_migration" ? "一次性迁移存量数据" : "持续同步变更数据",
-      owner: syncDraft.owner,
-      sourceDatasourceId: syncDraft.sourceDatasourceId,
-      targetDatasourceId: syncDraft.targetDatasourceId,
-      tableMappings: [
-        {
-          sourceSchema: syncDraft.sourceSchema,
-          sourceTable: syncDraft.sourceTable,
-          targetSchema: syncDraft.targetSchema,
-          targetTable: syncDraft.targetTable,
-          fields: fieldMappings
-        }
-      ],
-      strategy: {
-        ...strategy,
-        initMode: mode
-      } as SyncStrategy
-    };
-  };
-
-  const activeFieldMappings = fieldMappings.filter((item) => !item.ignored);
-  const syncStepError = !sourceOptions.length || !targetOptions.length
-    ? "至少需要一个源端和一个目标端数据源。"
-    : !syncDraft.sourceDatasourceId || !syncDraft.targetDatasourceId
-      ? "请选择源端和目标端数据源。"
-      : loadingSourceSchemas || loadingTargetSchemas || loadingTables || loadingColumns
-        ? "正在加载最新库表结构，请稍候再继续。"
-        : !syncDraft.sourceSchema || !syncDraft.sourceTable || !syncDraft.targetSchema
-          ? "请选择源库、源表和目标库。"
-          : !syncDraft.targetTable.trim()
-            ? "请填写目标表。"
-            : fieldMappings.length === 0
-              ? "等待字段映射加载完成后再继续。"
-              : activeFieldMappings.length === 0
-                ? "至少保留一个同步字段。"
-                : activeFieldMappings.some((item) => !item.targetField.trim())
-                  ? "目标字段名不能为空。"
-                  : null;
-  const capabilityStepError = executableTasks.length === 0
-    ? "需要一条可执行的同步任务。"
-    : !capabilityDraft.taskId
-      ? "请选择关联同步任务。"
-      : null;
-  const stepOneError = isSyncType ? syncStepError : capabilityStepError;
-  const submitBlockedError = stepOneError || (isSyncType && preflight && !preflight.ok ? "检查未通过，请返回上一步修复失败项。" : null);
-
-  const runPreflight = async () => {
-    if (syncStepError) {
-      setFormError(syncStepError);
-      return null;
-    }
-    setChecking(true);
-    setFormError(null);
-    try {
-      const report = await api.preflightTask(buildSyncInput());
-      setPreflight(report);
-      if (!report.ok) {
-        setFormError("检查未通过，请处理失败项。");
-      }
-      return report;
-    } catch (requestError) {
-      setFormError(requestError instanceof Error ? requestError.message : "检查失败");
-      return null;
-    } finally {
-      setChecking(false);
-    }
-  };
-
-  const submit = async () => {
-    if (!canManage) {
-      pushNotice({ tone: "warning", message: "创建任务需要管理员权限" });
-      return;
-    }
-    if (submitBlockedError) {
-      setFormError(submitBlockedError);
-      return;
-    }
-    setSubmitting(true);
-    setFormError(null);
-    try {
-      if (isSyncType) {
-        const report = preflight ?? await api.preflightTask(buildSyncInput());
-        setPreflight(report);
-        if (!report.ok) {
-          setFormError("检查未通过，请处理失败项。");
-          return;
-        }
-        const created = await api.createTask(buildSyncInput());
-        await api.taskAction(created.id, "start");
-        pushNotice({ tone: "success", message: "已创建" });
-      } else {
-        const mode = selectedType === "structure_compare"
-          ? "schema_prepare"
-          : selectedType === "data_validation"
-            ? "verify_only"
-            : "verify_then_correct";
-        const selectedTask = tasks.find((task) => task.id === capabilityDraft.taskId);
-        if (!selectedTask) {
-          setFormError("请选择关联同步任务");
-          return;
-        }
-        await api.createCapabilityJob({
-          type: selectedType === "structure_compare" ? "structure" : "quality",
-          taskId: selectedTask.id,
-          name: capabilityDraft.name || `${selectedTask.name}${selectedType === "structure_compare" ? "结构对比" : selectedType === "data_validation" ? "数据校验" : "数据订正"}`,
-          mode,
-          autoStart: true
-        });
-        pushNotice({ tone: "success", message: "已创建" });
-      }
-      onClose();
-      await onChanged();
-    } catch (requestError) {
-      setFormError(requestError instanceof Error ? requestError.message : "创建失败");
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  return (
-    <Modal
-      open={open}
-      title="创建任务"
-      onClose={onClose}
-    >
-      <div className="grid gap-4">
-        <div className="grid gap-2 sm:grid-cols-3">
-          {["类型", "配置", "确认"].map((label, index) => (
-            <div key={label} className={cx("border-l-4 px-4 py-3 text-sm", step === index ? "border-blue-200 bg-blue-50 text-blue-700" : "border-line bg-slate-50/70 text-slate-500")}>
-              {index + 1}. {label}
-            </div>
-          ))}
-        </div>
-
-        {step === 0 && (
-          <div className="grid gap-3 md:grid-cols-2">
-            {taskBlueprints.map((item) => (
-              <Button
-                key={item.type}
-                onClick={() => setSelectedType(item.type)}
-                className={cx(
-                  "border-l-4 p-5 text-left transition",
-                  selectedType === item.type ? "border-blue-200 bg-blue-50" : "border-line bg-white hover:bg-slate-50"
-                )}
-              >
-                <div className="text-lg font-semibold text-coal">{item.name}</div>
-                <div className="mt-2 text-sm text-slate-500">{item.description}</div>
-              </Button>
-            ))}
-          </div>
-        )}
-
-        {step === 1 && isSyncType && (
-          <div className="grid gap-4">
-            <Field label="任务名称">
-              <TextInput className="input" value={syncDraft.name} onChange={(event) => setSyncDraft({ ...syncDraft, name: event.target.value })} placeholder={selectedType === "full_migration" ? "例如：订单历史全量迁移" : "例如：订单增量同步"} />
-            </Field>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <Field label="负责人">
-                <TextInput className="input" value={syncDraft.owner} onChange={(event) => setSyncDraft({ ...syncDraft, owner: event.target.value })} />
-              </Field>
-              <Field label="目标表">
-                <TextInput className="input" value={syncDraft.targetTable} onChange={(event) => setSyncDraft({ ...syncDraft, targetTable: event.target.value })} />
-              </Field>
-            </div>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="grid gap-4">
-                <Field label="源端数据源">
-                  <SelectInput
-                    className="select"
-                    value={syncDraft.sourceDatasourceId}
-                    onChange={(event) => setSyncDraft({ ...syncDraft, sourceDatasourceId: event.target.value, sourceSchema: "", sourceTable: "" })}
-                    disabled={sourceOptions.length === 0}
-                  >
-                    {sourceOptions.length === 0 && <option value="">暂无可用源端数据源</option>}
-                    {sourceOptions.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-                  </SelectInput>
-                </Field>
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <Field label="源库">
-                    <SelectInput
-                      className="select"
-                      value={syncDraft.sourceSchema}
-                      onChange={(event) => setSyncDraft({ ...syncDraft, sourceSchema: event.target.value, sourceTable: "" })}
-                      disabled={!syncDraft.sourceDatasourceId || loadingSourceSchemas || sourceSchemas.length === 0}
-                    >
-                      {sourceSchemas.length === 0 && <option value="">{loadingSourceSchemas ? "源库加载中..." : "暂无可选源库"}</option>}
-                      {sourceSchemas.map((item) => <option key={item} value={item}>{item}</option>)}
-                    </SelectInput>
-                  </Field>
-                  <Field label="源表">
-                    <SelectInput
-                      className="select"
-                      value={syncDraft.sourceTable}
-                      onChange={(event) => setSyncDraft({ ...syncDraft, sourceTable: event.target.value })}
-                      disabled={!syncDraft.sourceSchema || loadingTables || tables.length === 0}
-                    >
-                      {tables.length === 0 && <option value="">{loadingTables ? "源表加载中..." : "暂无可选源表"}</option>}
-                      {tables.map((item) => <option key={item.name} value={item.name}>{item.name}</option>)}
-                    </SelectInput>
-                  </Field>
-                </div>
-              </div>
-              <div className="grid gap-4">
-                <Field label="目标端数据源">
-                  <SelectInput
-                    className="select"
-                    value={syncDraft.targetDatasourceId}
-                    onChange={(event) => setSyncDraft({ ...syncDraft, targetDatasourceId: event.target.value, targetSchema: "" })}
-                    disabled={targetOptions.length === 0}
-                  >
-                    {targetOptions.length === 0 && <option value="">暂无可用目标端数据源</option>}
-                    {targetOptions.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-                  </SelectInput>
-                </Field>
-                <Field label="目标库">
-                  <SelectInput
-                    className="select"
-                    value={syncDraft.targetSchema}
-                    onChange={(event) => setSyncDraft({ ...syncDraft, targetSchema: event.target.value })}
-                    disabled={!syncDraft.targetDatasourceId || loadingTargetSchemas || targetSchemas.length === 0}
-                  >
-                    {targetSchemas.length === 0 && <option value="">{loadingTargetSchemas ? "目标库加载中..." : "暂无可选目标库"}</option>}
-                    {targetSchemas.map((item) => <option key={item} value={item}>{item}</option>)}
-                  </SelectInput>
-                </Field>
-              </div>
-            </div>
-            <div className="border-l border-line bg-slate-50/60 px-4 py-3">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <div className="font-medium text-coal">字段映射</div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="chip border-slate-200 bg-white text-slate-600">{loadingColumns ? "加载中" : `${columns.length} 列`}</div>
-                  <Button type="button" onClick={() => setShowFieldMappings((value) => !value)} className="btn-compact">
-                    {showFieldMappings ? "收起" : "展开"}
-                  </Button>
-                </div>
-              </div>
-              {showFieldMappings && (
-                <div className="mt-4 overflow-auto border-y border-line bg-white/60">
-                  <table className="w-full min-w-[640px] text-left text-sm">
-                    <thead className="bg-slate-50 text-xs uppercase tracking-[0.16em] text-slate-500">
-                      <tr>
-                        <th className="px-3 py-3">源字段</th>
-                        <th className="px-3 py-3">目标字段</th>
-                        <th className="px-3 py-3">类型</th>
-                        <th className="px-3 py-3">主键</th>
-                        <th className="px-3 py-3">忽略</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {fieldMappings.length === 0 ? (
-                        <tr>
-                          <td colSpan={5} className="px-3 py-6 text-center text-sm text-slate-500">
-                            {loadingColumns ? "加载中" : "请选择源表。"}
-                          </td>
-                        </tr>
-                      ) : fieldMappings.map((field, index) => (
-                        <tr key={field.sourceField} className="border-b border-line last:border-b-0">
-                          <td className="px-3 py-3 mono text-slate-700">{field.sourceField}</td>
-                          <td className="px-3 py-3">
-                            <TextInput
-                              className="input py-2"
-                              value={field.targetField}
-                              onChange={(event) => {
-                                const next = [...fieldMappings];
-                                next[index] = { ...field, targetField: event.target.value };
-                                setFieldMappings(next);
-                              }}
-                            />
-                          </td>
-                          <td className="px-3 py-3 text-slate-500">{field.sourceType}</td>
-                          <td className="px-3 py-3">{field.primaryKey ? "是" : "否"}</td>
-                          <td className="px-3 py-3">
-                            <CheckboxInput
-                              checked={field.ignored}
-                              onChange={(event) => {
-                                const next = [...fieldMappings];
-                                next[index] = { ...field, ignored: event.target.checked };
-                                setFieldMappings(next);
-                              }}
-                            />
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {step === 1 && !isSyncType && (
-          executableTasks.length === 0 ? (
-            <EmptyPanel
-              icon={FlowArrow}
-              title="暂无同步任务"
-            />
-          ) : (
-            <div className="grid gap-4">
-              <Field label="关联同步任务">
-                <SelectInput className="select" value={capabilityDraft.taskId} onChange={(event) => setCapabilityDraft({ ...capabilityDraft, taskId: event.target.value })}>
-                  {executableTasks.map((task) => <option key={task.id} value={task.id}>{task.name}</option>)}
-                </SelectInput>
-              </Field>
-              <Field label="任务名称">
-                <TextInput className="input" value={capabilityDraft.name} onChange={(event) => setCapabilityDraft({ ...capabilityDraft, name: event.target.value })} placeholder="留空自动生成" />
-              </Field>
-            </div>
-          )
-        )}
-
-        {step === 2 && (
-          <div className="grid gap-4">
-            <div className="border-l border-line bg-slate-50/60 p-5">
-              <div className="flex flex-wrap items-center gap-2">
-                <TypeBadge type={taskBlueprints.find((item) => item.type === selectedType)?.name || selectedType} />
-                <span className="font-medium text-coal">{taskBlueprints.find((item) => item.type === selectedType)?.description}</span>
-              </div>
-              {isSyncType ? (
-                <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                  <DetailCard label="负责人" value={syncDraft.owner || "未填写"} />
-                  <DetailCard label="数据源" value={`${datasources.find((item) => item.id === syncDraft.sourceDatasourceId)?.name || "-"} to ${datasources.find((item) => item.id === syncDraft.targetDatasourceId)?.name || "-"}`} />
-                  <DetailCard label="源表" value={`${syncDraft.sourceSchema}.${syncDraft.sourceTable}`} mono />
-                  <DetailCard label="目标表" value={`${syncDraft.targetSchema}.${syncDraft.targetTable}`} mono />
-                  <DetailCard label="初始化方式" value={selectedType === "full_migration" ? "仅全量" : "仅增量"} />
-                  <DetailCard label="字段数" value={`${fieldMappings.filter((item) => !item.ignored).length}`} />
-                </div>
-              ) : (
-                <div className="mt-4 grid gap-3">
-                  <DetailCard label="关联同步任务" value={tasks.find((task) => task.id === capabilityDraft.taskId)?.name || "-"} />
-                  <DetailCard label="执行方式" value={selectedType === "structure_compare" ? "结构对比" : selectedType === "data_validation" ? "仅校验" : "校验后订正"} />
-                </div>
-              )}
-            </div>
-
-            {isSyncType && preflight && (
-              <div className={cx("border-l-4 p-5", preflight.ok ? "border-emerald-200 bg-emerald-50" : "border-red-200 bg-red-50")}>
-                <div className="flex flex-wrap items-center gap-3">
-                  <Badge tone={preflight.ok ? "green" : "red"}>{preflight.ok ? "检查通过" : "检查未通过"}</Badge>
-                </div>
-                <div className="mt-4 grid gap-2">
-                  {preflight.checks.slice(0, 4).map((check) => (
-                    <div key={check.id} className="border-t border-white/70 bg-white/70 px-0 py-3">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <Badge tone={check.status === "failed" ? "red" : check.status === "warning" ? "yellow" : "green"}>
-                          {check.status === "failed" ? "失败" : check.status === "warning" ? "注意" : "通过"}
-                        </Badge>
-                        <span className="font-medium text-coal">{check.title}</span>
-                      </div>
-                      <div className="mt-2 text-sm text-slate-500">{check.message}</div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {step === 1 && stepOneError && <NoticeBanner tone="warning">{stepOneError}</NoticeBanner>}
-        {formError && <NoticeBanner tone="error">{formError}</NoticeBanner>}
-
-        <div className="flex flex-wrap justify-between gap-3 border-t border-line pt-4">
-          <div className="flex gap-3">
-            <Button type="button" onClick={onClose} className="btn-secondary">取消</Button>
-            {step > 0 && (
-              <Button type="button" onClick={() => setStep((value) => Math.max(0, value - 1))} className="btn-secondary">
-                上一步
-              </Button>
-            )}
-          </div>
-          <div className="flex flex-wrap gap-3">
-            {step < 2 ? (
-              <Button
-                type="button"
-                onClick={() => setStep((value) => Math.min(2, value + 1))}
-                disabled={step === 1 && Boolean(stepOneError)}
-                className="btn-primary"
-              >
-                下一步
-              </Button>
-            ) : (
-              <>
-                {isSyncType && (
-                  <Button type="button" onClick={() => void runPreflight()} disabled={checking || Boolean(syncStepError)} className="btn-secondary">
-                    {checking ? <ArrowsClockwise size={16} /> : <ShieldCheck size={16} />}
-                    {checking ? "检查中" : "检查配置"}
-                  </Button>
-                )}
-                <Button type="button" onClick={() => void submit()} disabled={submitting || Boolean(submitBlockedError)} className="btn-primary">
-                  {submitting ? <ArrowsClockwise size={16} /> : <RocketLaunch size={16} />}
-                  {submitting ? "启动中" : "创建并启动"}
-                </Button>
-              </>
-            )}
-          </div>
-        </div>
-      </div>
-    </Modal>
   );
 }
 
@@ -3859,7 +2027,7 @@ function NodeCreatorModal({
               <option value="scheduler+worker">scheduler+worker</option>
             </SelectInput>
           </Field>
-          <Field label="可承载任务数">
+          <Field label="容量">
             <TextInput className="input" type="number" value={form.capacity || 4} onChange={(event) => setForm({ ...form, capacity: Number(event.target.value) })} />
           </Field>
           <Field label="版本">
@@ -3902,774 +2070,6 @@ function NodeCreatorModal({
         </div>
       </div>
     </Modal>
-  );
-}
-
-function SyncTaskDetail({
-  task,
-  relatedJobs,
-  errors,
-  cluster,
-  canManage,
-  onOpenNode,
-  onRunJob,
-  busyActionKey,
-  onChanged,
-  pushNotice
-}: {
-  task: SyncTask;
-  relatedJobs: CapabilityJob[];
-  errors: ErrorEvent[];
-  cluster: ClusterSnapshot | null;
-  canManage: boolean;
-  onOpenNode: (nodeID: string) => void;
-  onRunJob: (job: CapabilityJob) => void;
-  busyActionKey: string | null;
-  onChanged: (quiet?: boolean) => Promise<void>;
-  pushNotice: (notice: Notice) => void;
-}) {
-  const [runtime, setRuntime] = useState(task.runtime);
-  const [checkpoints, setCheckpoints] = useState<TaskCheckpoint[]>([]);
-  const [revisions, setRevisions] = useState<TaskRevision[]>([]);
-  const [taskLogs, setTaskLogs] = useState<TaskLogEntry[]>([]);
-  const [logConnected, setLogConnected] = useState(false);
-  const [logNotice, setLogNotice] = useState<string | null>(null);
-  const [rollingBackVersion, setRollingBackVersion] = useState<number | null>(null);
-  const [savingParams, setSavingParams] = useState(false);
-  const [resettingPosition, setResettingPosition] = useState(false);
-  const [confirmation, setConfirmation] = useState<ConfirmationDialogState | null>(null);
-  const [paramsDraft, setParamsDraft] = useState({
-    batchSize: task.strategy.batchSize,
-    retryTimes: task.strategy.retryTimes,
-    retryIntervalSeconds: task.strategy.retryIntervalSeconds,
-    conflictStrategy: task.strategy.conflictStrategy,
-    deleteStrategy: task.strategy.deleteStrategy
-  });
-  const [positionDraft, setPositionDraft] = useState({
-    binlogFile: task.runtime?.binlogFile || "mysql-bin.000001",
-    binlogPosition: task.runtime?.binlogPosition || 4
-  });
-  const progress = runtime && runtime.fullTotalRows > 0 ? Math.min(100, Math.round((runtime.fullSyncedRows / runtime.fullTotalRows) * 100)) : 0;
-  const taskErrors = errors.filter((item) => item.taskId === task.id).slice(0, 4);
-  const localNodeId = cluster?.localNodeId;
-  const runtimeNode = runtime?.nodeId;
-  const runtimeNodeLabel = runtime?.executionNodeName || cluster?.nodes.find((node) => node.id === runtimeNode)?.name || runtimeNode;
-  const remoteManaged = runtime?.managedByLocalNode === false || Boolean(localNodeId && runtimeNode && runtimeNode !== localNodeId);
-  const checkpointNodeName = (nodeID?: string) => cluster?.nodes.find((node) => node.id === nodeID)?.name || nodeID || "待分配";
-  const hostingModeText = runtime?.managedByLocalNode === false ? "远程节点" : runtime?.nodeId ? "本机节点" : "待分配";
-  const logAccessText = runtime?.localLogAccessible === false
-    ? runtime?.logAccessMessage || "需切换到执行节点查看"
-    : remoteManaged
-      ? runtime?.logAccessMessage || "执行节点可查看"
-      : "本机可查看";
-  const sortedRelatedJobs = [...relatedJobs].sort((left, right) => new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime());
-  const visibleRelatedJobs = sortedRelatedJobs.slice(0, 3);
-  const visibleTableMappings = task.tableMappings.slice(0, 3);
-
-  useEffect(() => {
-    setRuntime(task.runtime);
-    setParamsDraft({
-      batchSize: task.strategy.batchSize,
-      retryTimes: task.strategy.retryTimes,
-      retryIntervalSeconds: task.strategy.retryIntervalSeconds,
-      conflictStrategy: task.strategy.conflictStrategy,
-      deleteStrategy: task.strategy.deleteStrategy
-    });
-    setPositionDraft({
-      binlogFile: task.runtime?.binlogFile || "mysql-bin.000001",
-      binlogPosition: task.runtime?.binlogPosition || 4
-    });
-  }, [
-    task.id,
-    task.runtime,
-    task.strategy.batchSize,
-    task.strategy.retryTimes,
-    task.strategy.retryIntervalSeconds,
-    task.strategy.conflictStrategy,
-    task.strategy.deleteStrategy
-  ]);
-
-  useEffect(() => {
-    let cancelled = false;
-    api.taskRevisions(task.id)
-      .then((items) => {
-        if (!cancelled) {
-          setRevisions(items.slice(0, 8));
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setRevisions([]);
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [task.id]);
-
-  useEffect(() => {
-    let cancelled = false;
-    api.taskCheckpoints(task.id)
-      .then((items) => {
-        if (!cancelled) {
-          setCheckpoints(items.slice(0, 8));
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setCheckpoints([]);
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [task.id]);
-
-  const executeRollbackRevision = async (version: number) => {
-    if (!canManage) {
-      pushNotice({ tone: "warning", message: "回滚任务版本需要管理员权限" });
-      return;
-    }
-    setRollingBackVersion(version);
-    try {
-      await api.rollbackTaskRevision(task.id, version);
-      pushNotice({ tone: "success", message: "已回滚" });
-      await onChanged();
-    } catch (requestError) {
-      pushNotice({ tone: "error", message: requestError instanceof Error ? requestError.message : "回滚失败" });
-    } finally {
-      setRollingBackVersion(null);
-    }
-  };
-
-  const requestRollbackRevision = (version: number) => {
-    setConfirmation({
-      title: `回滚到 v${version}`,
-      description: `任务配置会被回滚到 v${version}，现有参数和表映射会被替换。确认继续吗？`,
-      confirmLabel: "确认回滚",
-      confirmTone: "danger",
-      onConfirm: () => {
-        void executeRollbackRevision(version);
-      }
-    });
-  };
-
-  const saveRuntimeParams = async () => {
-    if (!canManage) {
-      pushNotice({ tone: "warning", message: "修改运行参数需要管理员权限" });
-      return;
-    }
-    setSavingParams(true);
-    try {
-      await api.updateTaskParams(task.id, {
-        batchSize: Number(paramsDraft.batchSize),
-        retryTimes: Number(paramsDraft.retryTimes),
-        retryIntervalSeconds: Number(paramsDraft.retryIntervalSeconds),
-        conflictStrategy: paramsDraft.conflictStrategy,
-        deleteStrategy: paramsDraft.deleteStrategy
-      });
-      pushNotice({ tone: "success", message: "已保存" });
-      await onChanged();
-    } catch (requestError) {
-      pushNotice({ tone: "error", message: requestError instanceof Error ? requestError.message : "保存参数失败" });
-    } finally {
-      setSavingParams(false);
-    }
-  };
-
-  const executeResetPosition = async () => {
-    if (!canManage) {
-      pushNotice({ tone: "warning", message: "重置位点需要管理员权限" });
-      return;
-    }
-    setResettingPosition(true);
-    try {
-      await api.resetTaskPosition(task.id, {
-        binlogFile: positionDraft.binlogFile,
-        binlogPosition: Number(positionDraft.binlogPosition)
-      });
-      pushNotice({ tone: "success", message: "位点已重置" });
-      await onChanged();
-    } catch (requestError) {
-      pushNotice({ tone: "error", message: requestError instanceof Error ? requestError.message : "重置位点失败" });
-    } finally {
-      setResettingPosition(false);
-    }
-  };
-
-  const requestResetPosition = () => {
-    setConfirmation({
-      title: "重置任务位点",
-      description: `任务会跳转到 ${positionDraft.binlogFile}:${Number(positionDraft.binlogPosition)}。请确认任务已停止，并且允许从该位点重新开始。`,
-      confirmLabel: "确认重置",
-      confirmTone: "danger",
-      onConfirm: () => {
-        void executeResetPosition();
-      }
-    });
-  };
-
-  useEffect(() => {
-    if (remoteManaged) {
-      setTaskLogs([]);
-      setLogNotice(runtime?.logAccessMessage || `任务在节点 ${runtimeNodeLabel} 运行，请切换到该节点查看实时日志。`);
-      setLogConnected(false);
-      return;
-    }
-    let cancelled = false;
-    api.taskLogs(task.id, 120)
-      .then((items) => {
-        if (!cancelled) {
-          setTaskLogs(items);
-          setLogNotice(null);
-        }
-      })
-      .catch((error) => {
-        if (!cancelled) {
-          setTaskLogs([]);
-          setLogNotice(error instanceof Error ? error.message : "日志加载失败");
-        }
-      });
-
-    const stream = new EventSource(api.taskLogsStreamUrl(task.id));
-    stream.onopen = () => {
-      if (!cancelled) {
-        setLogConnected(true);
-      }
-    };
-    stream.onmessage = (event) => {
-      if (cancelled) return;
-      try {
-        const entry = JSON.parse(event.data) as TaskLogEntry;
-        setTaskLogs((current) => [...current.slice(-119), entry]);
-        setLogNotice(null);
-      } catch {
-        return;
-      }
-    };
-    stream.onerror = () => {
-      if (!cancelled) {
-        setLogConnected(false);
-      }
-    };
-
-    return () => {
-      cancelled = true;
-      setLogConnected(false);
-      stream.close();
-    };
-  }, [remoteManaged, runtime?.logAccessMessage, runtimeNodeLabel, task.id]);
-
-  useEffect(() => {
-    const active = task.status === "full_syncing" || task.status === "incremental_running" || runtime?.processStatus === "starting" || runtime?.processStatus === "running";
-    if (!active) {
-      return;
-    }
-    let cancelled = false;
-    const syncRuntime = async () => {
-      try {
-        const latest = await api.taskRuntime(task.id);
-        if (!cancelled) {
-          setRuntime(latest);
-        }
-      } catch {
-        return;
-      }
-    };
-    void syncRuntime();
-    const timer = window.setInterval(() => {
-      void syncRuntime();
-    }, 1500);
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-    };
-  }, [runtime?.processStatus, task.id, task.status]);
-
-  return (
-    <div className="mt-5 space-y-5">
-      <div className="flex flex-wrap items-center gap-2">
-        <TypeBadge type={syncTaskTypeText(task)} />
-        <StatusBadge status={task.status} />
-        {shouldShowTaskProcessBadge(task) && (
-          <Badge tone={taskProcessTone(runtime?.processStatus)}>{taskProcessStatusText(runtime?.processStatus)}</Badge>
-        )}
-        {taskAwaitingNode(task) && <Badge tone="yellow">待接管</Badge>}
-        {remoteManaged && <Badge tone="yellow">远程节点</Badge>}
-      </div>
-      <section className="border-t border-line bg-white/35 p-5">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div className="min-w-0">
-            <div className="text-2xl font-semibold tracking-tight text-coal">{task.name}</div>
-            <div className="mt-2 text-sm text-slate-500">
-              {(task.sourceDatasource?.name || task.sourceDatasourceId)} to {(task.targetDatasource?.name || task.targetDatasourceId)}
-            </div>
-          </div>
-          {runtime?.nodeId && (
-            <Button type="button" onClick={() => onOpenNode(runtime.nodeId!)} className="btn-secondary">
-              <HardDrives size={16} />
-              查看节点
-            </Button>
-          )}
-        </div>
-      </section>
-
-      <div className="grid gap-5 2xl:grid-cols-[minmax(0,1fr)_360px]">
-        <div className="order-2 space-y-5 2xl:order-1">
-          <section className="border-t border-line bg-white/35 p-5">
-            <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-              <DetailCard label="负责人" value={task.owner} />
-              <DetailCard label="配置版本" value={`v${task.configVersion}`} mono />
-              <DetailCard label="更新时间" value={formatDateTime(task.updatedAt)} />
-              <DetailCard label="运行节点" value={runtimeNodeLabel || "待分配"} mono />
-              <DetailCard label="执行位置" value={hostingModeText} />
-              <DetailCard label="日志" value={logAccessText} />
-            </div>
-
-            <div className="mt-5 border-l border-line bg-slate-50/60 px-4 py-3">
-              <div className="flex items-center justify-between gap-3">
-                <div className="font-medium text-coal">运行状态</div>
-                <div className="text-sm text-slate-500">{progress}%</div>
-              </div>
-              <div className="mt-3 h-2 overflow-hidden rounded-full bg-white">
-                <div className="h-full rounded-full bg-blue-600 transition-all" style={{ width: `${progress}%` }} />
-              </div>
-              <div className="mt-4 grid gap-3 sm:grid-cols-3">
-                <DetailCard label="延迟" value={`${runtime?.delaySeconds ?? 0}s`} />
-                <DetailCard label="吞吐" value={`${runtime?.eventsPerSecond ?? 0} eps`} />
-                <DetailCard label="位点" value={`${runtime?.binlogFile || "-"}:${runtime?.binlogPosition || 0}`} mono />
-              </div>
-              <div className="mt-3 grid gap-3 sm:grid-cols-3">
-                <DetailCard label="进程 PID" value={runtime?.processId ? `${runtime.processId}` : "-"} mono />
-                <DetailCard label="最近心跳" value={runtime?.lastHeartbeatAt ? formatDateTime(runtime.lastHeartbeatAt) : "-"} />
-              </div>
-              <div className="mt-3 border-t border-line px-0 py-3 text-sm text-slate-500">
-                {runtime?.lastLogMessage || "暂无运行日志摘要。"}
-              </div>
-            </div>
-          </section>
-
-          {relatedJobs.length > 0 && (
-            <section className="border-l border-line bg-slate-50/60 px-4 py-3">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <div className="font-medium text-coal">扩展任务</div>
-                  <div className="mt-1 text-sm text-slate-500">关联此任务。</div>
-                </div>
-                <Badge tone="blue">{`${relatedJobs.length} 条`}</Badge>
-              </div>
-              {sortedRelatedJobs.length > visibleRelatedJobs.length && (
-                <div className="mt-3 text-sm text-slate-500">仅展示最近 {visibleRelatedJobs.length} 条。</div>
-              )}
-              <div className="mt-3 grid gap-3">
-                {visibleRelatedJobs.map((job) => (
-                  <div key={job.id} className="border-t border-line py-4">
-                    <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                      <div className="min-w-0">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <TypeBadge type={capabilityJobTypeText(job)} />
-                          <Badge tone={capabilityJobTone(job.status)}>{capabilityJobStatusText(job.status)}</Badge>
-                        </div>
-                        <div className="mt-3 font-medium text-coal">{job.name}</div>
-                        <div className="mt-2 text-sm text-slate-500">{capabilityJobSummaryText(job)}</div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <div className="border-l border-line bg-slate-50/80 px-3 py-2 text-xs text-slate-500">
-                          {job.progressPercent}%
-                        </div>
-                        <Button
-                          type="button"
-                          onClick={() => onRunJob(job)}
-                          disabled={job.status === "running" || busyActionKey === `${job.id}:job`}
-                          className="btn-compact"
-                        >
-                          <Play size={14} />
-                          {job.status === "running" ? "运行中" : "重跑"}
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </section>
-          )}
-        </div>
-
-        <TaskLiveLogPanel
-          className="order-1 2xl:order-2"
-          remoteManaged={remoteManaged}
-          logConnected={logConnected}
-          logNotice={logNotice}
-          taskLogs={taskLogs}
-          lastLogAt={runtime?.lastLogAt}
-        />
-      </div>
-
-      <div className="grid gap-5 2xl:grid-cols-2">
-        <section className="border-l border-line bg-slate-50/60 px-4 py-3">
-          <div className="font-medium text-coal">表映射</div>
-          {task.tableMappings.length > visibleTableMappings.length && (
-            <div className="mt-1 text-sm text-slate-500">仅展示前 {visibleTableMappings.length} 条。</div>
-          )}
-          <div className="mt-3 grid gap-3">
-            {visibleTableMappings.map((mapping) => (
-              <div key={`${mapping.sourceSchema}.${mapping.sourceTable}.${mapping.targetTable}`} className="border-t border-line px-0 py-3">
-                <div className="font-medium text-coal">
-                  {mapping.sourceSchema}.{mapping.sourceTable}
-                </div>
-                <div className="mt-1 text-sm text-slate-500">
-                  to {mapping.targetSchema}.{mapping.targetTable}
-                </div>
-                <div className="mt-2 text-xs text-slate-500">{mapping.fields.filter((item) => !item.ignored).length} 个字段</div>
-              </div>
-            ))}
-          </div>
-        </section>
-
-        {taskErrors.length > 0 && (
-          <section className="border-l border-line bg-slate-50/60 px-4 py-3">
-            <div className="font-medium text-coal">最近异常</div>
-            <div className="mt-3 grid gap-3">
-              {taskErrors.map((item) => (
-                <div key={item.id} className="border-t border-line px-0 py-3">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Badge tone="red">{item.eventType.toUpperCase()}</Badge>
-                    <span className="font-medium text-coal">{item.sourceTable}</span>
-                  </div>
-                  <div className="mt-2 text-sm text-slate-500">{item.reason}</div>
-                </div>
-              ))}
-            </div>
-          </section>
-        )}
-      </div>
-
-      {canManage && (
-        <div className="grid gap-5 2xl:grid-cols-2">
-          <section className="border-l border-line bg-slate-50/60 px-4 py-3">
-            <div className="font-medium text-coal">运行参数</div>
-            <div className="mt-4 grid gap-4 sm:grid-cols-2">
-              <Field label="批量写入">
-                <TextInput className="input" type="number" value={paramsDraft.batchSize} onChange={(event) => setParamsDraft({ ...paramsDraft, batchSize: Number(event.target.value) })} />
-              </Field>
-              <Field label="重试次数">
-                <TextInput className="input" type="number" value={paramsDraft.retryTimes} onChange={(event) => setParamsDraft({ ...paramsDraft, retryTimes: Number(event.target.value) })} />
-              </Field>
-              <Field label="重试间隔秒">
-                <TextInput className="input" type="number" value={paramsDraft.retryIntervalSeconds} onChange={(event) => setParamsDraft({ ...paramsDraft, retryIntervalSeconds: Number(event.target.value) })} />
-              </Field>
-              <Field label="冲突策略">
-                <SelectInput className="select" value={paramsDraft.conflictStrategy} onChange={(event) => setParamsDraft({ ...paramsDraft, conflictStrategy: event.target.value as SyncStrategy["conflictStrategy"] })}>
-                  <option value="overwrite">覆盖</option>
-                  <option value="ignore">忽略</option>
-                  <option value="fail">失败停止</option>
-                </SelectInput>
-              </Field>
-              <Field label="删除策略">
-                <SelectInput className="select" value={paramsDraft.deleteStrategy} onChange={(event) => setParamsDraft({ ...paramsDraft, deleteStrategy: event.target.value as SyncStrategy["deleteStrategy"] })}>
-                  <option value="physical">物理删除</option>
-                  <option value="soft_delete">软删除字段更新</option>
-                  <option value="ignore">忽略删除</option>
-                </SelectInput>
-              </Field>
-            </div>
-            <div className="mt-4 flex justify-end">
-              <Button type="button" onClick={() => void saveRuntimeParams()} disabled={savingParams} className="btn-secondary">
-                {savingParams ? <ArrowsClockwise size={16} /> : <CheckCircle size={16} />}
-                {savingParams ? "保存中" : "保存参数"}
-              </Button>
-            </div>
-          </section>
-
-          <section className="border-l border-line bg-slate-50/60 px-4 py-3">
-            <div className="font-medium text-coal">位点控制</div>
-            <div className="mt-2 text-sm text-slate-500">仅已停止任务允许重置位点。</div>
-            <div className="mt-4 grid gap-4 sm:grid-cols-2">
-              <Field label="Binlog 文件">
-                <TextInput className="input mono" value={positionDraft.binlogFile} onChange={(event) => setPositionDraft({ ...positionDraft, binlogFile: event.target.value })} />
-              </Field>
-              <Field label="Binlog Position">
-                <TextInput className="input mono" type="number" value={positionDraft.binlogPosition} onChange={(event) => setPositionDraft({ ...positionDraft, binlogPosition: Number(event.target.value) })} />
-              </Field>
-            </div>
-            <div className="mt-4 flex justify-end">
-                <Button
-                  type="button"
-                  onClick={requestResetPosition}
-                  disabled={resettingPosition || task.status !== "stopped"}
-                  className="btn-secondary"
-                >
-                {resettingPosition ? <ArrowsClockwise size={16} /> : <ArrowRight size={16} />}
-                {resettingPosition ? "重置中" : "重置位点"}
-              </Button>
-            </div>
-          </section>
-        </div>
-      )}
-
-      {revisions.length > 0 && (
-        <section className="border-l border-line bg-slate-50/60 px-4 py-3">
-          <div className="font-medium text-coal">配置版本</div>
-          <div className="mt-3 grid gap-3">
-            {revisions.map((revision) => (
-              <div key={revision.id} className="border-t border-line py-4">
-                <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                  <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Badge tone={revision.version === task.configVersion ? "blue" : "neutral"}>{`v${revision.version}`}</Badge>
-                      <span className="text-sm font-medium text-coal">{revision.summary}</span>
-                    </div>
-                    <div className="mt-2 flex flex-wrap gap-2 text-xs text-slate-500">
-                      <span>{revision.actor}</span>
-                      <span>{revision.changeType}</span>
-                      <span>{formatDateTime(revision.createdAt)}</span>
-                    </div>
-                  </div>
-                  {canManage && revision.version !== task.configVersion && (
-                    <Button
-                      type="button"
-                      onClick={() => requestRollbackRevision(revision.version)}
-                      disabled={rollingBackVersion === revision.version}
-                      className="btn-compact"
-                    >
-                      {rollingBackVersion === revision.version ? <ArrowsClockwise size={14} /> : <ArrowRight size={14} />}
-                      {rollingBackVersion === revision.version ? "回滚中" : "回滚到此版本"}
-                    </Button>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        </section>
-      )}
-
-      {checkpoints.length > 0 && (
-        <section className="border-l border-line bg-slate-50/60 px-4 py-3">
-          <div className="font-medium text-coal">运行轨迹</div>
-          <div className="mt-3 grid gap-3">
-            {checkpoints.map((checkpoint) => (
-              <div key={checkpoint.id} className="border-t border-line py-4">
-                <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                  <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Badge tone={checkpointReasonTone(checkpoint.reason)}>{checkpointReasonText(checkpoint.reason)}</Badge>
-                      <span className="text-sm font-medium text-coal">{taskRuntimePhaseText(checkpoint.phase)}</span>
-                    </div>
-                    <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-500">
-                      {checkpoint.previousNodeId && checkpoint.previousNodeId !== checkpoint.nodeId ? (
-                        <>
-                          <span className="rounded-md bg-slate-50 px-2 py-1">{checkpointNodeName(checkpoint.previousNodeId)}</span>
-                          <ArrowRight size={14} className="text-slate-400" />
-                          <span className="rounded-md bg-slate-50 px-2 py-1">{checkpointNodeName(checkpoint.nodeId)}</span>
-                        </>
-                      ) : (
-                        <span className="rounded-md bg-slate-50 px-2 py-1">{checkpointNodeName(checkpoint.nodeId)}</span>
-                      )}
-                      <span>{formatDateTime(checkpoint.createdAt)}</span>
-                    </div>
-                  </div>
-                  <div className="border-l border-line bg-slate-50/60 px-4 py-3">
-                    <div className="text-xs uppercase tracking-[0.18em] text-slate-500">位点</div>
-                    <div className="mt-2 mono text-coal">{checkpoint.binlogFile}:{checkpoint.binlogPosition}</div>
-                  </div>
-                </div>
-                <div className="mt-3 grid gap-3 sm:grid-cols-3">
-                  <DetailCard label="调度版本" value={`${checkpoint.leaseEpoch}`} mono />
-                  <DetailCard label="延迟" value={`${checkpoint.delaySeconds}s`} />
-                  <DetailCard label="吞吐" value={`${checkpoint.eventsPerSecond} eps`} />
-                </div>
-              </div>
-            ))}
-          </div>
-        </section>
-      )}
-
-      <ConfirmDialog
-        open={Boolean(confirmation)}
-        title={confirmation?.title || ""}
-        description={confirmation?.description || ""}
-        confirmLabel={confirmation?.confirmLabel || "确认"}
-        confirmTone={confirmation?.confirmTone}
-        onCancel={() => setConfirmation(null)}
-        onConfirm={() => {
-          const action = confirmation?.onConfirm;
-          setConfirmation(null);
-          action?.();
-        }}
-      />
-    </div>
-  );
-}
-
-function TaskLiveLogPanel({
-  className,
-  remoteManaged,
-  logConnected,
-  logNotice,
-  taskLogs,
-  lastLogAt
-}: {
-  className?: string;
-  remoteManaged: boolean;
-  logConnected: boolean;
-  logNotice: string | null;
-  taskLogs: TaskLogEntry[];
-  lastLogAt?: string;
-}) {
-  const scrollRef = useRef<HTMLDivElement | null>(null);
-  const logEndRef = useRef<HTMLDivElement | null>(null);
-  const [followLatest, setFollowLatest] = useState(true);
-  const [showJumpToLatest, setShowJumpToLatest] = useState(false);
-
-  useEffect(() => {
-    if (remoteManaged || logNotice || taskLogs.length === 0) {
-      setFollowLatest(true);
-      setShowJumpToLatest(false);
-      return;
-    }
-    if (!followLatest) {
-      setShowJumpToLatest(true);
-      return;
-    }
-    const frame = window.requestAnimationFrame(() => {
-      logEndRef.current?.scrollIntoView({ block: "end" });
-      setShowJumpToLatest(false);
-    });
-    return () => window.cancelAnimationFrame(frame);
-  }, [followLatest, logNotice, remoteManaged, taskLogs.length]);
-
-  const handleScroll = () => {
-    const node = scrollRef.current;
-    if (!node) return;
-    const nearBottom = node.scrollHeight - node.scrollTop - node.clientHeight < 40;
-    setFollowLatest(nearBottom);
-    if (nearBottom) {
-      setShowJumpToLatest(false);
-    }
-  };
-
-  const jumpToLatest = () => {
-    const node = scrollRef.current;
-    if (!node) return;
-    node.scrollTo({ top: node.scrollHeight, behavior: "smooth" });
-    setFollowLatest(true);
-    setShowJumpToLatest(false);
-  };
-
-  return (
-    <section className={cx("border border-slate-800 bg-slate-950 p-4 text-slate-100", className)}>
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <div className="text-sm font-medium text-white">实时日志</div>
-          <div className="mt-1 text-xs text-slate-400">
-            {lastLogAt ? `最近更新 ${formatDateTime(lastLogAt)}` : "任务一旦启动，这里直接滚动显示进程日志。"}
-          </div>
-        </div>
-        <Badge tone={remoteManaged ? "yellow" : logConnected ? "green" : "neutral"}>
-          {remoteManaged ? "远程节点" : logConnected ? "实时连接" : "等待连接"}
-        </Badge>
-      </div>
-      {showJumpToLatest && (
-        <div className="mt-3 flex justify-end">
-          <Button type="button" onClick={jumpToLatest} className="btn-compact">
-            <ArrowRight size={14} />
-            回到最新日志
-          </Button>
-        </div>
-      )}
-      <div className="mt-4 border-y border-slate-800 bg-slate-900/80">
-        <div ref={scrollRef} onScroll={handleScroll} className="max-h-[560px] overflow-auto px-4 py-4">
-          {logNotice ? (
-            <div className="text-sm leading-6 text-slate-300">{logNotice}</div>
-          ) : taskLogs.length === 0 ? (
-            <div className="text-sm leading-6 text-slate-300">暂无日志。</div>
-          ) : (
-            <div className="font-mono text-[13px] leading-6">
-              {taskLogs.map((entry) => (
-                <div key={entry.id} className={cx("whitespace-pre-wrap break-words", taskLogLineClass(entry.level))}>{entry.message}</div>
-              ))}
-              <div ref={logEndRef} />
-            </div>
-          )}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function CapabilityJobDetail({
-  job,
-  qualityDiffs,
-  structureItems,
-  tasks
-}: {
-  job: CapabilityJob;
-  qualityDiffs: Array<{ id: string; sourceTable: string; targetTable: string; fieldName: string; status: string; severity: string }>;
-  structureItems: Array<{ id: string; sourceObject: string; targetObject: string; changeType: string; status: string; riskLevel: string }>;
-  tasks: SyncTask[];
-}) {
-  const linkedTask = tasks.find((task) => task.id === job.taskId);
-  return (
-    <div className="mt-5 space-y-4">
-      <div className="flex flex-wrap items-center gap-2">
-        <TypeBadge type={capabilityJobTypeText(job)} />
-        <Badge tone={capabilityJobTone(job.status)}>{capabilityJobStatusText(job.status)}</Badge>
-      </div>
-      <div className="text-lg font-semibold text-coal">{job.name}</div>
-      <div className="text-sm text-slate-500">关联任务：{linkedTask?.name || job.taskId}</div>
-      <div className="border-l border-line bg-slate-50/60 px-4 py-3">
-        <div className="flex items-center justify-between gap-3">
-          <div className="font-medium text-coal">执行进度</div>
-          <div className="text-sm text-slate-500">{job.progressPercent}%</div>
-        </div>
-        <div className="mt-3 h-2 overflow-hidden rounded-full bg-white">
-          <div className="h-full rounded-full bg-blue-600 transition-all" style={{ width: `${job.progressPercent}%` }} />
-        </div>
-        <div className="mt-4 grid gap-3">
-          {job.steps.map((step, index) => (
-            <div key={`${job.id}-${step.name}`} className="border-t border-line px-0 py-3">
-              <div className="flex items-center justify-between gap-3">
-                <div className="font-medium text-coal">{index + 1}. {step.name}</div>
-                <div className="text-xs text-slate-500">{step.status}</div>
-              </div>
-              <div className="mt-2 text-sm text-slate-500">{step.detail}</div>
-            </div>
-          ))}
-        </div>
-      </div>
-      {qualityDiffs.length > 0 && (
-        <div className="border-l border-line bg-slate-50/60 px-4 py-3">
-          <div className="font-medium text-coal">差异预览</div>
-          <div className="mt-3 grid gap-3">
-            {qualityDiffs.map((item) => (
-              <div key={item.id} className="border-t border-line px-0 py-3">
-                <div className="flex flex-wrap items-center gap-2">
-                  <Badge tone={item.severity === "high" ? "red" : item.severity === "medium" ? "yellow" : "green"}>{item.severity}</Badge>
-                  <span className="font-medium text-coal">{item.fieldName}</span>
-                </div>
-                <div className="mt-2 text-sm text-slate-500">{item.sourceTable} to {item.targetTable}</div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-      {structureItems.length > 0 && (
-        <div className="border-l border-line bg-slate-50/60 px-4 py-3">
-          <div className="font-medium text-coal">结构差异预览</div>
-          <div className="mt-3 grid gap-3">
-            {structureItems.map((item) => (
-              <div key={item.id} className="border-t border-line px-0 py-3">
-                <div className="flex flex-wrap items-center gap-2">
-                  <Badge tone={item.riskLevel === "high" ? "red" : item.riskLevel === "medium" ? "yellow" : "green"}>{item.riskLevel}</Badge>
-                  <span className="font-medium text-coal">{item.changeType}</span>
-                </div>
-                <div className="mt-2 text-sm text-slate-500">{item.sourceObject} to {item.targetObject}</div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
   );
 }
 
@@ -4826,28 +2226,6 @@ function BackendUnavailableScreen({
   );
 }
 
-function FilterChip({
-  active,
-  label,
-  onClick
-}: {
-  active: boolean;
-  label: string;
-  onClick: () => void;
-}) {
-  return (
-    <Button
-      onClick={onClick}
-      className={cx(
-        "chip transition",
-        active ? "border-blue-200 bg-blue-50 text-blue-700" : "border-line bg-white text-slate-600 hover:bg-slate-50"
-      )}
-    >
-      {label}
-    </Button>
-  );
-}
-
 function Badge({ tone, children }: { tone: "blue" | "green" | "yellow" | "red" | "neutral"; children: ReactNode }) {
   const className = tone === "blue"
     ? "border-blue-200 bg-blue-50 text-blue-700"
@@ -4861,36 +2239,9 @@ function Badge({ tone, children }: { tone: "blue" | "green" | "yellow" | "red" |
   return <span className={cx("chip", className)}>{children}</span>;
 }
 
-function TypeBadge({ type }: { type: string }) {
-  return <Badge tone="blue">{type}</Badge>;
-}
-
 function getFocusableElements(container: HTMLElement | null) {
   if (!container) return [];
   return Array.from(container.querySelectorAll<HTMLElement>(focusableSelector)).filter((element) => !element.hasAttribute("disabled"));
-}
-
-function NextStepCard({
-  title,
-  description,
-  actionLabel,
-  onClick
-}: {
-  title: string;
-  description: string;
-  actionLabel: string;
-  onClick: () => void;
-}) {
-  return (
-    <div className="border-t border-line py-4">
-      <div className="text-base font-semibold text-coal">{title}</div>
-      <div className="mt-2 text-sm text-slate-500">{description}</div>
-      <Button onClick={onClick} className="btn-secondary mt-4">
-        <ArrowRight size={16} />
-        {actionLabel}
-      </Button>
-    </div>
-  );
 }
 
 function Modal({
@@ -5293,7 +2644,7 @@ function validateNodeForm(form: ClusterNodeInput) {
   if (!Number.isFinite(Number(form.sshPort)) || Number(form.sshPort) <= 0) return "SSH 端口必须大于 0。";
   if (!form.installDir?.trim()) return "请填写安装目录。";
   if (!form.version?.trim()) return "请填写节点版本。";
-  if (!Number.isFinite(Number(form.capacity)) || Number(form.capacity) <= 0) return "可承载任务数必须大于 0。";
+  if (!Number.isFinite(Number(form.capacity)) || Number(form.capacity) <= 0) return "容量必须大于 0。";
   if (form.authMode === "private_key" && !form.privateKey?.trim()) return "请填写私钥后再测试连接。";
   if (form.authMode !== "private_key" && !form.password) return "请填写密码后再测试连接。";
   return null;
@@ -5304,98 +2655,29 @@ function datasourceSearchText(item: Datasource) {
     item.name,
     item.host,
     item.defaultSchema,
-    item.username,
-    purposeText(item.purpose)
+    item.username
   ].filter(Boolean).join(" ").toLowerCase();
-}
-
-function taskAwaitingNode(task: SyncTask) {
-  return !task.runtime?.nodeId && (
-    task.status === "full_syncing"
-    || task.status === "incremental_running"
-    || task.status === "failed"
-  );
-}
-
-function taskActivityAt(task: SyncTask) {
-  return task.runtime?.updatedAt || task.updatedAt;
-}
-
-function buildTaskItems(tasks: SyncTask[]): WorkloadItem[] {
-  return tasks
-    .map((task) => ({
-      id: task.id,
-      key: `sync:${task.id}`,
-      kind: "sync" as const,
-      type: syncTaskTypeText(task),
-      title: task.name,
-      detail: `${task.sourceDatasource?.name || task.sourceDatasourceId} to ${task.targetDatasource?.name || task.targetDatasourceId}`,
-      updatedAt: taskActivityAt(task),
-      statusText: taskStatusText[task.status],
-      rawTask: task
-    }))
-    .sort((left, right) => new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime());
-}
-
-function buildWorkloads(tasks: SyncTask[], capabilityJobs: CapabilityJob[]): WorkloadItem[] {
-  const items: WorkloadItem[] = buildTaskItems(tasks);
-  capabilityJobs.forEach((job) => {
-    items.push({
-      id: job.id,
-      key: `capability:${job.id}`,
-      kind: "capability",
-      type: capabilityJobTypeText(job),
-      title: job.name,
-      detail: `关联同步任务 ${job.taskId}`,
-      updatedAt: job.updatedAt,
-      statusText: capabilityJobStatusText(job.status),
-      rawJob: job
-    });
-  });
-  items.sort((left, right) => new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime());
-  return items;
-}
-
-function filteredTypeCounts(items: WorkloadItem[]) {
-  const counts: Record<string, number> = {};
-  items.forEach((item) => {
-    counts[item.type] = (counts[item.type] || 0) + 1;
-  });
-  return counts;
 }
 
 function navPage(page: Page): MainPage {
   if (page === "datasourceDetail") return "datasources";
-  if (page === "taskDetail" || page === "capabilityJobDetail") return "tasks";
   if (page === "nodeDetail") return "nodes";
   return page;
 }
 
 function pageTitle(page: Page) {
-  if (page === "dashboard") return "概览";
   if (page === "datasources") return "数据源";
-  if (page === "tasks") return "任务";
   if (page === "nodes") return "节点";
   if (page === "datasourceDetail") return "数据源详情";
-  if (page === "taskDetail") return "任务详情";
-  if (page === "capabilityJobDetail") return "扩展任务详情";
   if (page === "nodeDetail") return "节点详情";
   return "设置";
 }
 
 function pageDescription(page: Page) {
-  if (page === "dashboard") return "就绪、运行、异常";
   if (page === "datasources") return "连接与状态";
-  if (page === "tasks") return "同步任务";
   if (page === "nodes") return "运维区";
   if (page === "settings") return "告警";
   return "";
-}
-
-function purposeText(value: DatasourcePurpose) {
-  if (value === "source") return "源端";
-  if (value === "target") return "目标端";
-  return "源端和目标端";
 }
 
 function datasourceStatusText(value: DatasourceStatus) {
@@ -5410,164 +2692,14 @@ function datasourceTone(value: DatasourceStatus) {
   return "neutral";
 }
 
-function syncTaskTypeText(task: SyncTask) {
-  if (task.strategy.initMode === "full_only") return "全量迁移";
-  return "增量同步";
-}
-
-function capabilityJobTypeText(job: CapabilityJob) {
-  if (job.type === "structure") return "结构对比";
-  if (job.type === "quality" && job.mode === "verify_then_correct") return "数据订正";
-  if (job.type === "quality") return "数据校验";
-  return "订阅变更";
-}
-
-function capabilityJobStatusText(status: CapabilityJob["status"]) {
-  if (status === "running") return "运行中";
-  if (status === "completed") return "已完成";
-  if (status === "failed") return "失败";
-  return "草稿";
-}
-
-function capabilityJobTone(status: CapabilityJob["status"]) {
-  if (status === "running") return "blue";
-  if (status === "completed") return "green";
-  if (status === "failed") return "red";
-  return "neutral";
-}
-
-function capabilityJobSummaryText(job: CapabilityJob) {
-  if (job.type === "structure") {
-    return `${job.summary.ddlCount} 条 DDL，风险 ${job.summary.riskLevel}`;
-  }
-  if (job.type === "quality" && job.mode === "verify_then_correct") {
-    return `${job.summary.diffRows} 条差异，已订正 ${job.summary.correctedRows} 条`;
-  }
-  if (job.type === "quality") {
-    return `${job.summary.diffRows} 条差异待核验`;
-  }
-  return job.schedule ? `调度 ${job.schedule}` : "订阅变更";
-}
-
 function nodeStatusText(status: ClusterNode["status"]) {
   if (status === "online") return "在线";
-  if (status === "draining") return "排空中";
   return "离线";
 }
 
 function nodeTone(status: ClusterNode["status"]) {
   if (status === "online") return "green";
-  if (status === "draining") return "yellow";
   return "neutral";
-}
-
-function taskProcessStatusText(status?: TaskRuntimeState["processStatus"]) {
-  if (status === "starting") return "启动中";
-  if (status === "running") return "运行中";
-  if (status === "stopping") return "停止中";
-  if (status === "stopped") return "已停止";
-  if (status === "failed") return "异常退出";
-  if (status === "remote") return "远程节点";
-  if (status === "awaiting_takeover") return "待接管";
-  return "未启动";
-}
-
-function taskProcessTone(status?: TaskRuntimeState["processStatus"]) {
-  if (status === "running") return "blue";
-  if (status === "remote") return "yellow";
-  if (status === "awaiting_takeover") return "yellow";
-  if (status === "starting" || status === "stopping") return "yellow";
-  if (status === "failed") return "red";
-  return "neutral";
-}
-
-function shouldShowTaskProcessBadge(task: Pick<SyncTask, "status" | "runtime">) {
-  const processStatus = task.runtime?.processStatus;
-  if (!processStatus || processStatus === "idle") {
-    return false;
-  }
-  if (processStatus === "awaiting_takeover" && taskAwaitingNode(task as SyncTask)) {
-    return false;
-  }
-  if (processStatus === "remote" && task.runtime?.managedByLocalNode === false) {
-    return false;
-  }
-  if (processStatus === "stopped" && task.status === "stopped") {
-    return false;
-  }
-  if (processStatus === "running" && (task.status === "full_syncing" || task.status === "incremental_running")) {
-    return false;
-  }
-  if (processStatus === "failed" && task.status === "failed") {
-    return false;
-  }
-  return true;
-}
-
-function taskActionNotice(task: SyncTask, action: "start" | "pause" | "resume" | "stop") {
-  if ((action === "start" || action === "resume") && (task.runtime?.processStatus === "awaiting_takeover" || taskAwaitingNode(task))) {
-    return "已启动";
-  }
-  if (action === "pause") return "已暂停";
-  if (action === "resume") return "已恢复";
-  if (action === "stop") return "已停止";
-  return "已启动";
-}
-
-function taskRuntimePhaseText(phase?: string) {
-  if (phase === "full") return "全量";
-  if (phase === "incremental") return "增量";
-  if (phase === "paused") return "暂停";
-  if (phase === "failed") return "异常";
-  if (phase === "stopped") return "停止";
-  return "空闲";
-}
-
-function checkpointReasonText(reason: string) {
-  if (reason === "create") return "创建任务";
-  if (reason === "rerun") return "任务重跑";
-  if (reason === "manual_reset") return "重置位点";
-  if (reason === "full_completed") return "全量完成";
-  if (reason === "lease_assign") return "分配节点";
-  if (reason === "failover_takeover") return "故障接管";
-  if (reason === "lease_unassigned") return "等待接管";
-  if (reason.startsWith("lifecycle_")) {
-    const action = reason.replace("lifecycle_", "");
-    if (action === "start") return "启动任务";
-    if (action === "pause") return "暂停任务";
-    if (action === "resume") return "恢复任务";
-    if (action === "stop") return "停止任务";
-  }
-  return reason;
-}
-
-function checkpointReasonTone(reason: string) {
-  if (reason === "failover_takeover") return "yellow";
-  if (reason === "lease_unassigned") return "red";
-  if (reason === "manual_reset") return "blue";
-  if (reason === "full_completed") return "green";
-  return "neutral";
-}
-
-function taskLogLineClass(level: string) {
-  if (level === "error") return "text-red-300";
-  if (level === "warn") return "text-amber-300";
-  return "text-emerald-300";
-}
-
-function taskPrimaryAction(task: SyncTask): "start" | "pause" | "resume" | "stop" | null {
-  if (task.status === "draft" || task.status === "pending" || task.status === "failed" || task.status === "stopped") return "start";
-  if (task.status === "paused") return "resume";
-  if (task.status === "full_syncing" || task.status === "incremental_running") return "pause";
-  return null;
-}
-
-function taskActionLabel(action: "start" | "pause" | "resume" | "stop" | null) {
-  if (action === "start") return "启动";
-  if (action === "resume") return "恢复";
-  if (action === "pause") return "暂停";
-  if (action === "stop") return "停止";
-  return "";
 }
 
 function nodeActionTitle(action: NodeOperationResult["action"]) {

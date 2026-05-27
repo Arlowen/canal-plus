@@ -3,40 +3,17 @@ import type {
   AlertEvent,
   AlertRuleEvaluation,
   AlertRuleInput,
-  CapabilityJob,
-  CapabilityJobType,
-  ClusterRebalanceReport,
-  DashboardSummary,
   ClusterSnapshot,
   ClusterNode,
   ClusterNodeInput,
   Datasource,
-  ErrorEvent,
-  FailoverDrillReport,
   LoginResponse,
   NodeConnectionTestResult,
-  NodeDrainReport,
   NodeOperationResult,
   NodeStatusChangeResult,
   OperationLog,
-  PositionResetInput,
-  QualityDiff,
-  QualityDiffCorrectionInput,
-  SubscriptionChange,
-  StructureDDL,
-  StructureDDLApplyInput,
-  SyncStrategy,
-  SyncTask,
   TableColumn,
   TableInfo,
-  TaskExport,
-  TaskCheckpoint,
-  TaskLogEntry,
-  TaskOperationResult,
-  TaskParameterPatch,
-  TaskPreflightReport,
-  TaskRuntimeState,
-  TaskRevision,
   User
 } from "../types/api";
 
@@ -45,8 +22,6 @@ const TOKEN_KEY = "canal-plus-token";
 const SERVICE_UNAVAILABLE_MESSAGE = "后端服务暂时不可用，请稍后重试。";
 
 type BackendAvailabilityListener = (available: boolean) => void;
-
-type SyncTaskInput = Omit<SyncTask, "id" | "status" | "configVersion" | "createdAt" | "updatedAt" | "runtime" | "sourceDatasource" | "targetDatasource">;
 
 const backendAvailabilityListeners = new Set<BackendAvailabilityListener>();
 let lastKnownBackendAvailability: boolean | null = null;
@@ -195,15 +170,11 @@ export const api = {
   me() {
     return request<User>("/me");
   },
-  summary() {
-    return request<DashboardSummary>("/dashboard/summary");
-  },
   datasources() {
     return request<Datasource[]>("/datasources");
   },
   createDatasource(input: {
     name: string;
-    purpose: string;
     host: string;
     port: number;
     username: string;
@@ -217,7 +188,6 @@ export const api = {
   },
   updateDatasource(id: string, input: {
     name?: string;
-    purpose?: string;
     host?: string;
     port?: number;
     username?: string;
@@ -243,86 +213,6 @@ export const api = {
   },
   columns(datasourceId: string, schema: string, table: string, options?: RequestInit) {
     return request<TableColumn[]>(`/datasources/${datasourceId}/schemas/${schema}/tables/${table}/columns`, options);
-  },
-  tasks() {
-    return request<SyncTask[]>("/sync-tasks");
-  },
-  createTask(input: SyncTaskInput) {
-    return request<SyncTask>("/sync-tasks", {
-      method: "POST",
-      body: JSON.stringify(input)
-    });
-  },
-  preflightTask(input: SyncTaskInput) {
-    return request<TaskPreflightReport>("/sync-tasks/preflight", {
-      method: "POST",
-      body: JSON.stringify(input)
-    });
-  },
-  taskAction(id: string, action: "start" | "pause" | "resume" | "stop" | "copy") {
-    return request<SyncTask>(`/sync-tasks/${id}/${action}`, { method: "POST" });
-  },
-  rerunTask(id: string) {
-    return request<TaskOperationResult>(`/sync-tasks/${id}/rerun`, { method: "POST" });
-  },
-  deleteTask(id: string) {
-    return request<void>(`/sync-tasks/${id}`, { method: "DELETE" });
-  },
-  updateTaskParams(id: string, input: TaskParameterPatch) {
-    return request<TaskOperationResult>(`/sync-tasks/${id}/params`, {
-      method: "POST",
-      body: JSON.stringify(input)
-    });
-  },
-  resetTaskPosition(id: string, input: PositionResetInput) {
-    return request<TaskOperationResult>(`/sync-tasks/${id}/reset-position`, {
-      method: "POST",
-      body: JSON.stringify(input)
-    });
-  },
-  exportTask(id: string) {
-    return request<TaskExport>(`/sync-tasks/${id}/export`);
-  },
-  taskRevisions(id: string) {
-    return request<TaskRevision[]>(`/sync-tasks/${id}/revisions`);
-  },
-  taskCheckpoints(id: string) {
-    return request<TaskCheckpoint[]>(`/sync-tasks/${id}/checkpoints`);
-  },
-  taskRuntime(id: string) {
-    return request<TaskRuntimeState>(`/sync-tasks/${id}/runtime`);
-  },
-  taskLogs(id: string, limit = 120) {
-    return request<TaskLogEntry[]>(`/sync-tasks/${id}/logs?limit=${limit}`);
-  },
-  taskLogsStreamUrl(id: string) {
-    const token = getToken();
-    const search = token ? `?access_token=${encodeURIComponent(token)}` : "";
-    return `${API_BASE}/sync-tasks/${id}/logs/stream${search}`;
-  },
-  rollbackTaskRevision(id: string, version: number) {
-    return request<TaskOperationResult>(`/sync-tasks/${id}/revisions/${version}/rollback`, { method: "POST" });
-  },
-  defaultStrategy() {
-    return request<SyncStrategy>("/sync-strategy/default");
-  },
-  errors() {
-    return request<ErrorEvent[]>("/error-events");
-  },
-  retryError(id: string) {
-    return request<ErrorEvent>(`/error-events/${id}/retry`, { method: "POST" });
-  },
-  retryErrors(ids: string[]) {
-    return request<ErrorEvent[]>("/error-events/batch-retry", {
-      method: "POST",
-      body: JSON.stringify({ ids })
-    });
-  },
-  skipError(id: string, reason: string) {
-    return request<ErrorEvent>(`/error-events/${id}/skip`, {
-      method: "POST",
-      body: JSON.stringify({ reason })
-    });
   },
   logs() {
     return request<OperationLog[]>("/operation-logs");
@@ -351,47 +241,6 @@ export const api = {
   },
   deleteAlertRule(id: string) {
     return request<void>(`/alert-rules/${id}`, { method: "DELETE" });
-  },
-  capabilityJobs(type?: CapabilityJobType) {
-    const query = type ? `?type=${type}` : "";
-    return request<CapabilityJob[]>(`/capability-jobs${query}`);
-  },
-  createCapabilityJob(input: {
-    type: CapabilityJobType;
-    taskId: string;
-    name?: string;
-    mode?: string;
-    schedule?: string;
-    autoStart?: boolean;
-  }) {
-    return request<CapabilityJob>("/capability-jobs", {
-      method: "POST",
-      body: JSON.stringify(input)
-    });
-  },
-  runCapabilityJob(id: string) {
-    return request<CapabilityJob>(`/capability-jobs/${id}/run`, { method: "POST" });
-  },
-  structureDDLs(jobId: string) {
-    return request<StructureDDL[]>(`/capability-jobs/${jobId}/structure-ddl`);
-  },
-  applyStructureDDLs(jobId: string, input: StructureDDLApplyInput = {}) {
-    return request<CapabilityJob>(`/capability-jobs/${jobId}/structure-ddl/apply`, {
-      method: "POST",
-      body: JSON.stringify(input)
-    });
-  },
-  qualityDiffs(jobId: string) {
-    return request<QualityDiff[]>(`/capability-jobs/${jobId}/quality-diffs`);
-  },
-  correctQualityDiffs(jobId: string, input: QualityDiffCorrectionInput = {}) {
-    return request<CapabilityJob>(`/capability-jobs/${jobId}/quality-diffs/correct`, {
-      method: "POST",
-      body: JSON.stringify(input)
-    });
-  },
-  subscriptionChanges(jobId: string) {
-    return request<SubscriptionChange[]>(`/capability-jobs/${jobId}/subscription-changes`);
   },
   cluster() {
     return request<ClusterSnapshot>("/cluster");
@@ -422,14 +271,5 @@ export const api = {
   },
   nodeAction(id: string, action: "online" | "offline" | "heartbeat") {
     return request<NodeStatusChangeResult | ClusterNode>(`/cluster/nodes/${id}/${action}`, { method: "POST" });
-  },
-  drainNode(id: string) {
-    return request<NodeDrainReport>(`/cluster/nodes/${id}/drain`, { method: "POST" });
-  },
-  failoverDrill(id: string) {
-    return request<FailoverDrillReport>(`/cluster/nodes/${id}/failover-drill`, { method: "POST" });
-  },
-  rebalanceCluster() {
-    return request<ClusterRebalanceReport>("/cluster/rebalance", { method: "POST" });
   }
 };

@@ -1,0 +1,53 @@
+package app
+
+import "testing"
+
+type testStorePersistence struct {
+	data  DatabaseShape
+	found bool
+}
+
+func (p *testStorePersistence) Load() (DatabaseShape, bool, error) {
+	return cloneJSON(p.data), p.found, nil
+}
+
+func (p *testStorePersistence) Save(data DatabaseShape) error {
+	p.data = cloneJSON(data)
+	p.found = true
+	return nil
+}
+
+func (p *testStorePersistence) Backend() string {
+	return "test-rdb"
+}
+
+func (p *testStorePersistence) Location() string {
+	return "memory://unit-test"
+}
+
+func newTestStore(t *testing.T) *Store {
+	t.Helper()
+	seed, err := createSeedData()
+	if err != nil {
+		t.Fatalf("createSeedData() error = %v", err)
+	}
+	store := &Store{
+		persistence: &testStorePersistence{},
+		data:        seed,
+	}
+	if err := store.saveLocked(); err != nil {
+		t.Fatalf("save test store: %v", err)
+	}
+	return store
+}
+
+func TestSeedDataUsesSupportedDomains(t *testing.T) {
+	store := newTestStore(t)
+	snapshot := store.Snapshot()
+	if len(snapshot.Datasources) == 0 {
+		t.Fatal("seed data should include datasources")
+	}
+	if len(snapshot.Nodes) == 0 {
+		t.Fatal("seed data should include nodes")
+	}
+}

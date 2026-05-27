@@ -132,28 +132,69 @@ func (p *mySQLStorePersistence) autoMigrate() error {
 	}{
 		{suffix: "users", model: &userRow{}},
 		{suffix: "datasources", model: &datasourceRow{}},
-		{suffix: "sync_tasks", model: &syncTaskRow{}},
-		{suffix: "runtime_states", model: &taskRuntimeStateRow{}},
-		{suffix: "task_logs", model: &taskLogEntryRow{}},
-		{suffix: "error_events", model: &errorEventRow{}},
 		{suffix: "operation_logs", model: &operationLogRow{}},
 		{suffix: "alert_rules", model: &alertRuleRow{}},
 		{suffix: "alert_events", model: &alertEventRow{}},
-		{suffix: "capability_jobs", model: &capabilityJobRow{}},
 		{suffix: "cluster_nodes", model: &clusterNodeRow{}},
-		{suffix: "task_leases", model: &taskLeaseRow{}},
-		{suffix: "task_revisions", model: &taskRevisionRow{}},
-		{suffix: "task_checkpoints", model: &taskCheckpointRow{}},
-		{suffix: "quality_diffs", model: &qualityDiffRow{}},
-		{suffix: "structure_ddls", model: &structureDDLRow{}},
-		{suffix: "subscription_changes", model: &subscriptionChangeRow{}},
 	}
 	for _, migration := range migrations {
 		if err := p.db.Table(p.tableName(migration.suffix)).AutoMigrate(migration.model); err != nil {
 			return err
 		}
 	}
+	for _, column := range []struct {
+		tableSuffix string
+		name        string
+	}{
+		{tableSuffix: "datasources", name: "purpose"},
+		{tableSuffix: "alert_rules", name: "task_id"},
+		{tableSuffix: "alert_rules", name: "delay_threshold_seconds"},
+		{tableSuffix: "alert_rules", name: "error_threshold"},
+		{tableSuffix: "alert_events", name: "matched_tasks"},
+		{tableSuffix: "alert_events", name: "max_delay_seconds"},
+		{tableSuffix: "alert_events", name: "pending_errors"},
+		{tableSuffix: "cluster_nodes", name: "running_tasks"},
+	} {
+		if err := p.dropColumnIfExists(p.tableName(column.tableSuffix), column.name); err != nil {
+			return err
+		}
+	}
+	for _, suffix := range []string{
+		"sync_tasks",
+		"runtime_states",
+		"task_logs",
+		"error_events",
+		"capability_jobs",
+		"task_leases",
+		"task_revisions",
+		"task_checkpoints",
+		"quality_diffs",
+		"structure_ddls",
+		"subscription_changes",
+	} {
+		table := p.tableName(suffix)
+		if p.db.Migrator().HasTable(table) {
+			if err := p.db.Migrator().DropTable(table); err != nil {
+				return err
+			}
+		}
+	}
 	return nil
+}
+
+func (p *mySQLStorePersistence) dropColumnIfExists(table string, column string) error {
+	var count int64
+	if err := p.db.Raw(
+		"SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = ? AND column_name = ?",
+		table,
+		column,
+	).Scan(&count).Error; err != nil {
+		return err
+	}
+	if count == 0 {
+		return nil
+	}
+	return p.db.Exec("ALTER TABLE `" + table + "` DROP COLUMN `" + column + "`").Error
 }
 
 func (p *mySQLStorePersistence) loadSnapshotRows() (snapshotRows, error) {
@@ -166,18 +207,6 @@ func (p *mySQLStorePersistence) loadSnapshotRows() (snapshotRows, error) {
 	if rows.Datasources, err = loadTableRows[datasourceRow](p.db, p.tableName("datasources")); err != nil {
 		return snapshotRows{}, err
 	}
-	if rows.SyncTasks, err = loadTableRows[syncTaskRow](p.db, p.tableName("sync_tasks")); err != nil {
-		return snapshotRows{}, err
-	}
-	if rows.RuntimeStates, err = loadTableRows[taskRuntimeStateRow](p.db, p.tableName("runtime_states")); err != nil {
-		return snapshotRows{}, err
-	}
-	if rows.TaskLogs, err = loadTableRows[taskLogEntryRow](p.db, p.tableName("task_logs")); err != nil {
-		return snapshotRows{}, err
-	}
-	if rows.ErrorEvents, err = loadTableRows[errorEventRow](p.db, p.tableName("error_events")); err != nil {
-		return snapshotRows{}, err
-	}
 	if rows.OperationLogs, err = loadTableRows[operationLogRow](p.db, p.tableName("operation_logs")); err != nil {
 		return snapshotRows{}, err
 	}
@@ -187,28 +216,7 @@ func (p *mySQLStorePersistence) loadSnapshotRows() (snapshotRows, error) {
 	if rows.AlertEvents, err = loadTableRows[alertEventRow](p.db, p.tableName("alert_events")); err != nil {
 		return snapshotRows{}, err
 	}
-	if rows.CapabilityJobs, err = loadTableRows[capabilityJobRow](p.db, p.tableName("capability_jobs")); err != nil {
-		return snapshotRows{}, err
-	}
 	if rows.Nodes, err = loadTableRows[clusterNodeRow](p.db, p.tableName("cluster_nodes")); err != nil {
-		return snapshotRows{}, err
-	}
-	if rows.TaskLeases, err = loadTableRows[taskLeaseRow](p.db, p.tableName("task_leases")); err != nil {
-		return snapshotRows{}, err
-	}
-	if rows.TaskRevisions, err = loadTableRows[taskRevisionRow](p.db, p.tableName("task_revisions")); err != nil {
-		return snapshotRows{}, err
-	}
-	if rows.TaskCheckpoints, err = loadTableRows[taskCheckpointRow](p.db, p.tableName("task_checkpoints")); err != nil {
-		return snapshotRows{}, err
-	}
-	if rows.QualityDiffs, err = loadTableRows[qualityDiffRow](p.db, p.tableName("quality_diffs")); err != nil {
-		return snapshotRows{}, err
-	}
-	if rows.StructureDDLs, err = loadTableRows[structureDDLRow](p.db, p.tableName("structure_ddls")); err != nil {
-		return snapshotRows{}, err
-	}
-	if rows.SubscriptionChanges, err = loadTableRows[subscriptionChangeRow](p.db, p.tableName("subscription_changes")); err != nil {
 		return snapshotRows{}, err
 	}
 
@@ -219,35 +227,12 @@ func (p *mySQLStorePersistence) replaceSnapshotRows(tx *gorm.DB, rows snapshotRo
 	replacements := []func(*gorm.DB) error{
 		func(db *gorm.DB) error { return replaceTableRows(db, p.tableName("users"), rows.Users) },
 		func(db *gorm.DB) error { return replaceTableRows(db, p.tableName("datasources"), rows.Datasources) },
-		func(db *gorm.DB) error { return replaceTableRows(db, p.tableName("sync_tasks"), rows.SyncTasks) },
-		func(db *gorm.DB) error {
-			return replaceTableRows(db, p.tableName("runtime_states"), rows.RuntimeStates)
-		},
-		func(db *gorm.DB) error { return replaceTableRows(db, p.tableName("task_logs"), rows.TaskLogs) },
-		func(db *gorm.DB) error { return replaceTableRows(db, p.tableName("error_events"), rows.ErrorEvents) },
 		func(db *gorm.DB) error {
 			return replaceTableRows(db, p.tableName("operation_logs"), rows.OperationLogs)
 		},
 		func(db *gorm.DB) error { return replaceTableRows(db, p.tableName("alert_rules"), rows.AlertRules) },
 		func(db *gorm.DB) error { return replaceTableRows(db, p.tableName("alert_events"), rows.AlertEvents) },
-		func(db *gorm.DB) error {
-			return replaceTableRows(db, p.tableName("capability_jobs"), rows.CapabilityJobs)
-		},
 		func(db *gorm.DB) error { return replaceTableRows(db, p.tableName("cluster_nodes"), rows.Nodes) },
-		func(db *gorm.DB) error { return replaceTableRows(db, p.tableName("task_leases"), rows.TaskLeases) },
-		func(db *gorm.DB) error {
-			return replaceTableRows(db, p.tableName("task_revisions"), rows.TaskRevisions)
-		},
-		func(db *gorm.DB) error {
-			return replaceTableRows(db, p.tableName("task_checkpoints"), rows.TaskCheckpoints)
-		},
-		func(db *gorm.DB) error { return replaceTableRows(db, p.tableName("quality_diffs"), rows.QualityDiffs) },
-		func(db *gorm.DB) error {
-			return replaceTableRows(db, p.tableName("structure_ddls"), rows.StructureDDLs)
-		},
-		func(db *gorm.DB) error {
-			return replaceTableRows(db, p.tableName("subscription_changes"), rows.SubscriptionChanges)
-		},
 	}
 	for _, replacement := range replacements {
 		if err := replacement(tx); err != nil {
