@@ -54,6 +54,7 @@ type Datasource struct {
 	Purpose           DatasourcePurpose `json:"purpose,omitempty"`
 	Host              string            `json:"host"`
 	Port              int               `json:"port"`
+	Version           string            `json:"version,omitempty"`
 	Username          string            `json:"username"`
 	PasswordSecret    string            `json:"passwordSecret"`
 	DefaultSchema     string            `json:"defaultSchema,omitempty"`
@@ -74,6 +75,7 @@ type PublicDatasource struct {
 	Purpose           DatasourcePurpose `json:"purpose,omitempty"`
 	Host              string            `json:"host"`
 	Port              int               `json:"port"`
+	Version           string            `json:"version,omitempty"`
 	Username          string            `json:"username"`
 	DefaultSchema     string            `json:"defaultSchema,omitempty"`
 	Remark            string            `json:"remark,omitempty"`
@@ -103,9 +105,14 @@ type DatasourceInput struct {
 type DatasourceTestResult struct {
 	Success   bool             `json:"success"`
 	Status    DatasourceStatus `json:"status"`
+	Version   string           `json:"version,omitempty"`
 	LatencyMS int              `json:"latencyMs"`
 	TestedAt  string           `json:"testedAt"`
 	Message   string           `json:"message"`
+}
+
+type DatasourceTestRequest struct {
+	NodeID string `json:"nodeId,omitempty"`
 }
 
 type OperationLog struct {

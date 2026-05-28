@@ -47,6 +47,7 @@ export interface DatasourceInput {
 export interface DatasourceTestResult {
   success: boolean;
   status: DatasourceStatus;
+  version?: string;
   latencyMs: number;
   testedAt: string;
   message: string;

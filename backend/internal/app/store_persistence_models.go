@@ -20,6 +20,7 @@ type datasourceRow struct {
 	Purpose           DatasourcePurpose `json:"purpose,omitempty" gorm:"size:32;index"`
 	Host              string            `json:"host" gorm:"size:255;not null"`
 	Port              int               `json:"port" gorm:"not null"`
+	Version           string            `json:"version,omitempty" gorm:"size:64"`
 	Username          string            `json:"username" gorm:"size:255;not null"`
 	PasswordSecret    string            `json:"passwordSecret" gorm:"type:text"`
 	DefaultSchema     string            `json:"defaultSchema,omitempty" gorm:"size:255"`

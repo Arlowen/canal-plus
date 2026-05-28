@@ -114,6 +114,7 @@ func toPublicDatasource(datasource Datasource) PublicDatasource {
 		Purpose:           datasource.Purpose,
 		Host:              datasource.Host,
 		Port:              datasource.Port,
+		Version:           datasource.Version,
 		Username:          datasource.Username,
 		DefaultSchema:     datasource.DefaultSchema,
 		Remark:            datasource.Remark,

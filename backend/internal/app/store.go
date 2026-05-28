@@ -194,6 +194,7 @@ func (s *Store) CreateDatasource(input Datasource, testResult DatasourceTestResu
 	timestamp := now()
 	input.ID = newID()
 	input.ConnectionStatus = DatasourceAvailable
+	input.Version = testResult.Version
 	input.LastTestedAt = testResult.TestedAt
 	input.LastTestMessage = testResult.Message
 	input.LastTestLatencyMS = testResult.LatencyMS
@@ -244,6 +245,7 @@ func (s *Store) UpdateDatasource(id string, patch DatasourcePatch) (Datasource, 
 		if patch.ConnectionChanged {
 			if patch.TestResult != nil && patch.TestResult.Success {
 				s.data.Datasources[index].ConnectionStatus = DatasourceAvailable
+				s.data.Datasources[index].Version = patch.TestResult.Version
 				s.data.Datasources[index].LastTestedAt = patch.TestResult.TestedAt
 				s.data.Datasources[index].LastTestMessage = patch.TestResult.Message
 				s.data.Datasources[index].LastTestLatencyMS = patch.TestResult.LatencyMS
@@ -284,8 +286,10 @@ func (s *Store) MarkDatasourceTest(id string, result DatasourceTestResult) (Data
 		}
 		if result.Success {
 			s.data.Datasources[index].ConnectionStatus = DatasourceAvailable
+			s.data.Datasources[index].Version = result.Version
 		} else {
 			s.data.Datasources[index].ConnectionStatus = DatasourceFailed
+			s.data.Datasources[index].Version = ""
 		}
 		s.data.Datasources[index].LastTestedAt = result.TestedAt
 		s.data.Datasources[index].LastTestMessage = result.Message

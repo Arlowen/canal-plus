@@ -231,7 +231,7 @@ func (s *Server) handleDatasources(response http.ResponseWriter, request *http.R
 		}
 		response.WriteHeader(http.StatusNoContent)
 	case len(parts) == 3 && parts[2] == "test" && request.Method == http.MethodPost:
-		s.testSavedDatasource(response, parts[1])
+		s.testSavedDatasource(response, request, parts[1])
 	default:
 		writeError(response, http.StatusNotFound, "not found")
 	}
@@ -376,7 +376,18 @@ func (s *Server) testDatasourceInput(response http.ResponseWriter, request *http
 	writeJSON(response, http.StatusOK, result)
 }
 
-func (s *Server) testSavedDatasource(response http.ResponseWriter, id string) {
+func (s *Server) testSavedDatasource(response http.ResponseWriter, request *http.Request, id string) {
+	var input DatasourceTestRequest
+	if request.Body != nil && request.ContentLength != 0 {
+		if err := decodeJSON(request, &input); err != nil {
+			writeError(response, http.StatusBadRequest, "请求体格式错误")
+			return
+		}
+	}
+	if err := s.ensureDatasourceTestNode(input.NodeID); err != nil {
+		writeError(response, http.StatusBadRequest, err.Error())
+		return
+	}
 	datasource, ok := s.store.GetDatasource(id)
 	if !ok {
 		writeError(response, http.StatusNotFound, "数据源不存在")
@@ -393,6 +404,24 @@ func (s *Server) testSavedDatasource(response http.ResponseWriter, id string) {
 		return
 	}
 	writeJSON(response, http.StatusOK, result)
+}
+
+func (s *Server) ensureDatasourceTestNode(nodeID string) error {
+	nodeID = strings.TrimSpace(nodeID)
+	if nodeID == "" {
+		return nil
+	}
+	snapshot := s.store.ClusterSnapshot()
+	for _, node := range snapshot.Nodes {
+		if node.ID != nodeID {
+			continue
+		}
+		if node.Status != NodeOnline {
+			return errors.New("节点不可用")
+		}
+		return nil
+	}
+	return errors.New("节点不存在")
 }
 
 func normalizeDatasourceInput(input DatasourceInput, requirePassword bool) (DatasourceInput, error) {

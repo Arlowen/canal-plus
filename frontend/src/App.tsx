@@ -78,6 +78,13 @@ type ConfirmationDialogState = {
   onConfirm: () => void;
 };
 
+type DatasourceTestDialogState = {
+  datasource: Datasource;
+  selectedNodeId: string;
+  error: string | null;
+  result: DatasourceTestResult | null;
+};
+
 type ClusterHandoffReport = {
   id: string;
   kind: "offline" | "online";
@@ -693,6 +700,7 @@ function App() {
             ) : page === "datasources" ? (
               <DatasourcePage
                 datasources={datasources}
+                cluster={cluster}
                 canManage={canManage}
                 canTest={canTestDatasources}
                 onChanged={refresh}
@@ -733,12 +741,14 @@ function App() {
 
 function DatasourcePage({
   datasources,
+  cluster,
   canManage,
   canTest,
   onChanged,
   pushNotice
 }: {
   datasources: Datasource[];
+  cluster: ClusterSnapshot | null;
   canManage: boolean;
   canTest: boolean;
   onChanged: (quiet?: boolean) => Promise<void>;
@@ -765,6 +775,15 @@ function DatasourcePage({
   const [testingSavedId, setTestingSavedId] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [confirmation, setConfirmation] = useState<ConfirmationDialogState | null>(null);
+  const [testDialog, setTestDialog] = useState<DatasourceTestDialogState | null>(null);
+  const [selectedNodeByDatasource, setSelectedNodeByDatasource] = useState<Record<string, string>>({});
+
+  const availableNodes = useMemo(() => (cluster?.nodes ?? []).filter((node) => node.status === "online"), [cluster?.nodes]);
+  const defaultNodeId = useMemo(() => {
+    const localNode = availableNodes.find((node) => node.id === cluster?.localNodeId);
+    return localNode?.id ?? availableNodes[0]?.id ?? "";
+  }, [availableNodes, cluster?.localNodeId]);
+  const nodesLoading = cluster === null;
 
   const openCreateEditor = useCallback(() => {
     const nextForm = { ...emptyDatasourceForm };
@@ -810,6 +829,16 @@ function DatasourcePage({
   useEffect(() => {
     setJumpPage(String(currentPage));
   }, [currentPage]);
+
+  useEffect(() => {
+    if (!testDialog) return;
+    if (nodesLoading) return;
+    const selectedNodeExists = availableNodes.some((node) => node.id === testDialog.selectedNodeId);
+    if (selectedNodeExists || testDialog.selectedNodeId === defaultNodeId) {
+      return;
+    }
+    setTestDialog({ ...testDialog, selectedNodeId: defaultNodeId, error: defaultNodeId ? null : "无节点" });
+  }, [availableNodes, defaultNodeId, nodesLoading, testDialog]);
 
   const runQuery = async () => {
     setQuerying(true);
@@ -932,14 +961,40 @@ function DatasourcePage({
     }
   };
 
-  const testSavedDatasource = async (item: Datasource) => {
-    setTestingSavedId(item.id);
+  const openTestDialog = (item: Datasource) => {
+    const cachedNodeId = selectedNodeByDatasource[item.id];
+    const selectedNodeId = availableNodes.some((node) => node.id === cachedNodeId) ? cachedNodeId : defaultNodeId;
+    setTestDialog({
+      datasource: item,
+      selectedNodeId,
+      error: selectedNodeId ? null : "无节点",
+      result: null
+    });
+  };
+
+  const testSavedDatasource = async () => {
+    if (!testDialog) return;
+    if (!testDialog.selectedNodeId) {
+      setTestDialog({ ...testDialog, error: "无节点" });
+      return;
+    }
+    const datasourceId = testDialog.datasource.id;
+    const selectedNodeId = testDialog.selectedNodeId;
+    setTestingSavedId(datasourceId);
+    setTestDialog({ ...testDialog, error: null });
     try {
-      const result = await api.testDatasource(item.id);
-      pushNotice({ tone: result.success ? "success" : "error", message: result.success ? "测试通过" : "测试失败" });
+      const result = await api.testDatasource(datasourceId, { nodeId: selectedNodeId });
+      setSelectedNodeByDatasource((current) => ({ ...current, [datasourceId]: selectedNodeId }));
       await onChanged(true);
+      if (result.success) {
+        pushNotice({ tone: "success", message: "测试通过" });
+        setTestDialog((current) => current?.datasource.id === datasourceId ? null : current);
+      } else {
+        setTestDialog((current) => current?.datasource.id === datasourceId ? { ...current, result, error: result.message || "测试失败" } : current);
+      }
     } catch (requestError) {
-      pushNotice({ tone: "error", message: requestError instanceof Error ? requestError.message : "连接失败" });
+      const message = requestError instanceof Error ? requestError.message : "连接失败";
+      setTestDialog((current) => current?.datasource.id === datasourceId ? { ...current, error: message, result: null } : current);
     } finally {
       setTestingSavedId(null);
     }
@@ -1104,7 +1159,7 @@ function DatasourcePage({
                       {canTest && (
                         <Button
                           type="button"
-                          onClick={() => void testSavedDatasource(item)}
+                          onClick={() => openTestDialog(item)}
                           disabled={testingSavedId === item.id}
                           className="btn-compact whitespace-nowrap"
                         >
@@ -1112,6 +1167,7 @@ function DatasourcePage({
                           {testingSavedId === item.id ? "测试中" : "测试连接"}
                         </Button>
                       )}
+                      <DatasourceTestSummary datasource={item} />
                       {canManage && (
                         <ActionMenu
                           label="更多"
@@ -1186,6 +1242,22 @@ function DatasourcePage({
         onClose={requestCloseEditor}
         onTest={() => void testFormConnection()}
         onSubmit={saveDatasource}
+      />
+
+      <DatasourceTestModal
+        open={Boolean(testDialog)}
+        nodes={availableNodes}
+        loading={nodesLoading}
+        selectedNodeId={testDialog?.selectedNodeId ?? ""}
+        testing={testDialog ? testingSavedId === testDialog.datasource.id : false}
+        error={testDialog?.error ?? null}
+        result={testDialog?.result ?? null}
+        onNodeChange={(nodeId) => {
+          if (!testDialog) return;
+          setTestDialog({ ...testDialog, selectedNodeId: nodeId, error: null, result: null });
+        }}
+        onClose={() => setTestDialog(null)}
+        onTest={() => void testSavedDatasource()}
       />
 
       <ConfirmDialog
@@ -1336,6 +1408,89 @@ function DatasourceEditorModal({
       </form>
     </Modal>
   );
+}
+
+function DatasourceTestModal({
+  open,
+  nodes,
+  loading,
+  selectedNodeId,
+  testing,
+  error,
+  result,
+  onNodeChange,
+  onClose,
+  onTest
+}: {
+  open: boolean;
+  nodes: ClusterNode[];
+  loading: boolean;
+  selectedNodeId: string;
+  testing: boolean;
+  error: string | null;
+  result: DatasourceTestResult | null;
+  onNodeChange: (nodeId: string) => void;
+  onClose: () => void;
+  onTest: () => void;
+}) {
+  const hasNodes = nodes.length > 0;
+  const selectedValue = nodes.some((node) => node.id === selectedNodeId) ? selectedNodeId : "";
+  const nodeOptions = loading
+    ? [{ value: "", label: "加载中", disabled: true }]
+    : hasNodes
+      ? nodes.map((node) => ({ value: node.id, label: node.name || node.id }))
+      : [{ value: "", label: "无节点", disabled: true }];
+  const testDisabled = testing || loading || !hasNodes || !selectedValue;
+
+  return (
+    <Modal open={open} title="测试连接" onClose={onClose} size="md">
+      <div className="grid gap-5">
+        <div className="grid gap-3 sm:grid-cols-[88px_minmax(0,1fr)] sm:items-center">
+          <div className="text-sm font-medium text-coal sm:text-right">节点</div>
+          <DropdownSelect
+            value={selectedValue}
+            ariaLabel="节点"
+            disabled={testing || loading || !hasNodes}
+            options={nodeOptions}
+            onChange={onNodeChange}
+          />
+        </div>
+
+        {(error || result?.success === false) && (
+          <div className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+            <XCircle className="mt-0.5 shrink-0" size={16} />
+            <span className="min-w-0 break-words">{error || result?.message || "测试失败"}</span>
+          </div>
+        )}
+
+        <div className="flex justify-start sm:pl-[100px]">
+          <Button type="button" onClick={onTest} disabled={testDisabled} className="btn-secondary">
+            {testing ? <ArrowsClockwise size={16} className="animate-spin" /> : <ShieldCheck size={16} />}
+            {testing ? "测试中" : "测试连接"}
+          </Button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function DatasourceTestSummary({ datasource }: { datasource: Datasource }) {
+  if (datasource.connectionStatus === "available" && datasource.version?.trim()) {
+    return (
+      <span className="inline-flex min-w-0 items-center gap-1.5 text-sm text-slate-400">
+        <CheckCircle className="shrink-0 text-emerald-600" size={17} weight="fill" />
+        <span className="truncate">{datasource.version.trim()}</span>
+      </span>
+    );
+  }
+  if (datasource.connectionStatus === "failed") {
+    return (
+      <span aria-label="测试失败" title="测试失败" className="inline-flex items-center text-red-600">
+        <XCircle size={17} weight="fill" />
+      </span>
+    );
+  }
+  return null;
 }
 
 function handoffTitle(kind: ClusterHandoffReport["kind"]) {

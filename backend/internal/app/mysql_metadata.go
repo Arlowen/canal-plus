@@ -19,9 +19,14 @@ func runDatasourceConnectionTest(datasource Datasource) DatasourceTestResult {
 	startedAt := time.Now()
 	testedAt := now()
 	if datasource.IsDemo {
+		version := datasource.Version
+		if strings.TrimSpace(version) == "" {
+			version = "MySQL 8.0.44"
+		}
 		return DatasourceTestResult{
 			Success:   true,
 			Status:    DatasourceAvailable,
+			Version:   version,
 			LatencyMS: latencyMilliseconds(startedAt),
 			TestedAt:  testedAt,
 			Message:   "Connection available",
@@ -39,13 +44,33 @@ func runDatasourceConnectionTest(datasource Datasource) DatasourceTestResult {
 	if err := db.PingContext(ctx); err != nil {
 		return failedDatasourceTest(startedAt, testedAt, sanitizeDatasourceError(err.Error(), datasource))
 	}
+	version := ""
+	if datasource.Type == DatasourceTypeMySQL {
+		var rawVersion string
+		if err := db.QueryRowContext(ctx, "SELECT VERSION()").Scan(&rawVersion); err != nil {
+			return failedDatasourceTest(startedAt, testedAt, sanitizeDatasourceError(err.Error(), datasource))
+		}
+		version = formatDatasourceVersion(datasource.Type, rawVersion)
+	}
 	return DatasourceTestResult{
 		Success:   true,
 		Status:    DatasourceAvailable,
+		Version:   version,
 		LatencyMS: latencyMilliseconds(startedAt),
 		TestedAt:  testedAt,
 		Message:   "Connection available",
 	}
+}
+
+func formatDatasourceVersion(datasourceType DatasourceType, rawVersion string) string {
+	version := strings.TrimSpace(rawVersion)
+	if version == "" {
+		return ""
+	}
+	if datasourceType == DatasourceTypeMySQL && !strings.HasPrefix(strings.ToLower(version), "mysql ") {
+		return "MySQL " + version
+	}
+	return version
 }
 
 func failedDatasourceTest(startedAt time.Time, testedAt string, message string) DatasourceTestResult {

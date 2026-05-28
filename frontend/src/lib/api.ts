@@ -194,8 +194,11 @@ export const api = {
       body: JSON.stringify(input)
     });
   },
-  testDatasource(id: string) {
-    return request<DatasourceTestResult>(`/datasources/${id}/test`, { method: "POST" });
+  testDatasource(id: string, input: { nodeId?: string } = {}) {
+    return request<DatasourceTestResult>(`/datasources/${id}/test`, {
+      method: "POST",
+      body: JSON.stringify(input)
+    });
   },
   logs() {
     return request<OperationLog[]>("/operation-logs");
