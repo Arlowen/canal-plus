@@ -987,8 +987,7 @@ function DatasourcePage({
       setSelectedNodeByDatasource((current) => ({ ...current, [datasourceId]: selectedNodeId }));
       await onChanged(true);
       if (result.success) {
-        pushNotice({ tone: "success", message: "测试通过" });
-        setTestDialog((current) => current?.datasource.id === datasourceId ? null : current);
+        setTestDialog((current) => current?.datasource.id === datasourceId ? { ...current, result, error: null } : current);
       } else {
         setTestDialog((current) => current?.datasource.id === datasourceId ? { ...current, result, error: result.message || "测试失败" } : current);
       }
@@ -1167,7 +1166,6 @@ function DatasourcePage({
                           {testingSavedId === item.id ? "测试中" : "测试连接"}
                         </Button>
                       )}
-                      <DatasourceTestSummary datasource={item} />
                       {canManage && (
                         <ActionMenu
                           label="更多"
@@ -1456,37 +1454,34 @@ function DatasourceTestModal({
           />
         </div>
 
-        {(error || result?.success === false) && (
-          <div className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-            <XCircle className="mt-0.5 shrink-0" size={16} />
-            <span className="min-w-0 break-words">{error || result?.message || "测试失败"}</span>
-          </div>
-        )}
-
-        <div className="flex justify-start sm:pl-[100px]">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:pl-[100px]">
           <Button type="button" onClick={onTest} disabled={testDisabled} className="btn-secondary">
             {testing ? <ArrowsClockwise size={16} className="animate-spin" /> : <ShieldCheck size={16} />}
             {testing ? "测试中" : "测试连接"}
           </Button>
+          <DatasourceTestInlineResult error={error} result={result} />
         </div>
       </div>
     </Modal>
   );
 }
 
-function DatasourceTestSummary({ datasource }: { datasource: Datasource }) {
-  if (datasource.connectionStatus === "available" && datasource.version?.trim()) {
+function DatasourceTestInlineResult({ error, result }: { error: string | null; result: DatasourceTestResult | null }) {
+  if (result?.success) {
     return (
-      <span className="inline-flex min-w-0 items-center gap-1.5 text-sm text-slate-400">
-        <CheckCircle className="shrink-0 text-emerald-600" size={17} weight="fill" />
-        <span className="truncate">{datasource.version.trim()}</span>
+      <span className="inline-flex min-w-0 items-center gap-2 text-sm font-medium text-emerald-700">
+        <CheckCircle className="shrink-0" size={17} weight="fill" />
+        <span className="truncate">{result.version?.trim() || "测试通过"}</span>
       </span>
     );
   }
-  if (datasource.connectionStatus === "failed") {
+  if (error || result?.success === false) {
     return (
-      <span aria-label="测试失败" title="测试失败" className="inline-flex items-center text-red-600">
-        <XCircle size={17} weight="fill" />
+      <span className="inline-flex min-w-0 items-center gap-2 text-sm font-medium text-red-700">
+        <XCircle className="shrink-0" size={17} weight="fill" />
+        <span className="truncate" title={error || result?.message || "测试失败"}>
+          {error || result?.message || "测试失败"}
+        </span>
       </span>
     );
   }
