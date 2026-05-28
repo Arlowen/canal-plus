@@ -44,11 +44,11 @@ func newTestStore(t *testing.T) *Store {
 	return store
 }
 
-func TestSeedDataUsesSupportedDomains(t *testing.T) {
+func TestSeedDataExcludesDemoDatasources(t *testing.T) {
 	store := newTestStore(t)
 	snapshot := store.Snapshot()
-	if len(snapshot.Datasources) == 0 {
-		t.Fatal("seed data should include datasources")
+	if len(snapshot.Datasources) != 0 {
+		t.Fatal("seed data should not include demo datasources")
 	}
 	if len(snapshot.Nodes) == 0 {
 		t.Fatal("seed data should include nodes")

@@ -12,6 +12,36 @@ func newTestServer(t *testing.T) *Server {
 	return &Server{store: newTestStore(t)}
 }
 
+func createTestDatasource(t *testing.T, store *Store) Datasource {
+	t.Helper()
+	password, err := encryptText("test-password")
+	if err != nil {
+		t.Fatalf("encrypt test datasource password: %v", err)
+	}
+	datasource, err := store.CreateDatasource(Datasource{
+		Name:           "测试数据源",
+		Type:           DatasourceTypeMySQL,
+		Purpose:        DatasourcePurposeSource,
+		Host:           "127.0.0.1",
+		Port:           3306,
+		Username:       "tester",
+		PasswordSecret: password,
+		DefaultSchema:  "testdb",
+		Remark:         "测试",
+	}, DatasourceTestResult{
+		Success:   true,
+		Status:    DatasourceAvailable,
+		Version:   "MySQL 8.0.44",
+		LatencyMS: 1,
+		TestedAt:  now(),
+		Message:   "Connection available",
+	})
+	if err != nil {
+		t.Fatalf("create test datasource: %v", err)
+	}
+	return datasource
+}
+
 func authRequest(method string, path string, token string, body string) *http.Request {
 	request := httptest.NewRequest(method, path, strings.NewReader(body))
 	request.Header.Set("Authorization", "Bearer "+token)
@@ -74,7 +104,7 @@ func TestOperatorCannotMutateConfigurationOrCluster(t *testing.T) {
 func TestReadonlyCanOnlyReadDatasources(t *testing.T) {
 	server := newTestServer(t)
 	readonlyToken := tokenFor("user-readonly")
-	datasource := server.store.Datasources()[0]
+	datasource := createTestDatasource(t, server.store)
 
 	readResponse := serveTestRequest(server, authRequest(http.MethodGet, "/api/datasources", readonlyToken, ""))
 	if readResponse.Code != http.StatusOK {
@@ -218,7 +248,7 @@ func TestAdminCanCreateDatasourceWithoutAccountPassword(t *testing.T) {
 func TestDatasourceCanSwitchToNoAccountPassword(t *testing.T) {
 	server := newTestServer(t)
 	adminToken := tokenFor("user-admin")
-	datasource := server.store.Datasources()[0]
+	datasource := createTestDatasource(t, server.store)
 	previousTester := datasourceConnectionTester
 	datasourceConnectionTester = func(datasource Datasource) DatasourceTestResult {
 		return DatasourceTestResult{
@@ -261,7 +291,20 @@ func TestDatasourceCanSwitchToNoAccountPassword(t *testing.T) {
 func TestDatasourceUpdateRequiresRetestWhenConnectionChanges(t *testing.T) {
 	server := newTestServer(t)
 	adminToken := tokenFor("user-admin")
-	datasource := server.store.Datasources()[0]
+	datasource := createTestDatasource(t, server.store)
+	previousTester := datasourceConnectionTester
+	datasourceConnectionTester = func(datasource Datasource) DatasourceTestResult {
+		return DatasourceTestResult{
+			Success:   true,
+			Status:    DatasourceAvailable,
+			LatencyMS: 12,
+			TestedAt:  now(),
+			Message:   "Connection available",
+		}
+	}
+	defer func() {
+		datasourceConnectionTester = previousTester
+	}()
 
 	metadataOnlyPayload := `{"name":"仅改名称","type":"mysql","purpose":"source","host":"` + datasource.Host + `","port":3306,"username":"` + datasource.Username + `","defaultSchema":"` + datasource.DefaultSchema + `","remark":"` + datasource.Remark + `"}`
 	metadataOnlyResponse := serveTestRequest(server, authRequest(http.MethodPut, "/api/datasources/"+datasource.ID, adminToken, metadataOnlyPayload))
@@ -289,6 +332,7 @@ func TestDatasourceUpdateRequiresRetestWhenConnectionChanges(t *testing.T) {
 func TestDatasourceAPIHidesPasswordSecret(t *testing.T) {
 	server := newTestServer(t)
 	adminToken := tokenFor("user-admin")
+	createTestDatasource(t, server.store)
 
 	response := serveTestRequest(server, authRequest(http.MethodGet, "/api/datasources", adminToken, ""))
 	if response.Code != http.StatusOK {

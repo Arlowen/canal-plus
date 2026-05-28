@@ -2,17 +2,6 @@ package app
 
 func createSeedData() (DatabaseShape, error) {
 	createdAt := now()
-	orderDatasourceID := newID()
-	reportingDatasourceID := newID()
-	orderPassword, err := encryptText("demo-password")
-	if err != nil {
-		return DatabaseShape{}, err
-	}
-	reportingPassword, err := encryptText("demo-password")
-	if err != nil {
-		return DatabaseShape{}, err
-	}
-
 	nodes := defaultClusterNodes(createdAt)
 
 	return DatabaseShape{
@@ -40,58 +29,6 @@ func createSeedData() (DatabaseShape, error) {
 				Role:         RoleReadonly,
 				PasswordHash: hashPassword("readonly123"),
 				CreatedAt:    createdAt,
-			},
-		},
-		Datasources: []Datasource{
-			{
-				ID:                orderDatasourceID,
-				Name:              "生产订单库",
-				Type:              DatasourceTypeMySQL,
-				Purpose:           DatasourcePurposeSource,
-				Host:              "mysql-order.internal",
-				Port:              3306,
-				Version:           "MySQL 8.0.44",
-				Username:          "reader",
-				PasswordSecret:    orderPassword,
-				DefaultSchema:     "order_center",
-				Remark:            "订单同步源库",
-				ConnectionStatus:  DatasourceAvailable,
-				LastTestedAt:      createdAt,
-				LastTestMessage:   "Connection available",
-				LastTestLatencyMS: 8,
-				IsDemo:            true,
-				CreatedAt:         createdAt,
-				UpdatedAt:         createdAt,
-			},
-			{
-				ID:                reportingDatasourceID,
-				Name:              "报表查询库",
-				Type:              DatasourceTypeMySQL,
-				Purpose:           DatasourcePurposeTarget,
-				Host:              "mysql-reporting.internal",
-				Port:              3306,
-				Version:           "MySQL 8.0.44",
-				Username:          "writer",
-				PasswordSecret:    reportingPassword,
-				DefaultSchema:     "reporting",
-				Remark:            "报表目标库",
-				ConnectionStatus:  DatasourceAvailable,
-				LastTestedAt:      createdAt,
-				LastTestMessage:   "Connection available",
-				LastTestLatencyMS: 9,
-				IsDemo:            true,
-				CreatedAt:         createdAt,
-				UpdatedAt:         createdAt,
-			},
-		},
-		OperationLogs: []OperationLog{
-			{
-				ID:         newID(),
-				Actor:      "system",
-				Action:     "seed",
-				TargetType: "datasource",
-				Detail:     "Seeded demo datasources",
-				CreatedAt:  createdAt,
 			},
 		},
 		AlertRules: []AlertRule{
