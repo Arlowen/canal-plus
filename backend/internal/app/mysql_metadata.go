@@ -103,7 +103,7 @@ func sanitizeDatasourceError(message string, datasource Datasource) string {
 		}
 	}
 	sanitized = datasourceDSNPattern.ReplaceAllString(sanitized, "[redacted-dsn]")
-	if strings.Contains(strings.ToLower(sanitized), "password") {
+	if datasource.PasswordSecret != "" && strings.Contains(strings.ToLower(sanitized), "password") {
 		sanitized = strings.ReplaceAll(sanitized, datasource.PasswordSecret, "******")
 	}
 	if sanitized == "" {

@@ -254,10 +254,14 @@ func (s *Server) createDatasource(response http.ResponseWriter, request *http.Re
 		writeError(response, http.StatusBadRequest, "请先测试")
 		return
 	}
-	passwordSecret, err := encryptText(normalized.Password)
-	if err != nil {
-		writeError(response, http.StatusInternalServerError, err.Error())
-		return
+	passwordSecret := ""
+	if normalized.AuthType == DatasourceAuthPassword && normalized.Password != "" {
+		encrypted, err := encryptText(normalized.Password)
+		if err != nil {
+			writeError(response, http.StatusInternalServerError, err.Error())
+			return
+		}
+		passwordSecret = encrypted
 	}
 	datasource, err := s.store.CreateDatasource(Datasource{
 		Name:           normalized.Name,
@@ -305,8 +309,8 @@ func (s *Server) updateDatasource(response http.ResponseWriter, request *http.Re
 		testResult = &verified
 	}
 	passwordSecret := ""
-	passwordChanged := normalized.Password != ""
-	if passwordChanged {
+	passwordChanged := normalized.Password != "" || (normalized.AuthType == DatasourceAuthNone && existing.PasswordSecret != "")
+	if normalized.Password != "" {
 		encrypted, err := encryptText(normalized.Password)
 		if err != nil {
 			writeError(response, http.StatusInternalServerError, err.Error())
@@ -429,6 +433,7 @@ func normalizeDatasourceInput(input DatasourceInput, requirePassword bool) (Data
 	input.Name = strings.TrimSpace(input.Name)
 	input.Type = DatasourceType(strings.TrimSpace(string(input.Type)))
 	input.Purpose = DatasourcePurpose(strings.TrimSpace(string(input.Purpose)))
+	input.AuthType = DatasourceAuthType(strings.TrimSpace(string(input.AuthType)))
 	input.Host = strings.TrimSpace(input.Host)
 	input.Username = strings.TrimSpace(input.Username)
 	input.DefaultSchema = strings.TrimSpace(input.DefaultSchema)
@@ -449,10 +454,22 @@ func normalizeDatasourceInput(input DatasourceInput, requirePassword bool) (Data
 	if input.Purpose == "" {
 		input.Purpose = DatasourcePurposeGeneral
 	}
+	if input.AuthType == "" {
+		if input.Username == "" && input.Password == "" {
+			input.AuthType = DatasourceAuthNone
+		} else {
+			input.AuthType = DatasourceAuthPassword
+		}
+	}
 	switch input.Purpose {
 	case DatasourcePurposeSource, DatasourcePurposeTarget, DatasourcePurposeGeneral:
 	default:
 		return DatasourceInput{}, errors.New("用途无效")
+	}
+	switch input.AuthType {
+	case DatasourceAuthPassword, DatasourceAuthNone:
+	default:
+		return DatasourceInput{}, errors.New("认证类型无效")
 	}
 	if input.Host == "" {
 		return DatasourceInput{}, errors.New("主机必填")
@@ -460,10 +477,13 @@ func normalizeDatasourceInput(input DatasourceInput, requirePassword bool) (Data
 	if input.Port < 1 || input.Port > 65535 {
 		return DatasourceInput{}, errors.New("端口无效")
 	}
-	if input.Username == "" {
+	if input.AuthType == DatasourceAuthNone {
+		input.Username = ""
+		input.Password = ""
+	} else if input.Username == "" {
 		return DatasourceInput{}, errors.New("用户名必填")
 	}
-	if requirePassword && input.Password == "" {
+	if input.AuthType == DatasourceAuthPassword && requirePassword && input.Password == "" {
 		return DatasourceInput{}, errors.New("密码必填")
 	}
 	if len([]rune(input.Remark)) > 200 {
@@ -479,7 +499,9 @@ func datasourceFromTestInput(input DatasourceInput, existing *Datasource) (Datas
 		passwordSecret = existing.PasswordSecret
 		isDemo = existing.IsDemo
 	}
-	if input.Password != "" {
+	if input.AuthType == DatasourceAuthNone {
+		passwordSecret = ""
+	} else if input.Password != "" {
 		encrypted, err := encryptText(input.Password)
 		if err != nil {
 			return Datasource{}, err
@@ -503,6 +525,7 @@ func datasourceFromTestInput(input DatasourceInput, existing *Datasource) (Datas
 
 func datasourceConnectionChanged(existing Datasource, input DatasourceInput) bool {
 	return existing.Type != input.Type ||
+		datasourceAuthType(existing) != input.AuthType ||
 		existing.Host != input.Host ||
 		existing.Port != input.Port ||
 		existing.Username != input.Username ||
@@ -512,10 +535,14 @@ func datasourceConnectionChanged(existing Datasource, input DatasourceInput) boo
 
 func datasourceInputFingerprint(input DatasourceInput, existingPasswordSecret string) string {
 	passwordKey := "secret:" + existingPasswordSecret
+	if input.AuthType == DatasourceAuthNone {
+		passwordKey = "none"
+	}
 	if input.Password != "" {
 		passwordKey = "plain:" + input.Password
 	}
 	return checksumJSON(map[string]any{
+		"authType":      input.AuthType,
 		"type":          input.Type,
 		"host":          input.Host,
 		"port":          input.Port,
@@ -523,6 +550,13 @@ func datasourceInputFingerprint(input DatasourceInput, existingPasswordSecret st
 		"password":      passwordKey,
 		"defaultSchema": input.DefaultSchema,
 	})
+}
+
+func datasourceAuthType(datasource Datasource) DatasourceAuthType {
+	if datasource.Username == "" && datasource.PasswordSecret == "" {
+		return DatasourceAuthNone
+	}
+	return DatasourceAuthPassword
 }
 
 func (s *Server) rememberDatasourceVerification(fingerprint string, result DatasourceTestResult) {

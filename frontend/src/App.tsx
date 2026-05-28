@@ -53,6 +53,7 @@ import type {
   ClusterNodeInput,
   ClusterSnapshot,
   Datasource,
+  DatasourceAuthType,
   DatasourceInput,
   DatasourcePurpose,
   DatasourceStatus,
@@ -103,6 +104,7 @@ type DatasourceFormState = {
   name: string;
   type: "mysql";
   purpose: DatasourcePurpose;
+  authType: DatasourceAuthType;
   host: string;
   port: number;
   username: string;
@@ -122,6 +124,7 @@ const emptyDatasourceForm: DatasourceFormState = {
   name: "",
   type: "mysql" as const,
   purpose: "general" as const,
+  authType: "password" as const,
   host: "",
   port: 3306,
   username: "",
@@ -132,6 +135,11 @@ const emptyDatasourceForm: DatasourceFormState = {
 
 const datasourceTypeOptions: Array<{ value: DatasourceFormState["type"]; label: string }> = [
   { value: "mysql", label: "MySQL" }
+];
+
+const datasourceAuthOptions: Array<{ value: DatasourceAuthType; label: string }> = [
+  { value: "password", label: "用户名 & 密码" },
+  { value: "none", label: "无账号密码" }
 ];
 
 const emptyNodeForm: ClusterNodeInput = {
@@ -1257,6 +1265,7 @@ function DatasourcePage({
         testing={testingForm}
         submitting={submitting}
         saveBlockReason={saveBlockReason}
+        passwordRequired={passwordRequired}
         duplicateName={duplicateName}
         onFormChange={setForm}
         onClose={requestCloseEditor}
@@ -1376,6 +1385,10 @@ function DatasourceCreatePage({
 
   const updateForm = (nextForm: DatasourceFormState) => {
     setForm(nextForm);
+  };
+
+  const updateAuthType = (authType: DatasourceAuthType) => {
+    updateForm(authType === "none" ? { ...form, authType, username: "", password: "" } : { ...form, authType });
   };
 
   const testConnection = async () => {
@@ -1511,13 +1524,26 @@ function DatasourceCreatePage({
             </div>
 
             <div className="grid gap-4">
-              <Field label="用户名" required error={fieldErrors.username}>
-                <TextInput className="input" value={form.username} onChange={(event) => updateForm({ ...form, username: event.target.value })} />
-              </Field>
-              <Field label="密码" required error={fieldErrors.password}>
-                <TextInput className="input" type="password" value={form.password} onChange={(event) => updateForm({ ...form, password: event.target.value })} />
+              <Field label="认证类型" required>
+                <DropdownSelect
+                  value={form.authType}
+                  ariaLabel="认证类型"
+                  options={datasourceAuthOptions}
+                  onChange={(nextValue) => updateAuthType(nextValue as DatasourceAuthType)}
+                />
               </Field>
             </div>
+
+            {form.authType === "password" && (
+              <div className="grid gap-4">
+                <Field label="用户名" required error={fieldErrors.username}>
+                  <TextInput className="input" value={form.username} onChange={(event) => updateForm({ ...form, username: event.target.value })} />
+                </Field>
+                <Field label="密码" required error={fieldErrors.password}>
+                  <TextInput className="input" type="password" value={form.password} onChange={(event) => updateForm({ ...form, password: event.target.value })} />
+                </Field>
+              </div>
+            )}
 
             <Field label="备注" error={fieldErrors.remark}>
               <TextareaInput className="textarea" maxLength={200} value={form.remark} onChange={(event) => updateForm({ ...form, remark: event.target.value })} />
@@ -1572,6 +1598,7 @@ function DatasourceEditorModal({
   testing,
   submitting,
   saveBlockReason,
+  passwordRequired,
   duplicateName,
   onFormChange,
   onClose,
@@ -1585,12 +1612,17 @@ function DatasourceEditorModal({
   testing: boolean;
   submitting: boolean;
   saveBlockReason: string | null;
+  passwordRequired: boolean;
   duplicateName: boolean;
   onFormChange: (form: DatasourceFormState) => void;
   onClose: () => void;
   onTest: () => void;
   onSubmit: (event: FormEvent) => void;
 }) {
+  const updateAuthType = (authType: DatasourceAuthType) => {
+    onFormChange(authType === "none" ? { ...form, authType, username: "", password: "" } : { ...form, authType });
+  };
+
   return (
     <Modal open={open} title={mode === "edit" ? "编辑数据源" : "新增数据源"} onClose={onClose} size="lg">
       <form onSubmit={onSubmit} className="grid gap-4">
@@ -1611,19 +1643,32 @@ function DatasourceEditorModal({
         </div>
 
         <div className="grid gap-4">
-          <Field label="用户名" required>
-            <TextInput className="input" value={form.username} onChange={(event) => onFormChange({ ...form, username: event.target.value })} />
-          </Field>
-          <Field label="密码" required={mode === "create"}>
-            <TextInput
-              className="input"
-              type="password"
-              value={form.password}
-              onChange={(event) => onFormChange({ ...form, password: event.target.value })}
-              placeholder={mode === "edit" ? "留空不变" : ""}
+          <Field label="认证类型" required>
+            <DropdownSelect
+              value={form.authType}
+              ariaLabel="认证类型"
+              options={datasourceAuthOptions}
+              onChange={(nextValue) => updateAuthType(nextValue as DatasourceAuthType)}
             />
           </Field>
         </div>
+
+        {form.authType === "password" && (
+          <div className="grid gap-4">
+            <Field label="用户名" required>
+              <TextInput className="input" value={form.username} onChange={(event) => onFormChange({ ...form, username: event.target.value })} />
+            </Field>
+            <Field label="密码" required={form.authType === "password" && passwordRequired}>
+              <TextInput
+                className="input"
+                type="password"
+                value={form.password}
+                onChange={(event) => onFormChange({ ...form, password: event.target.value })}
+                placeholder={mode === "edit" ? "留空不变" : ""}
+              />
+            </Field>
+          </div>
+        )}
 
         <Field label="备注">
           <TextareaInput className="textarea" maxLength={200} value={form.remark} onChange={(event) => onFormChange({ ...form, remark: event.target.value })} />
@@ -3342,6 +3387,7 @@ function datasourceFormFromItem(item: Datasource): DatasourceFormState {
     name: item.name,
     type: item.type || "mysql",
     purpose: item.purpose || "general",
+    authType: datasourceAuthTypeFromItem(item),
     host: item.host,
     port: item.port,
     username: item.username,
@@ -3357,10 +3403,11 @@ function datasourceFormPayload(form: DatasourceFormState, id?: string): Datasour
     name: form.name.trim(),
     type: form.type,
     purpose: form.purpose,
+    authType: form.authType,
     host: form.host.trim(),
     port: Number(form.port),
-    username: form.username.trim(),
-    password: form.password,
+    username: form.authType === "password" ? form.username.trim() : "",
+    password: form.authType === "password" ? form.password : "",
     defaultSchema: "",
     remark: form.remark.trim()
   };
@@ -3369,10 +3416,11 @@ function datasourceFormPayload(form: DatasourceFormState, id?: string): Datasour
 function datasourceFormConnectionFingerprint(form: DatasourceFormState) {
   return JSON.stringify({
     type: form.type,
+    authType: form.authType,
     host: form.host.trim(),
     port: Number(form.port) || 0,
-    username: form.username.trim(),
-    password: form.password
+    username: form.authType === "password" ? form.username.trim() : "",
+    password: form.authType === "password" ? form.password : ""
   });
 }
 
@@ -3381,14 +3429,16 @@ function isDatasourceFormDirty(current: DatasourceFormState, initial: Datasource
     ...current,
     name: current.name.trim(),
     host: current.host.trim(),
-    username: current.username.trim(),
+    username: current.authType === "password" ? current.username.trim() : "",
+    password: current.authType === "password" ? current.password : "",
     remark: current.remark.trim(),
     port: Number(current.port) || 0
   }) !== JSON.stringify({
     ...initial,
     name: initial.name.trim(),
     host: initial.host.trim(),
-    username: initial.username.trim(),
+    username: initial.authType === "password" ? initial.username.trim() : "",
+    password: initial.authType === "password" ? initial.password : "",
     remark: initial.remark.trim(),
     port: Number(initial.port) || 0
   });
@@ -3407,10 +3457,10 @@ function datasourceFieldErrors(form: DatasourceFormState, passwordRequired: bool
   if (!Number.isFinite(Number(form.port)) || Number(form.port) < 1 || Number(form.port) > 65535) {
     errors.port = "端口无效";
   }
-  if (!form.username.trim()) {
+  if (form.authType === "password" && !form.username.trim()) {
     errors.username = "必填";
   }
-  if (passwordRequired && !form.password) {
+  if (form.authType === "password" && passwordRequired && !form.password) {
     errors.password = "必填";
   }
   if (form.remark.trim().length > 200) {
@@ -3433,6 +3483,11 @@ function validateDatasourceForm(form: DatasourceFormState, passwordRequired: boo
 function datasourceTypeText(type?: Datasource["type"]) {
   if (type === "mysql") return "MySQL";
   return "MySQL";
+}
+
+function datasourceAuthTypeFromItem(item: Datasource): DatasourceAuthType {
+  if (!item.username?.trim() && !item.hasPassword) return "none";
+  return "password";
 }
 
 function pageFromPathname(pathname: string): Page {

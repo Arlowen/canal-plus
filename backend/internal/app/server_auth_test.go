@@ -179,6 +179,85 @@ func TestAdminCanMutateConfiguration(t *testing.T) {
 	}
 }
 
+func TestAdminCanCreateDatasourceWithoutAccountPassword(t *testing.T) {
+	server := newTestServer(t)
+	adminToken := tokenFor("user-admin")
+	previousTester := datasourceConnectionTester
+	datasourceConnectionTester = func(datasource Datasource) DatasourceTestResult {
+		if datasource.Username != "" || datasource.PasswordSecret != "" {
+			t.Fatalf("expected empty datasource credentials, got username=%q passwordSecret=%q", datasource.Username, datasource.PasswordSecret)
+		}
+		return DatasourceTestResult{
+			Success:   true,
+			Status:    DatasourceAvailable,
+			LatencyMS: 12,
+			TestedAt:  now(),
+			Message:   "Connection available",
+		}
+	}
+	defer func() {
+		datasourceConnectionTester = previousTester
+	}()
+
+	payload := `{"name":"免密数据源","type":"mysql","purpose":"general","authType":"none","host":"127.0.0.1","port":3306}`
+
+	testResponse := serveTestRequest(server, authRequest(http.MethodPost, "/api/datasources/test", adminToken, payload))
+	if testResponse.Code != http.StatusOK {
+		t.Fatalf("test no-auth datasource status = %d body = %s", testResponse.Code, testResponse.Body.String())
+	}
+
+	response := serveTestRequest(server, authRequest(http.MethodPost, "/api/datasources", adminToken, payload))
+	if response.Code != http.StatusCreated {
+		t.Fatalf("create no-auth datasource status = %d body = %s", response.Code, response.Body.String())
+	}
+	if !strings.Contains(response.Body.String(), `"hasPassword":false`) {
+		t.Fatalf("create no-auth response should expose hasPassword false: %s", response.Body.String())
+	}
+}
+
+func TestDatasourceCanSwitchToNoAccountPassword(t *testing.T) {
+	server := newTestServer(t)
+	adminToken := tokenFor("user-admin")
+	datasource := server.store.Datasources()[0]
+	previousTester := datasourceConnectionTester
+	datasourceConnectionTester = func(datasource Datasource) DatasourceTestResult {
+		return DatasourceTestResult{
+			Success:   true,
+			Status:    DatasourceAvailable,
+			LatencyMS: 12,
+			TestedAt:  now(),
+			Message:   "Connection available",
+		}
+	}
+	defer func() {
+		datasourceConnectionTester = previousTester
+	}()
+
+	payload := `{"id":"` + datasource.ID + `","name":"` + datasource.Name + `","type":"mysql","purpose":"general","authType":"none","host":"` + datasource.Host + `","port":` + intToString(datasource.Port) + `}`
+
+	untestedResponse := serveTestRequest(server, authRequest(http.MethodPut, "/api/datasources/"+datasource.ID, adminToken, payload))
+	if untestedResponse.Code != http.StatusBadRequest {
+		t.Fatalf("switch to no-auth without test status = %d body = %s", untestedResponse.Code, untestedResponse.Body.String())
+	}
+
+	testResponse := serveTestRequest(server, authRequest(http.MethodPost, "/api/datasources/test", adminToken, payload))
+	if testResponse.Code != http.StatusOK {
+		t.Fatalf("test no-auth update status = %d body = %s", testResponse.Code, testResponse.Body.String())
+	}
+
+	updateResponse := serveTestRequest(server, authRequest(http.MethodPut, "/api/datasources/"+datasource.ID, adminToken, payload))
+	if updateResponse.Code != http.StatusOK {
+		t.Fatalf("switch to no-auth status = %d body = %s", updateResponse.Code, updateResponse.Body.String())
+	}
+	updated, ok := server.store.GetDatasource(datasource.ID)
+	if !ok {
+		t.Fatal("updated datasource missing")
+	}
+	if updated.Username != "" || updated.PasswordSecret != "" {
+		t.Fatalf("expected credentials to be cleared, got username=%q passwordSecret=%q", updated.Username, updated.PasswordSecret)
+	}
+}
+
 func TestDatasourceUpdateRequiresRetestWhenConnectionChanges(t *testing.T) {
 	server := newTestServer(t)
 	adminToken := tokenFor("user-admin")

@@ -1,6 +1,9 @@
 package app
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 type testStorePersistence struct {
 	data  DatabaseShape
@@ -49,5 +52,12 @@ func TestSeedDataUsesSupportedDomains(t *testing.T) {
 	}
 	if len(snapshot.Nodes) == 0 {
 		t.Fatal("seed data should include nodes")
+	}
+}
+
+func TestSanitizeDatasourceErrorHandlesEmptyPasswordSecret(t *testing.T) {
+	message := sanitizeDatasourceError("Error 1045: Access denied for user '' (using password: NO)", Datasource{})
+	if strings.Contains(message, "******E******") {
+		t.Fatalf("empty password secret should not be replaced between characters: %s", message)
 	}
 }

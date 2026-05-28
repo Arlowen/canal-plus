@@ -2,6 +2,7 @@ export type Role = "admin" | "operator" | "readonly";
 export type DatasourceStatus = "untested" | "available" | "failed" | "stale";
 export type DatasourceType = "mysql";
 export type DatasourcePurpose = "source" | "target" | "general";
+export type DatasourceAuthType = "password" | "none";
 
 export interface User {
   id: string;
@@ -36,6 +37,7 @@ export interface DatasourceInput {
   name: string;
   type: DatasourceType;
   purpose?: DatasourcePurpose;
+  authType?: DatasourceAuthType;
   host: string;
   port: number;
   username: string;

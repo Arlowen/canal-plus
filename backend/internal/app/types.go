@@ -31,6 +31,13 @@ const (
 	DatasourcePurposeGeneral DatasourcePurpose = "general"
 )
 
+type DatasourceAuthType string
+
+const (
+	DatasourceAuthPassword DatasourceAuthType = "password"
+	DatasourceAuthNone     DatasourceAuthType = "none"
+)
+
 type User struct {
 	ID           string `json:"id"`
 	Name         string `json:"name"`
@@ -90,16 +97,17 @@ type PublicDatasource struct {
 }
 
 type DatasourceInput struct {
-	ID            string            `json:"id,omitempty"`
-	Name          string            `json:"name"`
-	Type          DatasourceType    `json:"type"`
-	Purpose       DatasourcePurpose `json:"purpose,omitempty"`
-	Host          string            `json:"host"`
-	Port          int               `json:"port"`
-	Username      string            `json:"username"`
-	Password      string            `json:"password,omitempty"`
-	DefaultSchema string            `json:"defaultSchema,omitempty"`
-	Remark        string            `json:"remark,omitempty"`
+	ID            string             `json:"id,omitempty"`
+	Name          string             `json:"name"`
+	Type          DatasourceType     `json:"type"`
+	Purpose       DatasourcePurpose  `json:"purpose,omitempty"`
+	AuthType      DatasourceAuthType `json:"authType,omitempty"`
+	Host          string             `json:"host"`
+	Port          int                `json:"port"`
+	Username      string             `json:"username"`
+	Password      string             `json:"password,omitempty"`
+	DefaultSchema string             `json:"defaultSchema,omitempty"`
+	Remark        string             `json:"remark,omitempty"`
 }
 
 type DatasourceTestResult struct {
