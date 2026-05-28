@@ -29,7 +29,7 @@ import {
   XCircle
 } from "@phosphor-icons/react";
 import { PermissionNotice } from "./components/PermissionNotice";
-import { Button, CheckboxInput, SelectInput, TextareaInput, TextInput } from "./components/ui";
+import { Button, CheckboxInput, DropdownSelect, TextareaInput, TextInput } from "./components/ui";
 import {
   api,
   checkBackendHealth,
@@ -989,30 +989,32 @@ function DatasourcePage({
           <div className="grid gap-3 sm:grid-cols-[170px_170px_auto] sm:items-end">
             <label className="block">
               <span className="label mb-2 block">类型</span>
-              <SelectInput
-                className="select"
+              <DropdownSelect
                 value={draftTypeFilter}
                 disabled={tableBusy}
-                onChange={(event) => setDraftTypeFilter(event.target.value as "all" | "mysql")}
-              >
-                <option value="all">全部</option>
-                <option value="mysql">MySQL</option>
-              </SelectInput>
+                ariaLabel="类型"
+                options={[
+                  { value: "all", label: "全部" },
+                  { value: "mysql", label: "MySQL" }
+                ]}
+                onChange={(nextValue) => setDraftTypeFilter(nextValue as "all" | "mysql")}
+              />
             </label>
             <label className="block">
               <span className="label mb-2 block">状态</span>
-              <SelectInput
-                className="select"
+              <DropdownSelect
                 value={draftStatusFilter}
                 disabled={tableBusy}
-                onChange={(event) => setDraftStatusFilter(event.target.value as "all" | DatasourceStatus)}
-              >
-                <option value="all">全部</option>
-                <option value="untested">未测</option>
-                <option value="available">可用</option>
-                <option value="failed">失败</option>
-                <option value="stale">过期</option>
-              </SelectInput>
+                ariaLabel="状态"
+                options={[
+                  { value: "all", label: "全部" },
+                  { value: "untested", label: "未测" },
+                  { value: "available", label: "可用" },
+                  { value: "failed", label: "失败" },
+                  { value: "stale", label: "过期" }
+                ]}
+                onChange={(nextValue) => setDraftStatusFilter(nextValue as "all" | DatasourceStatus)}
+              />
             </label>
             <Button type="button" onClick={() => void runQuery()} disabled={tableBusy} className="btn-primary">
               {querying ? <ArrowsClockwise size={16} /> : <MagnifyingGlass size={16} />}
@@ -1166,18 +1168,20 @@ function DatasourcePage({
               下一页
               <ArrowRight size={14} />
             </Button>
-            <SelectInput
-              className="select h-9 w-28 py-1.5 text-sm"
-              value={pageSize}
-              onChange={(event) => {
-                setPageSize(Number(event.target.value));
+            <DropdownSelect
+              className="min-h-9 w-28 py-1.5 text-sm"
+              value={String(pageSize)}
+              ariaLabel="每页条数"
+              options={[
+                { value: "10", label: "10 条/页" },
+                { value: "20", label: "20 条/页" },
+                { value: "50", label: "50 条/页" }
+              ]}
+              onChange={(nextValue) => {
+                setPageSize(Number(nextValue));
                 setPageIndex(1);
               }}
-            >
-              <option value={10}>10 条/页</option>
-              <option value={20}>20 条/页</option>
-              <option value={50}>50 条/页</option>
-            </SelectInput>
+            />
             <span className="flex items-center gap-2">
               <TextInput
                 className="input h-9 w-16 px-2 py-1.5 text-center font-mono text-sm"
@@ -1274,9 +1278,12 @@ function DatasourceEditorModal({
             {duplicateName && <div className="mt-2 text-xs text-amber-600">同名</div>}
           </Field>
           <Field label="类型">
-            <SelectInput className="select" value={form.type} onChange={(event) => onFormChange({ ...form, type: event.target.value as "mysql" })}>
-              <option value="mysql">MySQL</option>
-            </SelectInput>
+            <DropdownSelect
+              value={form.type}
+              ariaLabel="类型"
+              options={[{ value: "mysql", label: "MySQL" }]}
+              onChange={(nextValue) => onFormChange({ ...form, type: nextValue as "mysql" })}
+            />
           </Field>
         </div>
 
@@ -1288,11 +1295,16 @@ function DatasourceEditorModal({
             <TextInput className="input" type="number" min={1} max={65535} value={form.port} onChange={(event) => onFormChange({ ...form, port: Number(event.target.value) })} />
           </Field>
           <Field label="用途">
-            <SelectInput className="select" value={form.purpose} onChange={(event) => onFormChange({ ...form, purpose: event.target.value as DatasourcePurpose })}>
-              <option value="source">源库</option>
-              <option value="target">目标库</option>
-              <option value="general">通用</option>
-            </SelectInput>
+            <DropdownSelect
+              value={form.purpose}
+              ariaLabel="用途"
+              options={[
+                { value: "source", label: "源库" },
+                { value: "target", label: "目标库" },
+                { value: "general", label: "通用" }
+              ]}
+              onChange={(nextValue) => onFormChange({ ...form, purpose: nextValue as DatasourcePurpose })}
+            />
           </Field>
         </div>
 
@@ -1507,11 +1519,16 @@ function NodesPage({
             </span>
           </label>
           <Field label="状态">
-            <SelectInput className="select" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as "all" | ClusterNode["status"])}>
-              <option value="all">全部</option>
-              <option value="online">在线</option>
-              <option value="offline">离线</option>
-            </SelectInput>
+            <DropdownSelect
+              value={statusFilter}
+              ariaLabel="状态"
+              options={[
+                { value: "all", label: "全部" },
+                { value: "online", label: "在线" },
+                { value: "offline", label: "离线" }
+              ]}
+              onChange={(nextValue) => setStatusFilter(nextValue as "all" | ClusterNode["status"])}
+            />
           </Field>
         </div>
 
@@ -2177,10 +2194,15 @@ function NodeCreatorModal({
         </div>
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="认证方式">
-            <SelectInput className="select" value={form.authMode || "password"} onChange={(event) => setForm({ ...form, authMode: event.target.value as "password" | "private_key" })}>
-              <option value="password">密码</option>
-              <option value="private_key">私钥</option>
-            </SelectInput>
+            <DropdownSelect
+              value={form.authMode || "password"}
+              ariaLabel="认证方式"
+              options={[
+                { value: "password", label: "密码" },
+                { value: "private_key", label: "私钥" }
+              ]}
+              onChange={(nextValue) => setForm({ ...form, authMode: nextValue as "password" | "private_key" })}
+            />
           </Field>
           <Field label="安装目录">
             <TextInput className="input" value={form.installDir || ""} onChange={(event) => setForm({ ...form, installDir: event.target.value })} />
@@ -2197,10 +2219,15 @@ function NodeCreatorModal({
         )}
         <div className="grid gap-4 sm:grid-cols-3">
           <Field label="节点角色">
-            <SelectInput className="select" value={form.role || "worker"} onChange={(event) => setForm({ ...form, role: event.target.value })}>
-              <option value="worker">worker</option>
-              <option value="scheduler+worker">scheduler+worker</option>
-            </SelectInput>
+            <DropdownSelect
+              value={form.role || "worker"}
+              ariaLabel="节点角色"
+              options={[
+                { value: "worker", label: "worker" },
+                { value: "scheduler+worker", label: "scheduler+worker" }
+              ]}
+              onChange={(nextValue) => setForm({ ...form, role: nextValue })}
+            />
           </Field>
           <Field label="容量">
             <TextInput className="input" type="number" value={form.capacity || 4} onChange={(event) => setForm({ ...form, capacity: Number(event.target.value) })} />

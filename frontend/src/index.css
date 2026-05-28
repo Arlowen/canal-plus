@@ -66,10 +66,6 @@ textarea {
     @apply input min-h-[108px] resize-y;
   }
 
-  .select {
-    @apply input appearance-none;
-  }
-
   .btn {
     @apply inline-flex items-center justify-center gap-2 rounded-lg border px-4 py-2.5 text-sm font-medium transition duration-200 active:translate-y-px disabled:cursor-not-allowed disabled:opacity-45;
   }
