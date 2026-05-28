@@ -775,7 +775,6 @@ function DatasourcePage({
   const [submitting, setSubmitting] = useState(false);
   const [testingForm, setTestingForm] = useState(false);
   const [testingSavedId, setTestingSavedId] = useState<string | null>(null);
-  const [formError, setFormError] = useState<string | null>(null);
   const [confirmation, setConfirmation] = useState<ConfirmationDialogState | null>(null);
   const [testDialog, setTestDialog] = useState<DatasourceTestDialogState | null>(null);
   const [selectedNodeByDatasource, setSelectedNodeByDatasource] = useState<Record<string, string>>({});
@@ -795,7 +794,6 @@ function DatasourcePage({
     setInitialConnectionFingerprint(datasourceFormConnectionFingerprint(nextForm));
     setTestedFingerprint(null);
     setFormTestResult(null);
-    setFormError(null);
     setEditorOpen(true);
   }, []);
 
@@ -884,7 +882,6 @@ function DatasourcePage({
     setInitialConnectionFingerprint(datasourceFormConnectionFingerprint(nextForm));
     setTestedFingerprint(null);
     setFormTestResult(null);
-    setFormError(null);
     setEditorOpen(true);
   };
 
@@ -907,13 +904,11 @@ function DatasourcePage({
   const testFormConnection = async () => {
     const error = validateDatasourceForm(form, passwordRequired);
     if (error) {
-      setFormError(error);
       pushNotice({ tone: "warning", message: error });
       return;
     }
     const fingerprint = datasourceFormConnectionFingerprint(form);
     setTestingForm(true);
-    setFormError(null);
     try {
       const result = await api.testDatasourceInput(datasourceFormPayload(form, editingId ?? undefined));
       setTestedFingerprint(fingerprint);
@@ -921,7 +916,6 @@ function DatasourcePage({
       pushNotice({ tone: result.success ? "success" : "error", message: result.success ? "测试通过" : "测试失败" });
     } catch (requestError) {
       const message = requestError instanceof Error ? requestError.message : "连接失败";
-      setFormError(message);
       pushNotice({ tone: "error", message });
     } finally {
       setTestingForm(false);
@@ -935,12 +929,10 @@ function DatasourcePage({
       return;
     }
     if (saveBlockReason) {
-      setFormError(saveBlockReason);
       pushNotice({ tone: "warning", message: saveBlockReason });
       return;
     }
     setSubmitting(true);
-    setFormError(null);
     try {
       const payload = datasourceFormPayload(form, editingId ?? undefined);
       const savedDatasource = editingId ? await api.updateDatasource(editingId, payload) : await api.createDatasource(payload);
@@ -956,7 +948,6 @@ function DatasourcePage({
       await onChanged();
     } catch (requestError) {
       const message = requestError instanceof Error ? requestError.message : "保存失败";
-      setFormError(message);
       pushNotice({ tone: "error", message });
     } finally {
       setSubmitting(false);
@@ -1233,12 +1224,8 @@ function DatasourcePage({
         testing={testingForm}
         submitting={submitting}
         saveBlockReason={saveBlockReason}
-        formError={formError}
         duplicateName={duplicateName}
-        onFormChange={(nextForm) => {
-          setForm(nextForm);
-          setFormError(null);
-        }}
+        onFormChange={setForm}
         onClose={requestCloseEditor}
         onTest={() => void testFormConnection()}
         onSubmit={saveDatasource}
@@ -1286,7 +1273,6 @@ function DatasourceEditorModal({
   testing,
   submitting,
   saveBlockReason,
-  formError,
   duplicateName,
   onFormChange,
   onClose,
@@ -1301,7 +1287,6 @@ function DatasourceEditorModal({
   testing: boolean;
   submitting: boolean;
   saveBlockReason: string | null;
-  formError: string | null;
   duplicateName: boolean;
   onFormChange: (form: DatasourceFormState) => void;
   onClose: () => void;
@@ -1377,12 +1362,6 @@ function DatasourceEditorModal({
             </Button>
           </div>
         </div>
-
-        {(formError || saveBlockReason) && (
-          <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
-            {formError || saveBlockReason}
-          </div>
-        )}
 
         <div className="flex justify-end gap-3 pt-2">
           <Button type="button" onClick={onClose} className="btn-secondary">
