@@ -32,6 +32,7 @@ import {
 } from "@phosphor-icons/react";
 import { PermissionNotice } from "./components/PermissionNotice";
 import { Button, CheckboxInput, DropdownSelect, TextareaInput, TextInput } from "./components/ui";
+import mysqlLogoUrl from "./assets/mysql-logo.svg";
 import {
   api,
   checkBackendHealth,
@@ -2432,46 +2433,8 @@ function DatasourceTypeIcon({ type }: { type?: Datasource["type"] }) {
       title={label}
       className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-cyan-100 bg-cyan-50 text-cyan-700"
     >
-      {type === "mysql" || !type ? <MysqlIcon /> : <Database size={18} />}
+      {type === "mysql" || !type ? <img src={mysqlLogoUrl} alt="" className="h-8 w-8 object-contain" draggable={false} /> : <Database size={18} />}
     </span>
-  );
-}
-
-function MysqlIcon() {
-  return (
-    <svg viewBox="0 0 36 36" className="h-7 w-7" aria-hidden="true">
-      <rect x="5" y="5" width="26" height="26" rx="7" fill="#ffffff" />
-      <path
-        d="M8.2 24.2c2.7-1.4 5.5-2 8.2-1.7 2.9.3 5 1.3 7 3 1.3 1.1 2.6 1.4 3.8.9 1-.4 1.7-1.2 2.1-2.3.2 2.5-.9 4.1-3 4.8-2.1.7-4.9-.1-7.6-2.1-1.8-1.3-3.8-1.8-6-1.6-1.5.1-3 .5-4.5 1.1v-2.1Z"
-        fill="#00758f"
-      />
-      <path
-        d="M25.2 7.9c1.6 1.5 2.3 3.1 2.1 4.9-.1 1.3-.8 2.5-2.1 3.5.2-1.2-.2-2.3-1-3.1-.8-.8-1.9-1.2-3.4-1.3 1.3-1.5 2.8-2.8 4.4-4Z"
-        fill="#f29111"
-      />
-      <text
-        x="18"
-        y="20.2"
-        textAnchor="middle"
-        fontFamily="Geist, Satoshi, Avenir Next, sans-serif"
-        fontSize="11"
-        fontWeight="800"
-        fill="#1d2430"
-      >
-        My
-      </text>
-      <text
-        x="18"
-        y="25.7"
-        textAnchor="middle"
-        fontFamily="Geist, Satoshi, Avenir Next, sans-serif"
-        fontSize="4.8"
-        fontWeight="800"
-        fill="#00758f"
-      >
-        SQL
-      </text>
-    </svg>
   );
 }
 
