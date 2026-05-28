@@ -579,17 +579,9 @@ function App() {
         <div className="grid gap-4 lg:grid-cols-[260px_minmax(0,1fr)]">
           <aside className="surface flex h-fit flex-col p-3 lg:sticky lg:top-3 lg:min-h-[calc(100dvh-1.5rem)]">
             <div className="border-b border-line/80 px-2 pb-4">
-              <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-coal text-sm font-semibold text-white">
-                  CP
-                </div>
-                <div>
-                  <div className="brand-wordmark" aria-label="Canal Plus">
-                    <span>Canal</span>
-                    <span>Plus</span>
-                  </div>
-                  <div className="mt-1 text-xs font-medium text-slate-500">Control Plane</div>
-                </div>
+              <div className="brand-wordmark" aria-label="Canal Plus">
+                <span>Canal</span>
+                <span>Plus</span>
               </div>
             </div>
 
@@ -642,8 +634,7 @@ function App() {
           <main className="min-w-0">
             <div className="surface mb-4 flex flex-col gap-5 p-5 md:p-6 xl:flex-row xl:items-start xl:justify-between">
               <div>
-                <div className="label">Console</div>
-                <h1 className="mt-2 text-3xl font-semibold tracking-tight text-coal md:text-4xl">
+                <h1 className="text-3xl font-semibold tracking-tight text-coal md:text-4xl">
                   {pageTitle(page)}
                 </h1>
                 {pageDescription(page) && (
@@ -1989,17 +1980,9 @@ function LoginScreen({ onLogin }: { onLogin: (username: string, password: string
 
         <form onSubmit={submit} className="pointer-events-auto order-1 flex items-center lg:order-2 lg:min-h-[640px]">
           <div className="surface mx-auto w-full max-w-[410px] p-6 md:p-8">
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-coal text-sm font-semibold text-white">
-                CP
-              </div>
-              <div>
-                <div className="brand-wordmark" aria-label="Canal Plus">
-                  <span>Canal</span>
-                  <span>Plus</span>
-                </div>
-                <div className="mt-1 text-xs font-medium text-slate-500">Control Plane</div>
-              </div>
+            <div className="brand-wordmark" aria-label="Canal Plus">
+              <span>Canal</span>
+              <span>Plus</span>
             </div>
             <h2
               style={{ fontFamily: "var(--font-display)" }}
