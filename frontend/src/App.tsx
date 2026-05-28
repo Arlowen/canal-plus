@@ -2745,11 +2745,11 @@ function DetailCard({ label, value, mono }: { label: string; value: string; mono
 function Field({ label, required, error, children }: { label: string; required?: boolean; error?: string; children: ReactNode }) {
   return (
     <label className="block">
-      <span className="label mb-2 block">
+      <span className="label mb-2 flex items-center gap-1.5">
         {required && <span className="mr-1 text-red-500">*</span>}
-        {label}
+        <span>{label}</span>
+        {error && <span className="text-xs font-medium text-red-600">{error}</span>}
       </span>
-      {error && <span className="mb-2 block text-xs font-medium text-red-600">{error}</span>}
       {children}
     </label>
   );
