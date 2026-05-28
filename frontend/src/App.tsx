@@ -849,7 +849,6 @@ function DatasourcePage({
   const currentFingerprint = datasourceFormConnectionFingerprint(form);
   const connectionChanged = editingId ? currentFingerprint !== initialConnectionFingerprint : true;
   const freshTestResult = testedFingerprint === currentFingerprint ? formTestResult : null;
-  const editorStatus = freshTestResult?.status ?? (editingId ? (connectionChanged ? "stale" : editingDatasource?.connectionStatus ?? "untested") : "untested");
   const passwordRequired = !editingId || !editingDatasource?.hasPassword;
   const validationError = validateDatasourceForm(form, passwordRequired);
   const needsFreshTest = !editingId || connectionChanged;
@@ -1252,7 +1251,6 @@ function DatasourcePage({
         open={editorOpen}
         mode={editingId ? "edit" : "create"}
         form={form}
-        status={editorStatus}
         testResult={freshTestResult ?? formTestResult}
         testing={testingForm}
         submitting={submitting}
@@ -1323,7 +1321,6 @@ function DatasourceCreatePage({
   const currentFingerprint = selectedType ? datasourceFormConnectionFingerprint(form) : "";
   const freshTestResult = selectedType && testedFingerprint === currentFingerprint ? testResult : null;
   const displayedTestResult = freshTestResult ?? testResult;
-  const testStatus = freshTestResult?.status ?? (testResult ? "stale" : "untested");
   const validationError = selectedType ? validateDatasourceForm(form, true) : "请选择类型";
   const duplicateName = selectedType ? datasources.some((item) => item.name.trim() === form.name.trim() && form.name.trim() !== "") : false;
   const dirty = selectedType ? isDatasourceFormDirty(form, emptyDatasourceFormForType(selectedType)) || Boolean(testResult) : false;
@@ -1480,7 +1477,6 @@ function DatasourceCreatePage({
                   </span>
                   <span className="min-w-0">
                     <span className="block text-base font-semibold text-coal">{option.label}</span>
-                    <span className="mt-1 block text-xs text-slate-500">{selected ? "已选择" : "选择"}</span>
                   </span>
                 </Button>
               );
@@ -1498,62 +1494,45 @@ function DatasourceCreatePage({
           </div>
 
           <div className="mt-5 grid gap-4">
-            <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_180px]">
-              <Field label="名称">
+            <div className="grid gap-4">
+              <Field label="名称" required>
                 <TextInput className="input" value={form.name} maxLength={50} onChange={(event) => updateForm({ ...form, name: event.target.value })} />
                 {duplicateName && <div className="mt-2 text-xs text-amber-600">同名</div>}
-              </Field>
-              <Field label="类型">
-                <div className="flex min-h-[46px] items-center rounded-lg border border-line bg-slate-50 px-3.5 py-2.5 text-sm font-medium text-coal">
-                  {datasourceTypeText(form.type)}
-                </div>
               </Field>
             </div>
 
             <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_150px]">
-              <Field label="主机">
+              <Field label="主机" required>
                 <TextInput className="input" value={form.host} onChange={(event) => updateForm({ ...form, host: event.target.value })} />
               </Field>
-              <Field label="端口">
+              <Field label="端口" required>
                 <TextInput className="input" type="number" min={1} max={65535} value={form.port} onChange={(event) => updateForm({ ...form, port: Number(event.target.value) })} />
               </Field>
             </div>
 
             <div className="grid gap-4 md:grid-cols-2">
-              <Field label="用户名">
+              <Field label="用户名" required>
                 <TextInput className="input" value={form.username} onChange={(event) => updateForm({ ...form, username: event.target.value })} />
               </Field>
-              <Field label="密码">
+              <Field label="密码" required>
                 <TextInput className="input" type="password" value={form.password} onChange={(event) => updateForm({ ...form, password: event.target.value })} />
               </Field>
             </div>
-
-            <Field label="默认库">
-              <TextInput className="input" value={form.defaultSchema} onChange={(event) => updateForm({ ...form, defaultSchema: event.target.value })} />
-            </Field>
 
             <Field label="备注">
               <TextareaInput className="textarea" maxLength={200} value={form.remark} onChange={(event) => updateForm({ ...form, remark: event.target.value })} />
             </Field>
 
             <div className="rounded-lg border border-line bg-slate-50/70 px-4 py-4">
-              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                <div className="min-w-0">
-                  <div className="label">测试</div>
-                  <div className="mt-2 flex flex-wrap items-center gap-2">
-                    <Badge tone={datasourceStatusTone(testStatus)}>{freshTestResult?.success ? "已连接" : datasourceStatusText(testStatus)}</Badge>
-                    {displayedTestResult?.testedAt && <span className="text-sm text-slate-500">{formatDateTime(displayedTestResult.testedAt)}</span>}
-                    {displayedTestResult?.latencyMs ? <span className="font-mono text-sm text-slate-500">{displayedTestResult.latencyMs}ms</span> : null}
-                    <DatasourceTestInlineResult
-                      error={displayedTestResult?.success === false ? displayedTestResult.message || "连接失败" : null}
-                      result={displayedTestResult}
-                    />
-                  </div>
-                </div>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
                 <Button type="button" onClick={() => void testConnection()} disabled={testing} className="btn-secondary">
                   {testing ? <ArrowsClockwise size={16} className="animate-spin" /> : <ShieldCheck size={16} />}
                   {testing ? "测试中" : "测试连接"}
                 </Button>
+                <DatasourceTestInlineResult
+                  error={displayedTestResult?.success === false ? displayedTestResult.message || "连接失败" : null}
+                  result={displayedTestResult}
+                />
               </div>
             </div>
           </div>
@@ -1601,7 +1580,6 @@ function DatasourceEditorModal({
   open,
   mode,
   form,
-  status,
   testResult,
   testing,
   submitting,
@@ -1615,7 +1593,6 @@ function DatasourceEditorModal({
   open: boolean;
   mode: "create" | "edit";
   form: DatasourceFormState;
-  status: DatasourceStatus;
   testResult: DatasourceTestResult | null;
   testing: boolean;
   submitting: boolean;
@@ -1629,35 +1606,27 @@ function DatasourceEditorModal({
   return (
     <Modal open={open} title={mode === "edit" ? "编辑数据源" : "新增数据源"} onClose={onClose} size="lg">
       <form onSubmit={onSubmit} className="grid gap-4">
-        <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_160px]">
-          <Field label="名称">
+        <div className="grid gap-4">
+          <Field label="名称" required>
             <TextInput className="input" value={form.name} maxLength={50} onChange={(event) => onFormChange({ ...form, name: event.target.value })} />
             {duplicateName && <div className="mt-2 text-xs text-amber-600">同名</div>}
-          </Field>
-          <Field label="类型">
-            <DropdownSelect
-              value={form.type}
-              ariaLabel="类型"
-              options={[{ value: "mysql", label: "MySQL" }]}
-              onChange={(nextValue) => onFormChange({ ...form, type: nextValue as "mysql" })}
-            />
           </Field>
         </div>
 
         <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_150px]">
-          <Field label="主机">
+          <Field label="主机" required>
             <TextInput className="input" value={form.host} onChange={(event) => onFormChange({ ...form, host: event.target.value })} />
           </Field>
-          <Field label="端口">
+          <Field label="端口" required>
             <TextInput className="input" type="number" min={1} max={65535} value={form.port} onChange={(event) => onFormChange({ ...form, port: Number(event.target.value) })} />
           </Field>
         </div>
 
         <div className="grid gap-4 md:grid-cols-2">
-          <Field label="用户名">
+          <Field label="用户名" required>
             <TextInput className="input" value={form.username} onChange={(event) => onFormChange({ ...form, username: event.target.value })} />
           </Field>
-          <Field label="密码">
+          <Field label="密码" required={mode === "create"}>
             <TextInput
               className="input"
               type="password"
@@ -1668,31 +1637,20 @@ function DatasourceEditorModal({
           </Field>
         </div>
 
-        <Field label="默认库">
-          <TextInput className="input" value={form.defaultSchema} onChange={(event) => onFormChange({ ...form, defaultSchema: event.target.value })} />
-        </Field>
-
         <Field label="备注">
           <TextareaInput className="textarea" maxLength={200} value={form.remark} onChange={(event) => onFormChange({ ...form, remark: event.target.value })} />
         </Field>
 
         <div className="rounded-lg border border-line bg-slate-50/70 px-4 py-4">
-          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-            <div>
-              <div className="label">测试</div>
-              <div className="mt-2 flex flex-wrap items-center gap-2">
-                <Badge tone={datasourceStatusTone(status)}>{datasourceStatusText(status)}</Badge>
-                {testResult?.testedAt && <span className="text-sm text-slate-500">{formatDateTime(testResult.testedAt)}</span>}
-                {testResult?.latencyMs ? <span className="font-mono text-sm text-slate-500">{testResult.latencyMs}ms</span> : null}
-              </div>
-              {testResult?.message && (
-                <div className={cx("mt-3 text-sm", testResult.success ? "text-emerald-700" : "text-red-700")}>{testResult.message}</div>
-              )}
-            </div>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
             <Button type="button" onClick={onTest} disabled={testing} className="btn-secondary">
-              {testing ? <ArrowsClockwise size={16} /> : <ShieldCheck size={16} />}
-              {testing ? "测试中" : testResult?.success === false ? "重试" : "测试"}
+              {testing ? <ArrowsClockwise size={16} className="animate-spin" /> : <ShieldCheck size={16} />}
+              {testing ? "测试中" : "测试连接"}
             </Button>
+            <DatasourceTestInlineResult
+              error={testResult?.success === false ? testResult.message || "连接失败" : null}
+              result={testResult}
+            />
           </div>
         </div>
 
@@ -2750,10 +2708,13 @@ function DetailCard({ label, value, mono }: { label: string; value: string; mono
   );
 }
 
-function Field({ label, children }: { label: string; children: ReactNode }) {
+function Field({ label, required, children }: { label: string; required?: boolean; children: ReactNode }) {
   return (
     <label className="block">
-      <span className="label mb-2 block">{label}</span>
+      <span className="label mb-2 block">
+        {required && <span className="mr-1 text-red-500">*</span>}
+        {label}
+      </span>
       {children}
     </label>
   );
@@ -3378,7 +3339,7 @@ function clampPage(page: number, totalPages: number) {
 }
 
 function datasourceDescription(item: Datasource) {
-  return item.remark?.trim() || item.defaultSchema?.trim() || `${item.host}:${item.port}` || "No description";
+  return item.remark?.trim() || `${item.host}:${item.port}` || "No description";
 }
 
 function emptyDatasourceFormForType(type: DatasourceFormState["type"]): DatasourceFormState {
@@ -3398,7 +3359,7 @@ function datasourceFormFromItem(item: Datasource): DatasourceFormState {
     port: item.port,
     username: item.username,
     password: "",
-    defaultSchema: item.defaultSchema || "",
+    defaultSchema: "",
     remark: item.remark || ""
   };
 }
@@ -3413,7 +3374,7 @@ function datasourceFormPayload(form: DatasourceFormState, id?: string): Datasour
     port: Number(form.port),
     username: form.username.trim(),
     password: form.password,
-    defaultSchema: form.defaultSchema.trim(),
+    defaultSchema: "",
     remark: form.remark.trim()
   };
 }
@@ -3424,8 +3385,7 @@ function datasourceFormConnectionFingerprint(form: DatasourceFormState) {
     host: form.host.trim(),
     port: Number(form.port) || 0,
     username: form.username.trim(),
-    password: form.password,
-    defaultSchema: form.defaultSchema.trim()
+    password: form.password
   });
 }
 
@@ -3435,7 +3395,6 @@ function isDatasourceFormDirty(current: DatasourceFormState, initial: Datasource
     name: current.name.trim(),
     host: current.host.trim(),
     username: current.username.trim(),
-    defaultSchema: current.defaultSchema.trim(),
     remark: current.remark.trim(),
     port: Number(current.port) || 0
   }) !== JSON.stringify({
@@ -3443,7 +3402,6 @@ function isDatasourceFormDirty(current: DatasourceFormState, initial: Datasource
     name: initial.name.trim(),
     host: initial.host.trim(),
     username: initial.username.trim(),
-    defaultSchema: initial.defaultSchema.trim(),
     remark: initial.remark.trim(),
     port: Number(initial.port) || 0
   });
@@ -3458,20 +3416,6 @@ function validateDatasourceForm(form: DatasourceFormState, passwordRequired: boo
   if (passwordRequired && !form.password) return "密码必填";
   if (form.remark.trim().length > 200) return "备注最多 200 字符";
   return null;
-}
-
-function datasourceStatusText(status: DatasourceStatus) {
-  if (status === "available") return "可用";
-  if (status === "failed") return "失败";
-  if (status === "stale") return "过期";
-  return "未测";
-}
-
-function datasourceStatusTone(status: DatasourceStatus): "blue" | "green" | "yellow" | "red" | "neutral" {
-  if (status === "available") return "green";
-  if (status === "failed") return "red";
-  if (status === "stale") return "yellow";
-  return "neutral";
 }
 
 function datasourceTypeText(type?: Datasource["type"]) {
