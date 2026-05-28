@@ -1324,24 +1324,12 @@ function DatasourceEditorModal({
           </Field>
         </div>
 
-        <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_150px_150px]">
+        <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_150px]">
           <Field label="主机">
             <TextInput className="input" value={form.host} onChange={(event) => onFormChange({ ...form, host: event.target.value })} />
           </Field>
           <Field label="端口">
             <TextInput className="input" type="number" min={1} max={65535} value={form.port} onChange={(event) => onFormChange({ ...form, port: Number(event.target.value) })} />
-          </Field>
-          <Field label="用途">
-            <DropdownSelect
-              value={form.purpose}
-              ariaLabel="用途"
-              options={[
-                { value: "source", label: "源库" },
-                { value: "target", label: "目标库" },
-                { value: "general", label: "通用" }
-              ]}
-              onChange={(nextValue) => onFormChange({ ...form, purpose: nextValue as DatasourcePurpose })}
-            />
           </Field>
         </div>
 
