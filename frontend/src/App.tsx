@@ -1216,6 +1216,7 @@ function DatasourceCreatePage({
   const [submitting, setSubmitting] = useState(false);
   const [showFieldErrors, setShowFieldErrors] = useState(false);
   const [confirmation, setConfirmation] = useState<ConfirmationDialogState | null>(null);
+  const generatedNameRef = useRef("");
 
   const hasTypes = datasourceTypeOptions.length > 0;
   const currentFingerprint = selectedType ? datasourceFormConnectionFingerprint(form) : "";
@@ -1236,6 +1237,7 @@ function DatasourceCreatePage({
           : null;
 
   const applyType = (type: DatasourceFormState["type"]) => {
+    generatedNameRef.current = "";
     setSelectedType(type);
     setForm(emptyDatasourceFormForType(type));
     setTestedFingerprint(null);
@@ -1272,12 +1274,39 @@ function DatasourceCreatePage({
     });
   };
 
-  const updateForm = (nextForm: DatasourceFormState) => {
-    setForm(nextForm);
+  const updateForm = (nextForm: DatasourceFormState | ((currentForm: DatasourceFormState) => DatasourceFormState)) => {
+    setForm((currentForm) => {
+      const resolvedForm = typeof nextForm === "function" ? nextForm(currentForm) : nextForm;
+      const generatedName = datasourceGeneratedName(resolvedForm);
+      const nameStillGenerated = generatedNameRef.current !== "" &&
+        currentForm.name.trim() === generatedNameRef.current &&
+        resolvedForm.name === currentForm.name;
+
+      if (!generatedName) {
+        if (nameStillGenerated) {
+          generatedNameRef.current = "";
+          return { ...resolvedForm, name: "" };
+        }
+        if (resolvedForm.name.trim() !== generatedNameRef.current) {
+          generatedNameRef.current = "";
+        }
+        return resolvedForm;
+      }
+
+      if (resolvedForm.name.trim() === "" || nameStillGenerated) {
+        generatedNameRef.current = generatedName;
+        return { ...resolvedForm, name: generatedName };
+      }
+
+      if (resolvedForm.name.trim() !== generatedNameRef.current) {
+        generatedNameRef.current = "";
+      }
+      return resolvedForm;
+    });
   };
 
   const updateAuthType = (authType: DatasourceAuthType) => {
-    updateForm(authType === "none" ? { ...form, authType, username: "", password: "" } : { ...form, authType });
+    updateForm((currentForm) => authType === "none" ? { ...currentForm, authType, username: "", password: "" } : { ...currentForm, authType });
   };
 
   const testConnection = async () => {
@@ -1394,16 +1423,16 @@ function DatasourceCreatePage({
             <div className="grid gap-4">
               <div className="grid gap-4">
                 <Field label="名称" required error={fieldErrors.name || (duplicateName ? "同名" : undefined)}>
-                  <TextInput className="input" value={form.name} maxLength={50} onChange={(event) => updateForm({ ...form, name: event.target.value })} />
+                  <TextInput className="input" value={form.name} maxLength={50} onChange={(event) => updateForm((currentForm) => ({ ...currentForm, name: event.target.value }))} />
                 </Field>
               </div>
 
               <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_150px]">
                 <Field label="主机" required error={fieldErrors.host}>
-                  <TextInput className="input" value={form.host} onChange={(event) => updateForm({ ...form, host: event.target.value })} />
+                  <TextInput className="input" value={form.host} onChange={(event) => updateForm((currentForm) => ({ ...currentForm, host: event.target.value }))} />
                 </Field>
                 <Field label="端口" required error={fieldErrors.port}>
-                  <TextInput className="input" type="number" min={1} max={65535} value={form.port} onChange={(event) => updateForm({ ...form, port: Number(event.target.value) })} />
+                  <TextInput className="input" type="number" min={1} max={65535} value={form.port} onChange={(event) => updateForm((currentForm) => ({ ...currentForm, port: Number(event.target.value) }))} />
                 </Field>
               </div>
 
@@ -1422,16 +1451,16 @@ function DatasourceCreatePage({
               {form.authType === "password" && (
                 <div className="grid gap-4">
                   <Field label="用户名" required error={fieldErrors.username}>
-                    <TextInput className="input" value={form.username} onChange={(event) => updateForm({ ...form, username: event.target.value })} />
+                    <TextInput className="input" value={form.username} onChange={(event) => updateForm((currentForm) => ({ ...currentForm, username: event.target.value }))} />
                   </Field>
                   <Field label="密码" required error={fieldErrors.password}>
-                    <TextInput className="input" type="password" value={form.password} onChange={(event) => updateForm({ ...form, password: event.target.value })} />
+                    <TextInput className="input" type="password" value={form.password} onChange={(event) => updateForm((currentForm) => ({ ...currentForm, password: event.target.value }))} />
                   </Field>
                 </div>
               )}
 
               <Field label="备注" error={fieldErrors.remark}>
-                <TextareaInput className="textarea" maxLength={200} value={form.remark} onChange={(event) => updateForm({ ...form, remark: event.target.value })} />
+                <TextareaInput className="textarea" maxLength={200} value={form.remark} onChange={(event) => updateForm((currentForm) => ({ ...currentForm, remark: event.target.value }))} />
               </Field>
             </div>
           </div>
@@ -3412,6 +3441,15 @@ function clampPage(page: number, totalPages: number) {
 
 function datasourceDescription(item: Datasource) {
   return item.remark?.trim() || `${item.host}:${item.port}` || "No description";
+}
+
+function datasourceGeneratedName(form: DatasourceFormState) {
+  const host = form.host.trim();
+  const port = Number(form.port);
+  if (!host || !Number.isFinite(port) || port < 1 || port > 65535) {
+    return "";
+  }
+  return `${datasourceTypeText(form.type)}-${host}:${port}`;
 }
 
 function emptyDatasourceFormForType(type: DatasourceFormState["type"]): DatasourceFormState {
