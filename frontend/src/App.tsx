@@ -1216,7 +1216,7 @@ function DatasourceCreatePage({
   const [submitting, setSubmitting] = useState(false);
   const [showFieldErrors, setShowFieldErrors] = useState(false);
   const [confirmation, setConfirmation] = useState<ConfirmationDialogState | null>(null);
-  const generatedNameRef = useRef("");
+  const nameManuallyEditedRef = useRef(false);
 
   const hasTypes = datasourceTypeOptions.length > 0;
   const currentFingerprint = selectedType ? datasourceFormConnectionFingerprint(form) : "";
@@ -1237,7 +1237,7 @@ function DatasourceCreatePage({
           : null;
 
   const applyType = (type: DatasourceFormState["type"]) => {
-    generatedNameRef.current = "";
+    nameManuallyEditedRef.current = false;
     setSelectedType(type);
     setForm(emptyDatasourceFormForType(type));
     setTestedFingerprint(null);
@@ -1277,32 +1277,22 @@ function DatasourceCreatePage({
   const updateForm = (nextForm: DatasourceFormState | ((currentForm: DatasourceFormState) => DatasourceFormState)) => {
     setForm((currentForm) => {
       const resolvedForm = typeof nextForm === "function" ? nextForm(currentForm) : nextForm;
-      const generatedName = datasourceGeneratedName(resolvedForm);
-      const nameStillGenerated = generatedNameRef.current !== "" &&
-        currentForm.name.trim() === generatedNameRef.current &&
-        resolvedForm.name === currentForm.name;
-
-      if (!generatedName) {
-        if (nameStillGenerated) {
-          generatedNameRef.current = "";
-          return { ...resolvedForm, name: "" };
-        }
-        if (resolvedForm.name.trim() !== generatedNameRef.current) {
-          generatedNameRef.current = "";
-        }
-        return resolvedForm;
-      }
-
-      if (resolvedForm.name.trim() === "" || nameStillGenerated) {
-        generatedNameRef.current = generatedName;
-        return { ...resolvedForm, name: generatedName };
-      }
-
-      if (resolvedForm.name.trim() !== generatedNameRef.current) {
-        generatedNameRef.current = "";
+      if (!nameManuallyEditedRef.current) {
+        return { ...resolvedForm, name: datasourceGeneratedName(resolvedForm) };
       }
       return resolvedForm;
     });
+  };
+
+  const updateName = (name: string) => {
+    if (name.trim() === "") {
+      nameManuallyEditedRef.current = false;
+      setForm((currentForm) => ({ ...currentForm, name: datasourceGeneratedName(currentForm) }));
+      return;
+    }
+    const generatedName = datasourceGeneratedName(form);
+    nameManuallyEditedRef.current = name.trim() !== generatedName;
+    setForm((currentForm) => ({ ...currentForm, name }));
   };
 
   const updateAuthType = (authType: DatasourceAuthType) => {
@@ -1423,7 +1413,7 @@ function DatasourceCreatePage({
             <div className="grid gap-4">
               <div className="grid gap-4">
                 <Field label="名称" required error={fieldErrors.name || (duplicateName ? "同名" : undefined)}>
-                  <TextInput className="input" value={form.name} maxLength={50} onChange={(event) => updateForm((currentForm) => ({ ...currentForm, name: event.target.value }))} />
+                  <TextInput className="input" value={form.name} maxLength={50} onChange={(event) => updateName(event.target.value)} />
                 </Field>
               </div>
 
