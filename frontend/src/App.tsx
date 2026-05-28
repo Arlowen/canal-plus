@@ -2616,6 +2616,11 @@ function Modal({
   const descriptionId = useId();
   const panelRef = useRef<HTMLDivElement | null>(null);
   const lastActiveElementRef = useRef<HTMLElement | null>(null);
+  const onCloseRef = useRef(onClose);
+
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
 
   useEffect(() => {
     if (!open) return;
@@ -2629,7 +2634,7 @@ function Modal({
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         event.preventDefault();
-        onClose();
+        onCloseRef.current();
         return;
       }
       if (event.key !== "Tab") {
@@ -2659,7 +2664,7 @@ function Modal({
       document.body.style.overflow = previousOverflow;
       lastActiveElementRef.current?.focus();
     };
-  }, [onClose, open]);
+  }, [open]);
 
   if (!open) return null;
   const sizeClass = size === "md" ? "max-w-xl" : size === "lg" ? "max-w-3xl" : "max-w-5xl";
