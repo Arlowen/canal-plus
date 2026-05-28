@@ -686,32 +686,34 @@ function App() {
           </aside>
 
           <main className="min-w-0">
-            <div className="surface mb-4 flex flex-col gap-5 p-5 md:p-6 xl:flex-row xl:items-start xl:justify-between">
-              <div>
-                <h1 className="text-3xl font-semibold tracking-tight text-coal md:text-4xl">
-                  {pageTitle(page)}
-                </h1>
-                {pageDescription(page) && (
-                  <p className="mt-2 text-sm text-slate-500">
-                    {pageDescription(page)}
-                  </p>
-                )}
+            {page !== "datasourceCreate" && (
+              <div className="surface mb-4 flex flex-col gap-5 p-5 md:p-6 xl:flex-row xl:items-start xl:justify-between">
+                <div>
+                  <h1 className="text-3xl font-semibold tracking-tight text-coal md:text-4xl">
+                    {pageTitle(page)}
+                  </h1>
+                  {pageDescription(page) && (
+                    <p className="mt-2 text-sm text-slate-500">
+                      {pageDescription(page)}
+                    </p>
+                  )}
+                </div>
+                <div className="flex flex-wrap gap-2 xl:justify-end">
+                  {page !== "datasources" && (
+                    <Button onClick={() => void refresh()} className="btn-secondary">
+                      <ArrowsClockwise size={16} />
+                      刷新
+                    </Button>
+                  )}
+                  {page === "nodes" && canManage && (
+                    <Button onClick={openNodeCreator} className="btn-primary">
+                      <Plus size={16} />
+                      新增
+                    </Button>
+                  )}
+                </div>
               </div>
-              <div className="flex flex-wrap gap-2 xl:justify-end">
-                {page !== "datasources" && page !== "datasourceCreate" && (
-                  <Button onClick={() => void refresh()} className="btn-secondary">
-                    <ArrowsClockwise size={16} />
-                    刷新
-                  </Button>
-                )}
-                {page === "nodes" && canManage && (
-                  <Button onClick={openNodeCreator} className="btn-primary">
-                    <Plus size={16} />
-                    新增
-                  </Button>
-                )}
-              </div>
-            </div>
+            )}
 
             {serviceUnavailable && (
               <NoticeBanner
@@ -1459,7 +1461,8 @@ function DatasourceCreatePage({
     <form onSubmit={saveDatasource}>
       <section className="surface overflow-hidden">
         <div className="p-5 md:p-6">
-          <div className="flex justify-end border-b border-line pb-5">
+          <div className="flex flex-col gap-4 border-b border-line pb-5 sm:flex-row sm:items-start sm:justify-between">
+            <h1 className="text-3xl font-semibold tracking-tight text-coal md:text-4xl">新增数据源</h1>
             <Button type="button" onClick={requestBack} className="btn-secondary">
               <ArrowRight size={14} className="rotate-180" />
               返回
