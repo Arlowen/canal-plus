@@ -12,11 +12,13 @@ import {
 import {
   ArrowsClockwise,
   ArrowRight,
+  CaretDown,
   CheckCircle,
   Database,
   DotsThree,
   GearSix,
   HardDrives,
+  Info,
   MagnifyingGlass,
   Plus,
   RocketLaunch,
@@ -646,10 +648,12 @@ function App() {
                 )}
               </div>
               <div className="flex flex-wrap gap-2 xl:justify-end">
-                <Button onClick={() => void refresh()} className="btn-secondary">
-                  <ArrowsClockwise size={16} />
-                  刷新
-                </Button>
+                {page !== "datasources" && (
+                  <Button onClick={() => void refresh()} className="btn-secondary">
+                    <ArrowsClockwise size={16} />
+                    刷新
+                  </Button>
+                )}
                 {page === "nodes" && canManage && (
                   <Button onClick={openNodeCreator} className="btn-primary">
                     <Plus size={16} />
@@ -741,9 +745,15 @@ function DatasourcePage({
   onChanged: (quiet?: boolean) => Promise<void>;
   pushNotice: (notice: Notice) => void;
 }) {
-  const [keyword, setKeyword] = useState("");
-  const [typeFilter, setTypeFilter] = useState<"all" | "mysql">("all");
-  const [statusFilter, setStatusFilter] = useState<"all" | DatasourceStatus>("all");
+  const [draftTypeFilter, setDraftTypeFilter] = useState<"all" | "mysql">("all");
+  const [draftStatusFilter, setDraftStatusFilter] = useState<"all" | DatasourceStatus>("all");
+  const [appliedTypeFilter, setAppliedTypeFilter] = useState<"all" | "mysql">("all");
+  const [appliedStatusFilter, setAppliedStatusFilter] = useState<"all" | DatasourceStatus>("all");
+  const [pageIndex, setPageIndex] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
+  const [jumpPage, setJumpPage] = useState("1");
+  const [querying, setQuerying] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<DatasourceFormState>({ ...emptyDatasourceForm });
@@ -756,7 +766,6 @@ function DatasourcePage({
   const [testingSavedId, setTestingSavedId] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [confirmation, setConfirmation] = useState<ConfirmationDialogState | null>(null);
-  const [selectedDatasourceId, setSelectedDatasourceId] = useState<string | null>(null);
 
   const openCreateEditor = useCallback(() => {
     const nextForm = { ...emptyDatasourceForm };
@@ -770,24 +779,19 @@ function DatasourcePage({
     setEditorOpen(true);
   }, []);
 
-  const visibleDatasources = useMemo(() => datasources.filter((item) => {
-    const matchesKeyword = !keyword.trim() || datasourceSearchText(item).includes(keyword.trim().toLowerCase());
-    const matchesType = typeFilter === "all" || item.type === typeFilter;
-    const matchesStatus = statusFilter === "all" || item.connectionStatus === statusFilter;
-    return matchesKeyword && matchesType && matchesStatus;
-  }), [datasources, keyword, statusFilter, typeFilter]);
+  const filteredDatasources = useMemo(() => datasources.filter((item) => {
+    const matchesType = appliedTypeFilter === "all" || item.type === appliedTypeFilter;
+    const matchesStatus = appliedStatusFilter === "all" || item.connectionStatus === appliedStatusFilter;
+    return matchesType && matchesStatus;
+  }), [appliedStatusFilter, appliedTypeFilter, datasources]);
 
-  useEffect(() => {
-    if (visibleDatasources.length === 0) {
-      setSelectedDatasourceId(null);
-      return;
-    }
-    if (!selectedDatasourceId || !visibleDatasources.some((item) => item.id === selectedDatasourceId)) {
-      setSelectedDatasourceId(visibleDatasources[0].id);
-    }
-  }, [selectedDatasourceId, visibleDatasources]);
+  const totalItems = filteredDatasources.length;
+  const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
+  const currentPage = clampPage(pageIndex, totalPages);
+  const pageStart = (currentPage - 1) * pageSize;
+  const pageItems = filteredDatasources.slice(pageStart, pageStart + pageSize);
+  const tableBusy = querying || refreshing;
 
-  const selectedDatasource = visibleDatasources.find((item) => item.id === selectedDatasourceId) ?? visibleDatasources[0] ?? null;
   const editingDatasource = editingId ? datasources.find((item) => item.id === editingId) ?? null : null;
   const currentFingerprint = datasourceFormConnectionFingerprint(form);
   const connectionChanged = editingId ? currentFingerprint !== initialConnectionFingerprint : true;
@@ -799,6 +803,48 @@ function DatasourcePage({
   const saveBlockReason = validationError ?? (needsFreshTest && !freshTestResult?.success ? "请先测试" : null);
   const duplicateName = datasources.some((item) => item.id !== editingId && item.name.trim() === form.name.trim() && form.name.trim() !== "");
   const editorDirty = isDatasourceFormDirty(form, initialForm) || Boolean(formTestResult);
+
+  useEffect(() => {
+    setPageIndex((current) => clampPage(current, totalPages));
+  }, [totalPages]);
+
+  useEffect(() => {
+    setJumpPage(String(currentPage));
+  }, [currentPage]);
+
+  const runQuery = async () => {
+    setQuerying(true);
+    setAppliedTypeFilter(draftTypeFilter);
+    setAppliedStatusFilter(draftStatusFilter);
+    setPageIndex(1);
+    try {
+      await onChanged(true);
+    } finally {
+      setQuerying(false);
+    }
+  };
+
+  const refreshTable = async () => {
+    setRefreshing(true);
+    try {
+      await onChanged(true);
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  const goToPage = (nextPage: number) => {
+    setPageIndex(clampPage(nextPage, totalPages));
+  };
+
+  const commitJumpPage = () => {
+    const parsed = Number.parseInt(jumpPage, 10);
+    if (!Number.isFinite(parsed)) {
+      setJumpPage(String(currentPage));
+      return;
+    }
+    goToPage(parsed);
+  };
 
   const openEdit = (item: Datasource) => {
     const nextForm = datasourceFormFromItem(item);
@@ -867,8 +913,14 @@ function DatasourcePage({
     setFormError(null);
     try {
       const payload = datasourceFormPayload(form, editingId ?? undefined);
-      const saved = editingId ? await api.updateDatasource(editingId, payload) : await api.createDatasource(payload);
-      setSelectedDatasourceId(saved.id);
+      const savedDatasource = editingId ? await api.updateDatasource(editingId, payload) : await api.createDatasource(payload);
+      if (!editingId && savedDatasource.id) {
+        setDraftTypeFilter("all");
+        setDraftStatusFilter("all");
+        setAppliedTypeFilter("all");
+        setAppliedStatusFilter("all");
+        setPageIndex(1);
+      }
       setEditorOpen(false);
       pushNotice({ tone: "success", message: "已保存" });
       await onChanged();
@@ -899,12 +951,10 @@ function DatasourcePage({
       pushNotice({ tone: "warning", message: "权限不足" });
       return;
     }
-    const currentIndex = visibleDatasources.findIndex((candidate) => candidate.id === item.id);
-    const nextCandidates = visibleDatasources.filter((candidate) => candidate.id !== item.id);
-    const nextSelected = nextCandidates[Math.min(currentIndex, Math.max(0, nextCandidates.length - 1))]?.id ?? null;
     try {
       await api.deleteDatasource(item.id);
-      setSelectedDatasourceId(nextSelected);
+      const nextTotalPages = Math.max(1, Math.ceil(Math.max(0, filteredDatasources.length - 1) / pageSize));
+      setPageIndex((current) => clampPage(current, nextTotalPages));
       pushNotice({ tone: "success", message: "已删除" });
       await onChanged();
     } catch (requestError) {
@@ -927,30 +977,28 @@ function DatasourcePage({
   return (
     <div className="space-y-5">
       <section className="surface min-w-0 overflow-hidden">
-        <div className="border-b border-line px-5 py-4 md:px-6">
-          <div className="grid gap-3 xl:grid-cols-[minmax(220px,1fr)_170px_170px_auto_auto] xl:items-end">
-            <label className="block">
-              <span className="label mb-2 block">搜索</span>
-              <span className="relative block">
-                <MagnifyingGlass className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-                <TextInput
-                  className="input pl-9"
-                  value={keyword}
-                  onChange={(event) => setKeyword(event.target.value)}
-                  placeholder="名称 / 主机 / 库"
-                />
-              </span>
-            </label>
+        <div className="flex flex-col gap-3 border-b border-line px-5 py-4 md:px-6 xl:flex-row xl:items-end xl:justify-between">
+          <div className="grid gap-3 sm:grid-cols-[170px_170px_auto] sm:items-end">
             <label className="block">
               <span className="label mb-2 block">类型</span>
-              <SelectInput className="select" value={typeFilter} onChange={(event) => setTypeFilter(event.target.value as "all" | "mysql")}>
+              <SelectInput
+                className="select"
+                value={draftTypeFilter}
+                disabled={tableBusy}
+                onChange={(event) => setDraftTypeFilter(event.target.value as "all" | "mysql")}
+              >
                 <option value="all">全部</option>
                 <option value="mysql">MySQL</option>
               </SelectInput>
             </label>
             <label className="block">
               <span className="label mb-2 block">状态</span>
-              <SelectInput className="select" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as "all" | DatasourceStatus)}>
+              <SelectInput
+                className="select"
+                value={draftStatusFilter}
+                disabled={tableBusy}
+                onChange={(event) => setDraftStatusFilter(event.target.value as "all" | DatasourceStatus)}
+              >
                 <option value="all">全部</option>
                 <option value="untested">未测</option>
                 <option value="available">可用</option>
@@ -958,198 +1006,190 @@ function DatasourcePage({
                 <option value="stale">过期</option>
               </SelectInput>
             </label>
-            <Button type="button" onClick={() => void onChanged()} className="btn-secondary">
-              <ArrowsClockwise size={16} />
-              刷新
+            <Button type="button" onClick={() => void runQuery()} disabled={tableBusy} className="btn-primary">
+              {querying ? <ArrowsClockwise size={16} /> : <MagnifyingGlass size={16} />}
+              {querying ? "查询中" : "查询"}
             </Button>
+          </div>
+
+          <div className="flex flex-wrap gap-2 xl:justify-end">
             {canManage ? (
               <Button type="button" onClick={openCreateEditor} className="btn-primary">
                 <Plus size={16} />
-                新增
+                新增数据源
               </Button>
             ) : (
               <div title="权限不足">
                 <Button type="button" disabled className="btn-secondary w-full">
                   <Plus size={16} />
-                  新增
+                  新增数据源
                 </Button>
               </div>
             )}
+            <Button type="button" onClick={() => void refreshTable()} disabled={tableBusy} className="btn-secondary">
+              <ArrowsClockwise size={16} className={refreshing ? "animate-spin" : undefined} />
+              刷新
+            </Button>
           </div>
         </div>
 
-        <div className="grid min-h-[580px] lg:grid-cols-[360px_minmax(0,1fr)]">
-          <aside className="border-b border-line bg-slate-50/70 p-4 lg:border-b-0 lg:border-r">
-            <div className="flex items-center justify-between gap-3">
-              <div className="text-sm text-slate-500">{visibleDatasources.length}/{datasources.length}</div>
-              {(keyword || typeFilter !== "all" || statusFilter !== "all") && (
-                <Button
-                  type="button"
-                  onClick={() => {
-                    setKeyword("");
-                    setTypeFilter("all");
-                    setStatusFilter("all");
-                  }}
-                  className="btn-compact"
-                >
-                  清除
-                </Button>
-              )}
-            </div>
-
-            <div className="mt-4 max-h-[500px] space-y-1 overflow-y-auto pr-1">
-              {datasources.length === 0 ? (
-                <div className="rounded-lg border border-dashed border-line bg-white px-4 py-8 text-center">
-                  <div className="text-sm text-slate-500">暂无数据源</div>
-                  {canManage && (
-                    <Button type="button" onClick={openCreateEditor} className="btn-compact mt-4">
-                      <Plus size={14} />
-                      新增
-                    </Button>
-                  )}
-                </div>
-              ) : visibleDatasources.length === 0 ? (
-                <div className="rounded-lg border border-dashed border-line bg-white px-4 py-8 text-center text-sm text-slate-500">
-                  无匹配
-                </div>
-              ) : visibleDatasources.map((item) => {
-                const active = selectedDatasource?.id === item.id;
-                return (
-                  <Button
-                    key={item.id}
-                    type="button"
-                    aria-pressed={active}
-                    onClick={() => setSelectedDatasourceId(item.id)}
-                    className={cx(
-                      "group w-full justify-start rounded-lg border px-3 py-3 text-left transition",
-                      active
-                        ? "border-blue-200 bg-white shadow-[inset_3px_0_0_#2563eb]"
-                        : "border-transparent bg-transparent hover:border-line hover:bg-white"
-                    )}
-                  >
-                    <Database className={cx("mt-0.5 shrink-0", active ? "text-accent" : "text-slate-400 group-hover:text-accent")} size={18} />
-                    <span className="min-w-0 flex-1">
-                      <span className="flex min-w-0 items-center justify-between gap-3">
-                        <span className="truncate font-medium text-coal">{item.name}</span>
-                        <Badge tone={datasourceStatusTone(item.connectionStatus)}>{datasourceStatusText(item.connectionStatus)}</Badge>
-                      </span>
-                      <span className="mt-1 block truncate font-mono text-xs text-slate-500">
-                        {item.host}:{item.port}
-                      </span>
-                      <span className="mt-1 flex items-center justify-between gap-2 text-xs text-slate-500">
-                        <span>{datasourceTypeText(item.type)}</span>
-                        <span>{item.lastTestedAt ? formatDate(item.lastTestedAt) : "-"}</span>
-                      </span>
-                    </span>
-                  </Button>
-                );
-              })}
-            </div>
-          </aside>
-
-          <div className="min-w-0 p-5 md:p-6">
-            {!selectedDatasource ? (
-              <EmptyPanel
-                icon={Database}
-                title={datasources.length === 0 ? "暂无数据源" : "无匹配"}
-                action={canManage && datasources.length === 0 ? (
-                  <Button type="button" onClick={openCreateEditor} className="btn-primary">
-                    <Plus size={16} />
-                    新增
-                  </Button>
-                ) : !canManage && datasources.length === 0 ? <PermissionNotice compact description="仅管理员可新增。" /> : undefined}
-              />
-            ) : (
-              <div>
-                <div className="flex flex-col gap-4 border-b border-line pb-5 xl:flex-row xl:items-start xl:justify-between">
-                  <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Badge tone={datasourceStatusTone(selectedDatasource.connectionStatus)}>{datasourceStatusText(selectedDatasource.connectionStatus)}</Badge>
-                      <Badge tone="neutral">{datasourceTypeText(selectedDatasource.type)}</Badge>
-                      <Badge tone="blue">{datasourcePurposeText(selectedDatasource.purpose)}</Badge>
-                      {selectedDatasource.isDemo && <Badge tone="yellow">Demo</Badge>}
-                    </div>
-                    <h3 className="mt-3 truncate text-2xl font-semibold tracking-tight text-coal">{selectedDatasource.name}</h3>
-                    <div className="mt-2 font-mono text-sm text-slate-500">
-                      {selectedDatasource.username}@{selectedDatasource.host}:{selectedDatasource.port}
-                    </div>
-                  </div>
-                  <div className="flex flex-wrap gap-2 xl:justify-end">
-                    <Button
-                      type="button"
-                      onClick={() => void testSavedDatasource(selectedDatasource)}
-                      disabled={!canTest || testingSavedId === selectedDatasource.id}
-                      title={!canTest ? "权限不足" : undefined}
-                      className="btn-secondary"
-                    >
-                      {testingSavedId === selectedDatasource.id ? <ArrowsClockwise size={16} /> : <ShieldCheck size={16} />}
-                      {testingSavedId === selectedDatasource.id ? "测试中" : selectedDatasource.connectionStatus === "failed" ? "重试" : "测试"}
-                    </Button>
-                    {canManage && (
-                      <>
-                        <Button type="button" onClick={() => openEdit(selectedDatasource)} className="btn-primary">
-                          编辑
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[945px] table-fixed border-collapse text-left">
+            <colgroup>
+              <col className="w-[190px]" />
+              <col className="w-[90px]" />
+              <col className="w-[150px]" />
+              <col className="w-[85px]" />
+              <col className="w-[70px]" />
+              <col className="w-[190px]" />
+              <col className="w-[170px]" />
+            </colgroup>
+            <thead className="bg-slate-50/90 text-xs font-semibold text-slate-500">
+              <tr className="border-b border-line">
+                <th className="whitespace-nowrap px-5 py-3 md:px-6">数据源ID</th>
+                <th className="whitespace-nowrap px-4 py-3">类型</th>
+                <th className="whitespace-nowrap px-4 py-3">Host</th>
+                <th className="whitespace-nowrap px-4 py-3">版本号</th>
+                <th className="whitespace-nowrap px-4 py-3">状态</th>
+                <th className="whitespace-nowrap px-3 py-3">创建时间</th>
+                <th className="whitespace-nowrap px-4 py-3 text-right">操作</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-line bg-white">
+              {pageItems.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="px-6 py-12">
+                    <div className="mx-auto flex max-w-sm flex-col items-center text-center">
+                      <div className="flex h-12 w-12 items-center justify-center rounded-lg border border-line bg-slate-50 text-accent">
+                        <Database size={20} />
+                      </div>
+                      <div className="mt-4 text-base font-semibold text-coal">
+                        {datasources.length === 0 ? "暂无数据源" : "无匹配"}
+                      </div>
+                      {canManage && datasources.length === 0 && (
+                        <Button type="button" onClick={openCreateEditor} className="btn-primary mt-5">
+                          <Plus size={16} />
+                          新增数据源
                         </Button>
+                      )}
+                      {!canManage && datasources.length === 0 && (
+                        <div className="mt-5">
+                          <PermissionNotice compact description="仅管理员可新增。" />
+                        </div>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              ) : pageItems.map((item) => (
+                <tr key={item.id} className={cx("transition hover:bg-slate-50/70", tableBusy && "opacity-70")}>
+                  <td className="max-w-[340px] px-5 py-4 align-top md:px-6">
+                    <div className="flex min-w-0 items-start gap-3">
+                      <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-blue-100 bg-blue-50 text-accent">
+                        <Database size={18} />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex min-w-0 items-center gap-2">
+                          <span className="truncate text-sm font-semibold text-coal">{item.name || item.id}</span>
+                          <Info className="shrink-0 text-slate-400" size={14} />
+                        </div>
+                        <div className="mt-1 truncate text-xs text-slate-500">{datasourceDescription(item)}</div>
+                      </div>
+                    </div>
+                  </td>
+                  <td className="px-4 py-4 align-top">
+                    <span className="inline-flex items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-medium text-slate-700">
+                      <Database size={15} />
+                      {datasourceTypeText(item.type)}
+                    </span>
+                  </td>
+                  <td className="px-4 py-4 align-top">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-emerald-200 bg-emerald-50 text-xs font-semibold text-emerald-700">内</span>
+                      <span title={`${item.host}:${item.port}`} className="min-w-0 truncate font-mono text-sm text-coal">{item.host}:{item.port}</span>
+                    </div>
+                  </td>
+                  <td className="px-4 py-4 align-top font-mono text-sm text-slate-600">{item.version?.trim() || "-"}</td>
+                  <td className="px-4 py-4 align-top">
+                    <Badge tone={datasourceStatusTone(item.connectionStatus)}>{datasourceStatusText(item.connectionStatus)}</Badge>
+                  </td>
+                  <td className="whitespace-nowrap px-3 py-4 align-top font-mono text-[13px] text-slate-600">{formatDateTime(item.createdAt)}</td>
+                  <td className="px-4 py-4 align-top">
+                    <div className="flex items-center justify-end gap-2">
+                      {canTest && (
+                        <Button
+                          type="button"
+                          onClick={() => void testSavedDatasource(item)}
+                          disabled={testingSavedId === item.id}
+                          className="btn-compact whitespace-nowrap"
+                        >
+                          {testingSavedId === item.id ? <ArrowsClockwise size={14} className="animate-spin" /> : <ShieldCheck size={14} />}
+                          {testingSavedId === item.id ? "测试中" : "测试连接"}
+                        </Button>
+                      )}
+                      {canManage && (
                         <ActionMenu
+                          label="更多"
                           items={[
+                            {
+                              label: "编辑",
+                              onSelect: () => openEdit(item)
+                            },
                             {
                               label: "删除",
                               danger: true,
-                              onSelect: () => requestRemoveDatasource(selectedDatasource)
+                              onSelect: () => requestRemoveDatasource(item)
                             }
                           ]}
                         />
-                      </>
-                    )}
-                  </div>
-                </div>
-
-                <div className="mt-5 grid gap-5 xl:grid-cols-[1.08fr_0.92fr]">
-                  <div>
-                    <div className="label">详情</div>
-                    <div className="mt-3 grid gap-x-6 sm:grid-cols-2">
-                      <DetailCard label="类型" value={datasourceTypeText(selectedDatasource.type)} />
-                      <DetailCard label="用途" value={datasourcePurposeText(selectedDatasource.purpose)} />
-                      <DetailCard label="主机" value={selectedDatasource.host} mono />
-                      <DetailCard label="端口" value={`${selectedDatasource.port}`} mono />
-                      <DetailCard label="用户名" value={selectedDatasource.username} mono />
-                      <DetailCard label="默认库" value={selectedDatasource.defaultSchema || "未设置"} mono />
-                      <DetailCard label="创建时间" value={formatDateTime(selectedDatasource.createdAt)} />
-                      <DetailCard label="更新时间" value={formatDateTime(selectedDatasource.updatedAt)} />
+                      )}
+                      {!canTest && !canManage && <span className="text-sm text-slate-400">-</span>}
                     </div>
-                    {selectedDatasource.remark && (
-                      <div className="mt-4 border-t border-line pt-4">
-                        <div className="label">备注</div>
-                        <div className="mt-2 text-sm leading-6 text-slate-600">{selectedDatasource.remark}</div>
-                      </div>
-                    )}
-                  </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
 
-                  <div>
-                    <div className="label">测试</div>
-                    <div className="mt-3 border-y border-line py-4">
-                      <div className="flex items-center justify-between gap-4">
-                        <span className="text-sm text-slate-500">状态</span>
-                        <Badge tone={datasourceStatusTone(selectedDatasource.connectionStatus)}>{datasourceStatusText(selectedDatasource.connectionStatus)}</Badge>
-                      </div>
-                      <div className="mt-4 flex items-center justify-between gap-4 border-t border-line pt-4">
-                        <span className="text-sm text-slate-500">最近测试</span>
-                        <span className="text-right text-sm font-medium text-coal">
-                          {selectedDatasource.lastTestedAt ? formatDateTime(selectedDatasource.lastTestedAt) : "-"}
-                        </span>
-                      </div>
-                      <div className="mt-4 flex items-center justify-between gap-4 border-t border-line pt-4">
-                        <span className="text-sm text-slate-500">耗时</span>
-                        <span className="font-mono text-sm font-medium text-coal">{formatLatency(selectedDatasource.lastTestLatencyMs)}</span>
-                      </div>
-                      <div className="mt-4 border-t border-line pt-4 text-sm text-slate-500">
-                        {selectedDatasource.lastTestMessage || "暂无记录"}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
+        <div className="flex flex-col gap-3 border-t border-line px-5 py-4 text-sm text-slate-600 md:px-6 lg:flex-row lg:items-center lg:justify-between">
+          <div>共 {totalItems} 条</div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button type="button" onClick={() => goToPage(currentPage - 1)} disabled={currentPage <= 1} className="btn-compact">
+              <ArrowRight size={14} className="rotate-180" />
+              上一页
+            </Button>
+            <span className="min-w-16 text-center font-mono text-sm text-coal">{currentPage}/{totalPages}</span>
+            <Button type="button" onClick={() => goToPage(currentPage + 1)} disabled={currentPage >= totalPages} className="btn-compact">
+              下一页
+              <ArrowRight size={14} />
+            </Button>
+            <SelectInput
+              className="select h-9 w-28 py-1.5 text-sm"
+              value={pageSize}
+              onChange={(event) => {
+                setPageSize(Number(event.target.value));
+                setPageIndex(1);
+              }}
+            >
+              <option value={10}>10 条/页</option>
+              <option value={20}>20 条/页</option>
+              <option value={50}>50 条/页</option>
+            </SelectInput>
+            <span className="flex items-center gap-2">
+              <TextInput
+                className="input h-9 w-16 px-2 py-1.5 text-center font-mono text-sm"
+                value={jumpPage}
+                inputMode="numeric"
+                onChange={(event) => setJumpPage(event.target.value.replace(/[^\d]/g, ""))}
+                onBlur={commitJumpPage}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.currentTarget.blur();
+                  }
+                }}
+              />
+              页
+            </span>
           </div>
         </div>
       </section>
@@ -2508,8 +2548,10 @@ function ConfirmDialog({
 }
 
 function ActionMenu({
+  label,
   items
 }: {
+  label?: string;
   items: Array<{ label: string; onSelect: () => void; disabled?: boolean; danger?: boolean }>;
 }) {
   const [open, setOpen] = useState(false);
@@ -2572,9 +2614,16 @@ function ActionMenu({
             window.requestAnimationFrame(() => focusMenuItem(0));
           }
         }}
-        className="btn-compact px-2.5"
+        className={cx("btn-compact", label ? "px-3" : "px-2.5")}
       >
-        <DotsThree size={14} />
+        {label ? (
+          <>
+            <span>{label}</span>
+            <CaretDown size={12} />
+          </>
+        ) : (
+          <DotsThree size={14} />
+        )}
       </Button>
       {open && (
         <div
@@ -2781,16 +2830,13 @@ function validateNodeForm(form: ClusterNodeInput) {
   return null;
 }
 
-function datasourceSearchText(item: Datasource) {
-  return [
-    item.name,
-    item.type,
-    item.purpose,
-    item.host,
-    item.defaultSchema,
-    item.username,
-    item.remark
-  ].filter(Boolean).join(" ").toLowerCase();
+function clampPage(page: number, totalPages: number) {
+  if (!Number.isFinite(page)) return 1;
+  return Math.min(Math.max(1, Math.trunc(page)), Math.max(1, totalPages));
+}
+
+function datasourceDescription(item: Datasource) {
+  return item.remark?.trim() || item.defaultSchema?.trim() || `${item.host}:${item.port}` || "No description";
 }
 
 function datasourceFormFromItem(item: Datasource): DatasourceFormState {
@@ -2881,17 +2927,6 @@ function datasourceStatusTone(status: DatasourceStatus): "blue" | "green" | "yel
 function datasourceTypeText(type?: Datasource["type"]) {
   if (type === "mysql") return "MySQL";
   return "MySQL";
-}
-
-function datasourcePurposeText(purpose?: DatasourcePurpose) {
-  if (purpose === "source") return "源库";
-  if (purpose === "target") return "目标库";
-  return "通用";
-}
-
-function formatLatency(value?: number) {
-  if (!value) return "-";
-  return `${value}ms`;
 }
 
 function navPage(page: Page): MainPage {

@@ -17,6 +17,7 @@ export interface Datasource {
   purpose?: DatasourcePurpose;
   host: string;
   port: number;
+  version?: string;
   username: string;
   defaultSchema?: string;
   remark?: string;
