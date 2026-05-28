@@ -1034,13 +1034,12 @@ function DatasourcePage({
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[945px] table-fixed border-collapse text-left">
+          <table className="w-full min-w-[875px] table-fixed border-collapse text-left">
             <colgroup>
               <col className="w-[190px]" />
               <col className="w-[90px]" />
               <col className="w-[150px]" />
               <col className="w-[85px]" />
-              <col className="w-[70px]" />
               <col className="w-[190px]" />
               <col className="w-[170px]" />
             </colgroup>
@@ -1050,7 +1049,6 @@ function DatasourcePage({
                 <th className="whitespace-nowrap px-4 py-3">类型</th>
                 <th className="whitespace-nowrap px-4 py-3">Host</th>
                 <th className="whitespace-nowrap px-4 py-3">版本号</th>
-                <th className="whitespace-nowrap px-4 py-3">状态</th>
                 <th className="whitespace-nowrap px-3 py-3">创建时间</th>
                 <th className="whitespace-nowrap px-4 py-3 text-right">操作</th>
               </tr>
@@ -1058,7 +1056,7 @@ function DatasourcePage({
             <tbody className="divide-y divide-line bg-white">
               {pageItems.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-6 py-12">
+                  <td colSpan={6} className="px-6 py-12">
                     <div className="mx-auto flex max-w-sm flex-col items-center text-center">
                       <div className="flex h-12 w-12 items-center justify-center rounded-lg border border-line bg-slate-50 text-accent">
                         <Database size={20} />
@@ -1109,9 +1107,6 @@ function DatasourcePage({
                     </div>
                   </td>
                   <td className="px-4 py-4 align-top font-mono text-sm text-slate-600">{item.version?.trim() || "-"}</td>
-                  <td className="px-4 py-4 align-top">
-                    <Badge tone={datasourceStatusTone(item.connectionStatus)}>{datasourceStatusText(item.connectionStatus)}</Badge>
-                  </td>
                   <td className="whitespace-nowrap px-3 py-4 align-top font-mono text-[13px] text-slate-600">{formatDateTime(item.createdAt)}</td>
                   <td className="px-4 py-4 align-top">
                     <div className="flex items-center justify-end gap-2">
