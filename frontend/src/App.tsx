@@ -1044,19 +1044,17 @@ function DatasourcePage({
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[875px] table-fixed border-collapse text-left">
+          <table className="w-full min-w-[785px] table-fixed border-collapse text-left">
             <colgroup>
-              <col className="w-[190px]" />
-              <col className="w-[90px]" />
-              <col className="w-[150px]" />
-              <col className="w-[85px]" />
+              <col className="w-[250px]" />
+              <col className="w-[170px]" />
+              <col className="w-[95px]" />
               <col className="w-[190px]" />
               <col className="w-[170px]" />
             </colgroup>
             <thead className="bg-slate-50/90 text-xs font-semibold text-slate-500">
               <tr className="border-b border-line">
                 <th className="whitespace-nowrap px-5 py-3 md:px-6">数据源ID</th>
-                <th className="whitespace-nowrap px-4 py-3">类型</th>
                 <th className="whitespace-nowrap px-4 py-3">Host</th>
                 <th className="whitespace-nowrap px-4 py-3">版本号</th>
                 <th className="whitespace-nowrap px-3 py-3">创建时间</th>
@@ -1066,7 +1064,7 @@ function DatasourcePage({
             <tbody className="divide-y divide-line bg-white">
               {pageItems.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-6 py-12">
+                  <td colSpan={5} className="px-6 py-12">
                     <div className="mx-auto flex max-w-sm flex-col items-center text-center">
                       <div className="flex h-12 w-12 items-center justify-center rounded-lg border border-line bg-slate-50 text-accent">
                         <Database size={20} />
@@ -1092,9 +1090,7 @@ function DatasourcePage({
                 <tr key={item.id} className={cx("transition hover:bg-slate-50/70", tableBusy && "opacity-70")}>
                   <td className="max-w-[340px] px-5 py-4 align-top md:px-6">
                     <div className="flex min-w-0 items-start gap-3">
-                      <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-blue-100 bg-blue-50 text-accent">
-                        <Database size={18} />
-                      </div>
+                      <DatasourceTypeIcon type={item.type} />
                       <div className="min-w-0">
                         <div className="flex min-w-0 items-center gap-2">
                           <span className="truncate text-sm font-semibold text-coal">{item.name || item.id}</span>
@@ -1103,12 +1099,6 @@ function DatasourcePage({
                         <div className="mt-1 truncate text-xs text-slate-500">{datasourceDescription(item)}</div>
                       </div>
                     </div>
-                  </td>
-                  <td className="px-4 py-4 align-top">
-                    <span className="inline-flex items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-medium text-slate-700">
-                      <Database size={15} />
-                      {datasourceTypeText(item.type)}
-                    </span>
                   </td>
                   <td className="px-4 py-4 align-top">
                     <div className="flex min-w-0 items-center gap-2">
@@ -2345,6 +2335,57 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
       <span className="label mb-2 block">{label}</span>
       {children}
     </label>
+  );
+}
+
+function DatasourceTypeIcon({ type }: { type?: Datasource["type"] }) {
+  const label = datasourceTypeText(type);
+  return (
+    <span
+      aria-label={label}
+      title={label}
+      className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-cyan-100 bg-cyan-50 text-cyan-700"
+    >
+      {type === "mysql" || !type ? <MysqlIcon /> : <Database size={18} />}
+    </span>
+  );
+}
+
+function MysqlIcon() {
+  return (
+    <svg viewBox="0 0 36 36" className="h-7 w-7" aria-hidden="true">
+      <rect x="5" y="5" width="26" height="26" rx="7" fill="#ffffff" />
+      <path
+        d="M8.2 24.2c2.7-1.4 5.5-2 8.2-1.7 2.9.3 5 1.3 7 3 1.3 1.1 2.6 1.4 3.8.9 1-.4 1.7-1.2 2.1-2.3.2 2.5-.9 4.1-3 4.8-2.1.7-4.9-.1-7.6-2.1-1.8-1.3-3.8-1.8-6-1.6-1.5.1-3 .5-4.5 1.1v-2.1Z"
+        fill="#00758f"
+      />
+      <path
+        d="M25.2 7.9c1.6 1.5 2.3 3.1 2.1 4.9-.1 1.3-.8 2.5-2.1 3.5.2-1.2-.2-2.3-1-3.1-.8-.8-1.9-1.2-3.4-1.3 1.3-1.5 2.8-2.8 4.4-4Z"
+        fill="#f29111"
+      />
+      <text
+        x="18"
+        y="20.2"
+        textAnchor="middle"
+        fontFamily="Geist, Satoshi, Avenir Next, sans-serif"
+        fontSize="11"
+        fontWeight="800"
+        fill="#1d2430"
+      >
+        My
+      </text>
+      <text
+        x="18"
+        y="25.7"
+        textAnchor="middle"
+        fontFamily="Geist, Satoshi, Avenir Next, sans-serif"
+        fontSize="4.8"
+        fontWeight="800"
+        fill="#00758f"
+      >
+        SQL
+      </text>
+    </svg>
   );
 }
 
