@@ -1456,119 +1456,121 @@ function DatasourceCreatePage({
   }
 
   return (
-    <form onSubmit={saveDatasource} className="space-y-5">
-      <section className="surface p-5 md:p-6">
-        <div className="flex justify-end border-b border-line pb-5">
-          <Button type="button" onClick={requestBack} className="btn-secondary">
-            <ArrowRight size={14} className="rotate-180" />
-            返回
-          </Button>
+    <form onSubmit={saveDatasource}>
+      <section className="surface overflow-hidden">
+        <div className="p-5 md:p-6">
+          <div className="flex justify-end border-b border-line pb-5">
+            <Button type="button" onClick={requestBack} className="btn-secondary">
+              <ArrowRight size={14} className="rotate-180" />
+              返回
+            </Button>
+          </div>
+
+          {hasTypes ? (
+            <div role="radiogroup" aria-label="数据源类型" className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-[repeat(auto-fit,minmax(220px,260px))]">
+              {datasourceTypeOptions.map((option) => {
+                const selected = selectedType === option.value;
+                return (
+                  <Button
+                    key={option.value}
+                    type="button"
+                    role="radio"
+                    aria-checked={selected}
+                    onClick={() => requestType(option.value)}
+                    className={cx(
+                      "flex min-h-[96px] items-center gap-4 rounded-lg border bg-white p-4 text-left transition active:translate-y-px",
+                      selected
+                        ? "border-blue-300 bg-blue-50 shadow-[inset_3px_0_0_#2563eb]"
+                        : "border-line hover:border-blue-200 hover:bg-slate-50"
+                    )}
+                  >
+                    <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg border border-cyan-100 bg-cyan-50">
+                      <DatasourceTypeLogo type={option.value} className="h-9 w-9" />
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block text-base font-semibold text-coal">{option.label}</span>
+                    </span>
+                  </Button>
+                );
+              })}
+            </div>
+          ) : (
+            <EmptyPanel icon={Database} title="暂无类型" />
+          )}
         </div>
 
-        {hasTypes ? (
-          <div role="radiogroup" aria-label="数据源类型" className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-[repeat(auto-fit,minmax(220px,260px))]">
-            {datasourceTypeOptions.map((option) => {
-              const selected = selectedType === option.value;
-              return (
-                <Button
-                  key={option.value}
-                  type="button"
-                  role="radio"
-                  aria-checked={selected}
-                  onClick={() => requestType(option.value)}
-                  className={cx(
-                    "flex min-h-[96px] items-center gap-4 rounded-lg border bg-white p-4 text-left transition active:translate-y-px",
-                    selected
-                      ? "border-blue-300 bg-blue-50 shadow-[inset_3px_0_0_#2563eb]"
-                      : "border-line hover:border-blue-200 hover:bg-slate-50"
-                  )}
-                >
-                  <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg border border-cyan-100 bg-cyan-50">
-                    <DatasourceTypeLogo type={option.value} className="h-9 w-9" />
-                  </span>
-                  <span className="min-w-0">
-                    <span className="block text-base font-semibold text-coal">{option.label}</span>
-                  </span>
-                </Button>
-              );
-            })}
-          </div>
-        ) : (
-          <EmptyPanel icon={Database} title="暂无类型" />
-        )}
-      </section>
-
-      {selectedType && (
-        <section className="surface p-5 md:p-6">
-          <div className="border-b border-line pb-5">
-            <h2 className="text-lg font-semibold text-coal">连接信息</h2>
-          </div>
-
-          <div className="mt-5 grid gap-4">
-            <div className="grid gap-4">
-              <Field label="名称" required error={fieldErrors.name || (duplicateName ? "同名" : undefined)}>
-                <TextInput className="input" value={form.name} maxLength={50} onChange={(event) => updateForm({ ...form, name: event.target.value })} />
-              </Field>
+        {selectedType && (
+          <div className="border-t border-line p-5 md:p-6">
+            <div className="border-b border-line pb-5">
+              <h2 className="text-lg font-semibold text-coal">连接信息</h2>
             </div>
 
-            <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_150px]">
-              <Field label="主机" required error={fieldErrors.host}>
-                <TextInput className="input" value={form.host} onChange={(event) => updateForm({ ...form, host: event.target.value })} />
-              </Field>
-              <Field label="端口" required error={fieldErrors.port}>
-                <TextInput className="input" type="number" min={1} max={65535} value={form.port} onChange={(event) => updateForm({ ...form, port: Number(event.target.value) })} />
-              </Field>
-            </div>
-
-            <div className="grid gap-4">
-              <Field label="认证类型" required>
-                <DropdownSelect
-                  value={form.authType}
-                  ariaLabel="认证类型"
-                  options={datasourceAuthOptions}
-                  className="max-w-[180px]"
-                  onChange={(nextValue) => updateAuthType(nextValue as DatasourceAuthType)}
-                />
-              </Field>
-            </div>
-
-            {form.authType === "password" && (
+            <div className="mt-5 grid gap-4">
               <div className="grid gap-4">
-                <Field label="用户名" required error={fieldErrors.username}>
-                  <TextInput className="input" value={form.username} onChange={(event) => updateForm({ ...form, username: event.target.value })} />
-                </Field>
-                <Field label="密码" required error={fieldErrors.password}>
-                  <TextInput className="input" type="password" value={form.password} onChange={(event) => updateForm({ ...form, password: event.target.value })} />
+                <Field label="名称" required error={fieldErrors.name || (duplicateName ? "同名" : undefined)}>
+                  <TextInput className="input" value={form.name} maxLength={50} onChange={(event) => updateForm({ ...form, name: event.target.value })} />
                 </Field>
               </div>
-            )}
 
-            <Field label="备注" error={fieldErrors.remark}>
-              <TextareaInput className="textarea" maxLength={200} value={form.remark} onChange={(event) => updateForm({ ...form, remark: event.target.value })} />
-            </Field>
+              <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_150px]">
+                <Field label="主机" required error={fieldErrors.host}>
+                  <TextInput className="input" value={form.host} onChange={(event) => updateForm({ ...form, host: event.target.value })} />
+                </Field>
+                <Field label="端口" required error={fieldErrors.port}>
+                  <TextInput className="input" type="number" min={1} max={65535} value={form.port} onChange={(event) => updateForm({ ...form, port: Number(event.target.value) })} />
+                </Field>
+              </div>
 
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-              <Button type="button" onClick={() => void testConnection()} disabled={testing} className="btn-secondary">
-                {testing ? <ArrowsClockwise size={16} className="animate-spin" /> : <ShieldCheck size={16} />}
-                {testing ? "测试中" : "测试连接"}
-              </Button>
-              <DatasourceTestInlineResult
-                error={displayedTestResult?.success === false ? displayedTestResult.message || "连接失败" : null}
-                result={displayedTestResult}
-              />
+              <div className="grid gap-4">
+                <Field label="认证类型" required>
+                  <DropdownSelect
+                    value={form.authType}
+                    ariaLabel="认证类型"
+                    options={datasourceAuthOptions}
+                    className="max-w-[180px]"
+                    onChange={(nextValue) => updateAuthType(nextValue as DatasourceAuthType)}
+                  />
+                </Field>
+              </div>
+
+              {form.authType === "password" && (
+                <div className="grid gap-4">
+                  <Field label="用户名" required error={fieldErrors.username}>
+                    <TextInput className="input" value={form.username} onChange={(event) => updateForm({ ...form, username: event.target.value })} />
+                  </Field>
+                  <Field label="密码" required error={fieldErrors.password}>
+                    <TextInput className="input" type="password" value={form.password} onChange={(event) => updateForm({ ...form, password: event.target.value })} />
+                  </Field>
+                </div>
+              )}
+
+              <Field label="备注" error={fieldErrors.remark}>
+                <TextareaInput className="textarea" maxLength={200} value={form.remark} onChange={(event) => updateForm({ ...form, remark: event.target.value })} />
+              </Field>
+
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                <Button type="button" onClick={() => void testConnection()} disabled={testing} className="btn-secondary">
+                  {testing ? <ArrowsClockwise size={16} className="animate-spin" /> : <ShieldCheck size={16} />}
+                  {testing ? "测试中" : "测试连接"}
+                </Button>
+                <DatasourceTestInlineResult
+                  error={displayedTestResult?.success === false ? displayedTestResult.message || "连接失败" : null}
+                  result={displayedTestResult}
+                />
+              </div>
             </div>
           </div>
-        </section>
-      )}
+        )}
 
-      <section className="surface flex justify-end gap-3 p-4">
-        <Button type="button" onClick={requestBack} className="btn-secondary">
-          取消
-        </Button>
-        <Button type="submit" disabled={submitting || !selectedType} title={!selectedType ? "请选择类型" : undefined} className="btn-primary">
-          {submitting ? <ArrowsClockwise size={16} className="animate-spin" /> : <CheckCircle size={16} />}
-          {submitting ? "保存中" : "保存"}
-        </Button>
+        <div className="flex justify-end gap-3 border-t border-line p-4">
+          <Button type="button" onClick={requestBack} className="btn-secondary">
+            取消
+          </Button>
+          <Button type="submit" disabled={submitting || !selectedType} title={!selectedType ? "请选择类型" : undefined} className="btn-primary">
+            {submitting ? <ArrowsClockwise size={16} className="animate-spin" /> : <CheckCircle size={16} />}
+            {submitting ? "保存中" : "保存"}
+          </Button>
+        </div>
       </section>
 
       <ConfirmDialog
