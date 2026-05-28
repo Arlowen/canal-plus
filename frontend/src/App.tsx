@@ -846,7 +846,6 @@ function DatasourcePage({
   const pageSize = 20;
   const [jumpPage, setJumpPage] = useState("1");
   const [querying, setQuerying] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
   const [testingSavedId, setTestingSavedId] = useState<string | null>(null);
   const [confirmation, setConfirmation] = useState<ConfirmationDialogState | null>(null);
   const [testDialog, setTestDialog] = useState<DatasourceTestDialogState | null>(null);
@@ -870,7 +869,7 @@ function DatasourcePage({
   const currentPage = clampPage(pageIndex, totalPages);
   const pageStart = (currentPage - 1) * pageSize;
   const pageItems = filteredDatasources.slice(pageStart, pageStart + pageSize);
-  const tableBusy = querying || refreshing;
+  const tableBusy = querying;
 
   useEffect(() => {
     setPageIndex((current) => clampPage(current, totalPages));
@@ -899,15 +898,6 @@ function DatasourcePage({
       await onChanged(true);
     } finally {
       setQuerying(false);
-    }
-  };
-
-  const refreshTable = async () => {
-    setRefreshing(true);
-    try {
-      await onChanged(true);
-    } finally {
-      setRefreshing(false);
     }
   };
 
@@ -1044,10 +1034,6 @@ function DatasourcePage({
                 </Button>
               </div>
             )}
-            <Button type="button" onClick={() => void refreshTable()} disabled={tableBusy} className="btn-secondary">
-              <ArrowsClockwise size={16} className={refreshing ? "animate-spin" : undefined} />
-              刷新
-            </Button>
           </div>
         </div>
 
