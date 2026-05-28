@@ -1523,17 +1523,15 @@ function DatasourceCreatePage({
               <TextareaInput className="textarea" maxLength={200} value={form.remark} onChange={(event) => updateForm({ ...form, remark: event.target.value })} />
             </Field>
 
-            <div className="rounded-lg border border-line px-4 py-4">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-                <Button type="button" onClick={() => void testConnection()} disabled={testing} className="btn-secondary">
-                  {testing ? <ArrowsClockwise size={16} className="animate-spin" /> : <ShieldCheck size={16} />}
-                  {testing ? "测试中" : "测试连接"}
-                </Button>
-                <DatasourceTestInlineResult
-                  error={displayedTestResult?.success === false ? displayedTestResult.message || "连接失败" : null}
-                  result={displayedTestResult}
-                />
-              </div>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+              <Button type="button" onClick={() => void testConnection()} disabled={testing} className="btn-secondary">
+                {testing ? <ArrowsClockwise size={16} className="animate-spin" /> : <ShieldCheck size={16} />}
+                {testing ? "测试中" : "测试连接"}
+              </Button>
+              <DatasourceTestInlineResult
+                error={displayedTestResult?.success === false ? displayedTestResult.message || "连接失败" : null}
+                result={displayedTestResult}
+              />
             </div>
           </div>
         </section>
@@ -1631,17 +1629,15 @@ function DatasourceEditorModal({
           <TextareaInput className="textarea" maxLength={200} value={form.remark} onChange={(event) => onFormChange({ ...form, remark: event.target.value })} />
         </Field>
 
-        <div className="rounded-lg border border-line px-4 py-4">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-            <Button type="button" onClick={onTest} disabled={testing} className="btn-secondary">
-              {testing ? <ArrowsClockwise size={16} className="animate-spin" /> : <ShieldCheck size={16} />}
-              {testing ? "测试中" : "测试连接"}
-            </Button>
-            <DatasourceTestInlineResult
-              error={testResult?.success === false ? testResult.message || "连接失败" : null}
-              result={testResult}
-            />
-          </div>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+          <Button type="button" onClick={onTest} disabled={testing} className="btn-secondary">
+            {testing ? <ArrowsClockwise size={16} className="animate-spin" /> : <ShieldCheck size={16} />}
+            {testing ? "测试中" : "测试连接"}
+          </Button>
+          <DatasourceTestInlineResult
+            error={testResult?.success === false ? testResult.message || "连接失败" : null}
+            result={testResult}
+          />
         </div>
 
         <div className="flex justify-end gap-3 pt-2">
