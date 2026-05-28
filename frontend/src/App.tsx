@@ -2427,13 +2427,33 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
 
 function DatasourceTypeIcon({ type }: { type?: Datasource["type"] }) {
   const label = datasourceTypeText(type);
+  const [isHovered, setIsHovered] = useState(false);
+  const [isFocused, setIsFocused] = useState(false);
+  const tooltipOpen = isHovered || isFocused;
+
   return (
     <span
+      role="img"
       aria-label={label}
+      tabIndex={0}
       title={label}
-      className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-cyan-100 bg-cyan-50 text-cyan-700"
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+      onFocus={() => setIsFocused(true)}
+      onBlur={() => setIsFocused(false)}
+      onClick={() => setIsFocused(true)}
+      className="relative mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-cyan-100 bg-cyan-50 text-cyan-700 outline-none focus:ring-4 focus:ring-blue-100"
     >
       {type === "mysql" || !type ? <img src={mysqlLogoUrl} alt="" className="h-8 w-8 object-contain" draggable={false} /> : <Database size={18} />}
+      <span
+        aria-hidden="true"
+        className={cx(
+          "pointer-events-none absolute left-[calc(100%+0.5rem)] top-1/2 z-30 -translate-y-1/2 whitespace-nowrap rounded-md border border-line bg-white px-2 py-1 text-xs font-medium text-coal shadow-raised transition",
+          tooltipOpen ? "opacity-100" : "opacity-0"
+        )}
+      >
+        {label}
+      </span>
     </span>
   );
 }
