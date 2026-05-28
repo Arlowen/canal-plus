@@ -1548,6 +1548,7 @@ function DatasourceEditPage({
           ? "请先测试"
           : null;
   const dirty = datasource ? isDatasourceFormDirty(form, initialForm) || Boolean(testResult) : false;
+  const datasourceTypeLabel = datasourceTypeOptions.find((option) => option.value === form.type)?.label ?? form.type;
 
   const updateAuthType = (authType: DatasourceAuthType) => {
     setForm(authType === "none" ? { ...form, authType, username: "", password: "" } : { ...form, authType });
@@ -1657,7 +1658,13 @@ function DatasourceEditPage({
       <section className="surface overflow-hidden">
         <div className="p-5 md:p-6">
           <div className="flex flex-col gap-4 border-b border-line pb-5 sm:flex-row sm:items-start sm:justify-between">
-            <h1 className="text-3xl font-semibold tracking-tight text-coal md:text-4xl">编辑数据源</h1>
+            <div className="flex min-w-0 flex-wrap items-center gap-3">
+              <h1 className="text-3xl font-semibold tracking-tight text-coal md:text-4xl">编辑数据源</h1>
+              <span className="inline-flex items-center gap-2 rounded-lg border border-line bg-slate-50 px-2.5 py-1.5 text-sm font-medium text-coal">
+                <DatasourceTypeLogo type={form.type} className="h-5 w-5" />
+                {datasourceTypeLabel}
+              </span>
+            </div>
             <Button type="button" onClick={requestBack} className="btn-secondary">
               <ArrowRight size={14} className="rotate-180" />
               返回
