@@ -111,6 +111,8 @@ type DatasourceFormState = {
   remark: string;
 };
 
+type DatasourceFieldErrors = Partial<Record<"name" | "host" | "port" | "username" | "password" | "remark", string>>;
+
 const navItems: Array<{ id: MainPage; label: string; icon: typeof Database }> = [
   { id: "datasources", label: "数据源", icon: Database },
   { id: "nodes", label: "节点", icon: HardDrives }
@@ -1314,7 +1316,7 @@ function DatasourceCreatePage({
   const [testResult, setTestResult] = useState<DatasourceTestResult | null>(null);
   const [testing, setTesting] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [formError, setFormError] = useState<string | null>(null);
+  const [showFieldErrors, setShowFieldErrors] = useState(false);
   const [confirmation, setConfirmation] = useState<ConfirmationDialogState | null>(null);
 
   const hasTypes = datasourceTypeOptions.length > 0;
@@ -1322,6 +1324,7 @@ function DatasourceCreatePage({
   const freshTestResult = selectedType && testedFingerprint === currentFingerprint ? testResult : null;
   const displayedTestResult = freshTestResult ?? testResult;
   const validationError = selectedType ? validateDatasourceForm(form, true) : "请选择类型";
+  const fieldErrors = showFieldErrors ? datasourceFieldErrors(form, true) : {};
   const duplicateName = selectedType ? datasources.some((item) => item.name.trim() === form.name.trim() && form.name.trim() !== "") : false;
   const dirty = selectedType ? isDatasourceFormDirty(form, emptyDatasourceFormForType(selectedType)) || Boolean(testResult) : false;
   const saveBlockReason = !selectedType
@@ -1339,7 +1342,7 @@ function DatasourceCreatePage({
     setForm(emptyDatasourceFormForType(type));
     setTestedFingerprint(null);
     setTestResult(null);
-    setFormError(null);
+    setShowFieldErrors(false);
   };
 
   const requestType = (type: DatasourceFormState["type"]) => {
@@ -1373,31 +1376,26 @@ function DatasourceCreatePage({
 
   const updateForm = (nextForm: DatasourceFormState) => {
     setForm(nextForm);
-    setFormError(null);
   };
 
   const testConnection = async () => {
     if (!selectedType) {
-      setFormError("请选择类型");
+      pushNotice({ tone: "warning", message: "请选择类型" });
       return;
     }
     if (validateDatasourceForm(form, true)) {
-      setFormError("请填写必填项");
+      setShowFieldErrors(true);
       return;
     }
     const fingerprint = datasourceFormConnectionFingerprint(form);
     setTesting(true);
-    setFormError(null);
     try {
       const result = await api.testDatasourceInput(datasourceFormPayload(form));
       setTestedFingerprint(fingerprint);
       setTestResult(result);
-      if (!result.success) {
-        setFormError(result.message || "连接失败");
-      }
     } catch (requestError) {
       setTestResult(null);
-      setFormError(requestError instanceof Error ? requestError.message : "连接失败");
+      pushNotice({ tone: "error", message: requestError instanceof Error ? requestError.message : "连接失败" });
     } finally {
       setTesting(false);
     }
@@ -1406,22 +1404,25 @@ function DatasourceCreatePage({
   const saveDatasource = async (event: FormEvent) => {
     event.preventDefault();
     if (!canManage) {
-      setFormError("权限不足");
+      pushNotice({ tone: "warning", message: "权限不足" });
       return;
     }
     if (saveBlockReason) {
-      setFormError(saveBlockReason);
+      if (validationError) {
+        setShowFieldErrors(true);
+        return;
+      }
+      pushNotice({ tone: duplicateName ? "warning" : "error", message: saveBlockReason });
       return;
     }
     setSubmitting(true);
-    setFormError(null);
     try {
       await api.createDatasource(datasourceFormPayload(form));
       pushNotice({ tone: "success", message: "已保存" });
       await onChanged();
       onBack();
     } catch (requestError) {
-      setFormError(requestError instanceof Error ? requestError.message : "保存失败");
+      pushNotice({ tone: "error", message: requestError instanceof Error ? requestError.message : "保存失败" });
     } finally {
       setSubmitting(false);
     }
@@ -1495,31 +1496,30 @@ function DatasourceCreatePage({
 
           <div className="mt-5 grid gap-4">
             <div className="grid gap-4">
-              <Field label="名称" required>
+              <Field label="名称" required error={fieldErrors.name || (duplicateName ? "同名" : undefined)}>
                 <TextInput className="input" value={form.name} maxLength={50} onChange={(event) => updateForm({ ...form, name: event.target.value })} />
-                {duplicateName && <div className="mt-2 text-xs text-amber-600">同名</div>}
               </Field>
             </div>
 
             <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_150px]">
-              <Field label="主机" required>
+              <Field label="主机" required error={fieldErrors.host}>
                 <TextInput className="input" value={form.host} onChange={(event) => updateForm({ ...form, host: event.target.value })} />
               </Field>
-              <Field label="端口" required>
+              <Field label="端口" required error={fieldErrors.port}>
                 <TextInput className="input" type="number" min={1} max={65535} value={form.port} onChange={(event) => updateForm({ ...form, port: Number(event.target.value) })} />
               </Field>
             </div>
 
             <div className="grid gap-4 md:grid-cols-2">
-              <Field label="用户名" required>
+              <Field label="用户名" required error={fieldErrors.username}>
                 <TextInput className="input" value={form.username} onChange={(event) => updateForm({ ...form, username: event.target.value })} />
               </Field>
-              <Field label="密码" required>
+              <Field label="密码" required error={fieldErrors.password}>
                 <TextInput className="input" type="password" value={form.password} onChange={(event) => updateForm({ ...form, password: event.target.value })} />
               </Field>
             </div>
 
-            <Field label="备注">
+            <Field label="备注" error={fieldErrors.remark}>
               <TextareaInput className="textarea" maxLength={200} value={form.remark} onChange={(event) => updateForm({ ...form, remark: event.target.value })} />
             </Field>
 
@@ -1539,24 +1539,14 @@ function DatasourceCreatePage({
         </section>
       )}
 
-      <section className="surface flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="min-h-5 text-sm">
-          {formError ? (
-            <span role="alert" className="inline-flex items-center gap-2 text-red-700">
-              <XCircle size={16} weight="fill" />
-              {formError}
-            </span>
-          ) : null}
-        </div>
-        <div className="flex justify-end gap-3">
-          <Button type="button" onClick={requestBack} className="btn-secondary">
-            取消
-          </Button>
-          <Button type="submit" disabled={submitting || !selectedType} title={!selectedType ? "请选择类型" : undefined} className="btn-primary">
-            {submitting ? <ArrowsClockwise size={16} className="animate-spin" /> : <CheckCircle size={16} />}
-            {submitting ? "保存中" : "保存"}
-          </Button>
-        </div>
+      <section className="surface flex justify-end gap-3 p-4">
+        <Button type="button" onClick={requestBack} className="btn-secondary">
+          取消
+        </Button>
+        <Button type="submit" disabled={submitting || !selectedType} title={!selectedType ? "请选择类型" : undefined} className="btn-primary">
+          {submitting ? <ArrowsClockwise size={16} className="animate-spin" /> : <CheckCircle size={16} />}
+          {submitting ? "保存中" : "保存"}
+        </Button>
       </section>
 
       <ConfirmDialog
@@ -2708,13 +2698,14 @@ function DetailCard({ label, value, mono }: { label: string; value: string; mono
   );
 }
 
-function Field({ label, required, children }: { label: string; required?: boolean; children: ReactNode }) {
+function Field({ label, required, error, children }: { label: string; required?: boolean; error?: string; children: ReactNode }) {
   return (
     <label className="block">
       <span className="label mb-2 block">
         {required && <span className="mr-1 text-red-500">*</span>}
         {label}
       </span>
+      {error && <span className="mb-2 block text-xs font-medium text-red-600">{error}</span>}
       {children}
     </label>
   );
@@ -3407,14 +3398,39 @@ function isDatasourceFormDirty(current: DatasourceFormState, initial: Datasource
   });
 }
 
+function datasourceFieldErrors(form: DatasourceFormState, passwordRequired: boolean): DatasourceFieldErrors {
+  const errors: DatasourceFieldErrors = {};
+  if (!form.name.trim()) {
+    errors.name = "必填";
+  } else if (form.name.trim().length > 50) {
+    errors.name = "最多 50 字符";
+  }
+  if (!form.host.trim()) {
+    errors.host = "必填";
+  }
+  if (!Number.isFinite(Number(form.port)) || Number(form.port) < 1 || Number(form.port) > 65535) {
+    errors.port = "端口无效";
+  }
+  if (!form.username.trim()) {
+    errors.username = "必填";
+  }
+  if (passwordRequired && !form.password) {
+    errors.password = "必填";
+  }
+  if (form.remark.trim().length > 200) {
+    errors.remark = "最多 200 字符";
+  }
+  return errors;
+}
+
 function validateDatasourceForm(form: DatasourceFormState, passwordRequired: boolean) {
-  if (!form.name.trim()) return "名称必填";
-  if (form.name.trim().length > 50) return "名称最多 50 字符";
-  if (!form.host.trim()) return "主机必填";
-  if (!Number.isFinite(Number(form.port)) || Number(form.port) < 1 || Number(form.port) > 65535) return "端口无效";
-  if (!form.username.trim()) return "用户名必填";
-  if (passwordRequired && !form.password) return "密码必填";
-  if (form.remark.trim().length > 200) return "备注最多 200 字符";
+  const errors = datasourceFieldErrors(form, passwordRequired);
+  if (errors.name) return errors.name === "必填" ? "名称必填" : `名称${errors.name}`;
+  if (errors.host) return errors.host === "必填" ? "主机必填" : errors.host;
+  if (errors.port) return errors.port;
+  if (errors.username) return errors.username === "必填" ? "用户名必填" : errors.username;
+  if (errors.password) return errors.password === "必填" ? "密码必填" : errors.password;
+  if (errors.remark) return `备注${errors.remark}`;
   return null;
 }
 
