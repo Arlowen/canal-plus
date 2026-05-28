@@ -758,7 +758,7 @@ function DatasourcePage({
   const [appliedTypeFilter, setAppliedTypeFilter] = useState<"all" | "mysql">("all");
   const [appliedStatusFilter, setAppliedStatusFilter] = useState<"all" | DatasourceStatus>("all");
   const [pageIndex, setPageIndex] = useState(1);
-  const [pageSize, setPageSize] = useState(20);
+  const pageSize = 20;
   const [jumpPage, setJumpPage] = useState("1");
   const [querying, setQuerying] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -1158,20 +1158,6 @@ function DatasourcePage({
               下一页
               <ArrowRight size={14} />
             </Button>
-            <DropdownSelect
-              className="min-h-9 w-28 py-1.5 text-sm"
-              value={String(pageSize)}
-              ariaLabel="每页条数"
-              options={[
-                { value: "10", label: "10 条/页" },
-                { value: "20", label: "20 条/页" },
-                { value: "50", label: "50 条/页" }
-              ]}
-              onChange={(nextValue) => {
-                setPageSize(Number(nextValue));
-                setPageIndex(1);
-              }}
-            />
             <span className="flex items-center gap-2">
               <TextInput
                 className="input h-9 w-16 px-2 py-1.5 text-center font-mono text-sm"
