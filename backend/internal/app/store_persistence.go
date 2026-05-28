@@ -146,7 +146,6 @@ func (p *mySQLStorePersistence) autoMigrate() error {
 		tableSuffix string
 		name        string
 	}{
-		{tableSuffix: "datasources", name: "purpose"},
 		{tableSuffix: "alert_rules", name: "task_id"},
 		{tableSuffix: "alert_rules", name: "delay_threshold_seconds"},
 		{tableSuffix: "alert_rules", name: "error_threshold"},

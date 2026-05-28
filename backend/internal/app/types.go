@@ -5,14 +5,30 @@ type Role string
 const (
 	RoleAdmin    Role = "admin"
 	RoleOperator Role = "operator"
+	RoleReadonly Role = "readonly"
 )
 
 type DatasourceStatus string
 
 const (
-	DatasourceUntested DatasourceStatus = "untested"
-	DatasourceOnline   DatasourceStatus = "online"
-	DatasourceOffline  DatasourceStatus = "offline"
+	DatasourceUntested  DatasourceStatus = "untested"
+	DatasourceAvailable DatasourceStatus = "available"
+	DatasourceFailed    DatasourceStatus = "failed"
+	DatasourceStale     DatasourceStatus = "stale"
+)
+
+type DatasourceType string
+
+const (
+	DatasourceTypeMySQL DatasourceType = "mysql"
+)
+
+type DatasourcePurpose string
+
+const (
+	DatasourcePurposeSource  DatasourcePurpose = "source"
+	DatasourcePurposeTarget  DatasourcePurpose = "target"
+	DatasourcePurposeGeneral DatasourcePurpose = "general"
 )
 
 type User struct {
@@ -32,51 +48,64 @@ type PublicUser struct {
 }
 
 type Datasource struct {
-	ID               string           `json:"id"`
-	Name             string           `json:"name"`
-	Host             string           `json:"host"`
-	Port             int              `json:"port"`
-	Username         string           `json:"username"`
-	PasswordSecret   string           `json:"passwordSecret"`
-	DefaultSchema    string           `json:"defaultSchema,omitempty"`
-	ConnectionStatus DatasourceStatus `json:"connectionStatus"`
-	LastTestedAt     string           `json:"lastTestedAt,omitempty"`
-	LastTestMessage  string           `json:"lastTestMessage,omitempty"`
-	IsDemo           bool             `json:"isDemo"`
-	CreatedAt        string           `json:"createdAt"`
-	UpdatedAt        string           `json:"updatedAt"`
+	ID                string            `json:"id"`
+	Name              string            `json:"name"`
+	Type              DatasourceType    `json:"type"`
+	Purpose           DatasourcePurpose `json:"purpose,omitempty"`
+	Host              string            `json:"host"`
+	Port              int               `json:"port"`
+	Username          string            `json:"username"`
+	PasswordSecret    string            `json:"passwordSecret"`
+	DefaultSchema     string            `json:"defaultSchema,omitempty"`
+	Remark            string            `json:"remark,omitempty"`
+	ConnectionStatus  DatasourceStatus  `json:"connectionStatus"`
+	LastTestedAt      string            `json:"lastTestedAt,omitempty"`
+	LastTestMessage   string            `json:"lastTestMessage,omitempty"`
+	LastTestLatencyMS int               `json:"lastTestLatencyMs,omitempty"`
+	IsDemo            bool              `json:"isDemo"`
+	CreatedAt         string            `json:"createdAt"`
+	UpdatedAt         string            `json:"updatedAt"`
 }
 
 type PublicDatasource struct {
-	ID               string           `json:"id"`
-	Name             string           `json:"name"`
-	Host             string           `json:"host"`
-	Port             int              `json:"port"`
-	Username         string           `json:"username"`
-	DefaultSchema    string           `json:"defaultSchema,omitempty"`
-	ConnectionStatus DatasourceStatus `json:"connectionStatus"`
-	LastTestedAt     string           `json:"lastTestedAt,omitempty"`
-	LastTestMessage  string           `json:"lastTestMessage,omitempty"`
-	HasPassword      bool             `json:"hasPassword"`
-	IsDemo           bool             `json:"isDemo"`
-	CreatedAt        string           `json:"createdAt"`
-	UpdatedAt        string           `json:"updatedAt"`
+	ID                string            `json:"id"`
+	Name              string            `json:"name"`
+	Type              DatasourceType    `json:"type"`
+	Purpose           DatasourcePurpose `json:"purpose,omitempty"`
+	Host              string            `json:"host"`
+	Port              int               `json:"port"`
+	Username          string            `json:"username"`
+	DefaultSchema     string            `json:"defaultSchema,omitempty"`
+	Remark            string            `json:"remark,omitempty"`
+	ConnectionStatus  DatasourceStatus  `json:"connectionStatus"`
+	LastTestedAt      string            `json:"lastTestedAt,omitempty"`
+	LastTestMessage   string            `json:"lastTestMessage,omitempty"`
+	LastTestLatencyMS int               `json:"lastTestLatencyMs,omitempty"`
+	HasPassword       bool              `json:"hasPassword"`
+	IsDemo            bool              `json:"isDemo"`
+	CreatedAt         string            `json:"createdAt"`
+	UpdatedAt         string            `json:"updatedAt"`
 }
 
-type TableColumn struct {
-	Name         string  `json:"name"`
-	Type         string  `json:"type"`
-	Nullable     bool    `json:"nullable"`
-	PrimaryKey   bool    `json:"primaryKey"`
-	DefaultValue *string `json:"defaultValue,omitempty"`
+type DatasourceInput struct {
+	ID            string            `json:"id,omitempty"`
+	Name          string            `json:"name"`
+	Type          DatasourceType    `json:"type"`
+	Purpose       DatasourcePurpose `json:"purpose,omitempty"`
+	Host          string            `json:"host"`
+	Port          int               `json:"port"`
+	Username      string            `json:"username"`
+	Password      string            `json:"password,omitempty"`
+	DefaultSchema string            `json:"defaultSchema,omitempty"`
+	Remark        string            `json:"remark,omitempty"`
 }
 
-type TableInfo struct {
-	Schema  string        `json:"schema"`
-	Name    string        `json:"name"`
-	Engine  string        `json:"engine,omitempty"`
-	Rows    int64         `json:"rows,omitempty"`
-	Columns []TableColumn `json:"columns,omitempty"`
+type DatasourceTestResult struct {
+	Success   bool             `json:"success"`
+	Status    DatasourceStatus `json:"status"`
+	LatencyMS int              `json:"latencyMs"`
+	TestedAt  string           `json:"testedAt"`
+	Message   string           `json:"message"`
 }
 
 type OperationLog struct {

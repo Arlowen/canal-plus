@@ -71,11 +71,35 @@ func TestOperatorCannotMutateConfigurationOrCluster(t *testing.T) {
 	}
 }
 
+func TestReadonlyCanOnlyReadDatasources(t *testing.T) {
+	server := newTestServer(t)
+	readonlyToken := tokenFor("user-readonly")
+	datasource := server.store.Datasources()[0]
+
+	readResponse := serveTestRequest(server, authRequest(http.MethodGet, "/api/datasources", readonlyToken, ""))
+	if readResponse.Code != http.StatusOK {
+		t.Fatalf("readonly read datasources status = %d body = %s", readResponse.Code, readResponse.Body.String())
+	}
+
+	testResponse := serveTestRequest(server, authRequest(http.MethodPost, "/api/datasources/"+datasource.ID+"/test", readonlyToken, ""))
+	if testResponse.Code != http.StatusForbidden {
+		t.Fatalf("readonly test datasource status = %d body = %s", testResponse.Code, testResponse.Body.String())
+	}
+
+	createResponse := serveTestRequest(server, authRequest(http.MethodPost, "/api/datasources", readonlyToken, `{"name":"blocked"}`))
+	if createResponse.Code != http.StatusForbidden {
+		t.Fatalf("readonly create datasource status = %d body = %s", createResponse.Code, createResponse.Body.String())
+	}
+}
+
 func TestRemovedLegacyRoutesAreNotFound(t *testing.T) {
 	server := newTestServer(t)
 	adminToken := tokenFor("user-admin")
 
 	for _, path := range []string{
+		"/api/datasources/source-id/schemas",
+		"/api/datasources/source-id/schemas/order_center/tables",
+		"/api/datasources/source-id/schemas/order_center/tables/orders/columns",
 		"/api/sync-tasks",
 		"/api/error-events",
 		"/api/capability-jobs",
@@ -108,14 +132,91 @@ func TestAdminCannotOperateLocalControlNodeWithUnsafeActions(t *testing.T) {
 func TestAdminCanMutateConfiguration(t *testing.T) {
 	server := newTestServer(t)
 	adminToken := tokenFor("user-admin")
+	previousTester := datasourceConnectionTester
+	datasourceConnectionTester = func(datasource Datasource) DatasourceTestResult {
+		return DatasourceTestResult{
+			Success:   true,
+			Status:    DatasourceAvailable,
+			LatencyMS: 12,
+			TestedAt:  now(),
+			Message:   "Connection available",
+		}
+	}
+	defer func() {
+		datasourceConnectionTester = previousTester
+	}()
+
+	payload := `{"name":"管理员创建","type":"mysql","purpose":"general","host":"127.0.0.1","port":3306,"username":"root","password":"secret"}`
+
+	untestedResponse := serveTestRequest(server, authRequest(
+		http.MethodPost,
+		"/api/datasources",
+		adminToken,
+		payload,
+	))
+	if untestedResponse.Code != http.StatusBadRequest {
+		t.Fatalf("admin create datasource without test status = %d body = %s", untestedResponse.Code, untestedResponse.Body.String())
+	}
+
+	testResponse := serveTestRequest(server, authRequest(
+		http.MethodPost,
+		"/api/datasources/test",
+		adminToken,
+		payload,
+	))
+	if testResponse.Code != http.StatusOK {
+		t.Fatalf("admin test datasource status = %d body = %s", testResponse.Code, testResponse.Body.String())
+	}
 
 	response := serveTestRequest(server, authRequest(
 		http.MethodPost,
 		"/api/datasources",
 		adminToken,
-		`{"name":"管理员创建","host":"127.0.0.1","port":3306,"username":"root","password":"secret"}`,
+		payload,
 	))
 	if response.Code != http.StatusCreated {
 		t.Fatalf("admin create datasource status = %d body = %s", response.Code, response.Body.String())
+	}
+}
+
+func TestDatasourceUpdateRequiresRetestWhenConnectionChanges(t *testing.T) {
+	server := newTestServer(t)
+	adminToken := tokenFor("user-admin")
+	datasource := server.store.Datasources()[0]
+
+	metadataOnlyPayload := `{"name":"仅改名称","type":"mysql","purpose":"source","host":"` + datasource.Host + `","port":3306,"username":"` + datasource.Username + `","defaultSchema":"` + datasource.DefaultSchema + `","remark":"` + datasource.Remark + `"}`
+	metadataOnlyResponse := serveTestRequest(server, authRequest(http.MethodPut, "/api/datasources/"+datasource.ID, adminToken, metadataOnlyPayload))
+	if metadataOnlyResponse.Code != http.StatusOK {
+		t.Fatalf("metadata-only update status = %d body = %s", metadataOnlyResponse.Code, metadataOnlyResponse.Body.String())
+	}
+
+	connectionPayload := `{"id":"` + datasource.ID + `","name":"仅改名称","type":"mysql","purpose":"source","host":"mysql-new.internal","port":3306,"username":"` + datasource.Username + `","defaultSchema":"` + datasource.DefaultSchema + `","remark":"` + datasource.Remark + `"}`
+	untestedResponse := serveTestRequest(server, authRequest(http.MethodPut, "/api/datasources/"+datasource.ID, adminToken, connectionPayload))
+	if untestedResponse.Code != http.StatusBadRequest {
+		t.Fatalf("connection update without test status = %d body = %s", untestedResponse.Code, untestedResponse.Body.String())
+	}
+
+	testResponse := serveTestRequest(server, authRequest(http.MethodPost, "/api/datasources/test", adminToken, connectionPayload))
+	if testResponse.Code != http.StatusOK {
+		t.Fatalf("test changed connection status = %d body = %s", testResponse.Code, testResponse.Body.String())
+	}
+
+	updateResponse := serveTestRequest(server, authRequest(http.MethodPut, "/api/datasources/"+datasource.ID, adminToken, connectionPayload))
+	if updateResponse.Code != http.StatusOK {
+		t.Fatalf("connection update after test status = %d body = %s", updateResponse.Code, updateResponse.Body.String())
+	}
+}
+
+func TestDatasourceAPIHidesPasswordSecret(t *testing.T) {
+	server := newTestServer(t)
+	adminToken := tokenFor("user-admin")
+
+	response := serveTestRequest(server, authRequest(http.MethodGet, "/api/datasources", adminToken, ""))
+	if response.Code != http.StatusOK {
+		t.Fatalf("list datasources status = %d body = %s", response.Code, response.Body.String())
+	}
+	body := response.Body.String()
+	if strings.Contains(body, "passwordSecret") || strings.Contains(body, "demo-password") {
+		t.Fatalf("datasource response leaked password material: %s", body)
 	}
 }

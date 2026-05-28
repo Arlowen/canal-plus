@@ -1,5 +1,7 @@
-export type Role = "admin" | "operator";
-export type DatasourceStatus = "untested" | "online" | "offline";
+export type Role = "admin" | "operator" | "readonly";
+export type DatasourceStatus = "untested" | "available" | "failed" | "stale";
+export type DatasourceType = "mysql";
+export type DatasourcePurpose = "source" | "target" | "general";
 
 export interface User {
   id: string;
@@ -11,32 +13,42 @@ export interface User {
 export interface Datasource {
   id: string;
   name: string;
+  type: DatasourceType;
+  purpose?: DatasourcePurpose;
   host: string;
   port: number;
   username: string;
   defaultSchema?: string;
+  remark?: string;
   connectionStatus: DatasourceStatus;
   lastTestedAt?: string;
   lastTestMessage?: string;
+  lastTestLatencyMs?: number;
   hasPassword: boolean;
   isDemo: boolean;
   createdAt: string;
   updatedAt: string;
 }
 
-export interface TableColumn {
+export interface DatasourceInput {
+  id?: string;
   name: string;
-  type: string;
-  nullable: boolean;
-  primaryKey: boolean;
-  defaultValue?: string | null;
+  type: DatasourceType;
+  purpose?: DatasourcePurpose;
+  host: string;
+  port: number;
+  username: string;
+  password?: string;
+  defaultSchema?: string;
+  remark?: string;
 }
 
-export interface TableInfo {
-  schema: string;
-  name: string;
-  engine?: string;
-  rows?: number;
+export interface DatasourceTestResult {
+  success: boolean;
+  status: DatasourceStatus;
+  latencyMs: number;
+  testedAt: string;
+  message: string;
 }
 
 export interface OperationLog {

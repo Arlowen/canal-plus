@@ -84,6 +84,14 @@ func (s *Store) ensureUsersLocked() {
 		PasswordHash: hashPassword("operator123"),
 		CreatedAt:    createdAt,
 	})
+	ensureUser(User{
+		ID:           "user-readonly",
+		Name:         "只读用户",
+		Username:     "readonly",
+		Role:         RoleReadonly,
+		PasswordHash: hashPassword("readonly123"),
+		CreatedAt:    createdAt,
+	})
 }
 
 func (s *Store) normalizeSupportedDataLocked() {
@@ -97,6 +105,20 @@ func (s *Store) normalizeSupportedDataLocked() {
 	s.data.OperationLogs = logs
 	s.data.AlertEvents = nil
 	for index := range s.data.Datasources {
+		if s.data.Datasources[index].Type == "" {
+			s.data.Datasources[index].Type = DatasourceTypeMySQL
+		}
+		if s.data.Datasources[index].Purpose == "" {
+			s.data.Datasources[index].Purpose = DatasourcePurposeGeneral
+		}
+		switch s.data.Datasources[index].ConnectionStatus {
+		case DatasourceStatus("online"):
+			s.data.Datasources[index].ConnectionStatus = DatasourceAvailable
+		case DatasourceStatus("offline"):
+			s.data.Datasources[index].ConnectionStatus = DatasourceFailed
+		case "":
+			s.data.Datasources[index].ConnectionStatus = DatasourceUntested
+		}
 		if !s.data.Datasources[index].IsDemo {
 			continue
 		}
@@ -166,12 +188,15 @@ func (s *Store) GetDatasource(id string) (Datasource, bool) {
 	return s.getDatasourceLocked(id)
 }
 
-func (s *Store) CreateDatasource(input Datasource) (Datasource, error) {
+func (s *Store) CreateDatasource(input Datasource, testResult DatasourceTestResult) (Datasource, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	timestamp := now()
 	input.ID = newID()
-	input.ConnectionStatus = DatasourceUntested
+	input.ConnectionStatus = DatasourceAvailable
+	input.LastTestedAt = testResult.TestedAt
+	input.LastTestMessage = testResult.Message
+	input.LastTestLatencyMS = testResult.LatencyMS
 	input.IsDemo = false
 	input.CreatedAt = timestamp
 	input.UpdatedAt = timestamp
@@ -183,30 +208,48 @@ func (s *Store) CreateDatasource(input Datasource) (Datasource, error) {
 	return cloneJSON(input), nil
 }
 
-func (s *Store) UpdateDatasource(id string, patch Datasource) (Datasource, bool, error) {
+type DatasourcePatch struct {
+	Name              string
+	Type              DatasourceType
+	Purpose           DatasourcePurpose
+	Host              string
+	Port              int
+	Username          string
+	PasswordSecret    string
+	PasswordChanged   bool
+	DefaultSchema     string
+	Remark            string
+	ConnectionChanged bool
+	TestResult        *DatasourceTestResult
+}
+
+func (s *Store) UpdateDatasource(id string, patch DatasourcePatch) (Datasource, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for index := range s.data.Datasources {
 		if s.data.Datasources[index].ID != id {
 			continue
 		}
-		if patch.Name != "" {
-			s.data.Datasources[index].Name = patch.Name
-		}
-		if patch.Host != "" {
-			s.data.Datasources[index].Host = patch.Host
-		}
-		if patch.Port != 0 {
-			s.data.Datasources[index].Port = patch.Port
-		}
-		if patch.Username != "" {
-			s.data.Datasources[index].Username = patch.Username
-		}
-		if patch.PasswordSecret != "" {
+		s.data.Datasources[index].Name = patch.Name
+		s.data.Datasources[index].Type = patch.Type
+		s.data.Datasources[index].Purpose = patch.Purpose
+		s.data.Datasources[index].Host = patch.Host
+		s.data.Datasources[index].Port = patch.Port
+		s.data.Datasources[index].Username = patch.Username
+		if patch.PasswordChanged {
 			s.data.Datasources[index].PasswordSecret = patch.PasswordSecret
 		}
-		if patch.DefaultSchema != "" {
-			s.data.Datasources[index].DefaultSchema = patch.DefaultSchema
+		s.data.Datasources[index].DefaultSchema = patch.DefaultSchema
+		s.data.Datasources[index].Remark = patch.Remark
+		if patch.ConnectionChanged {
+			if patch.TestResult != nil && patch.TestResult.Success {
+				s.data.Datasources[index].ConnectionStatus = DatasourceAvailable
+				s.data.Datasources[index].LastTestedAt = patch.TestResult.TestedAt
+				s.data.Datasources[index].LastTestMessage = patch.TestResult.Message
+				s.data.Datasources[index].LastTestLatencyMS = patch.TestResult.LatencyMS
+			} else {
+				s.data.Datasources[index].ConnectionStatus = DatasourceStale
+			}
 		}
 		s.data.Datasources[index].UpdatedAt = now()
 		updated := s.data.Datasources[index]
@@ -232,26 +275,34 @@ func (s *Store) DeleteDatasource(id string) (bool, error) {
 	return false, nil
 }
 
-func (s *Store) MarkDatasourceTest(id string, online bool, message string) (Datasource, bool, error) {
+func (s *Store) MarkDatasourceTest(id string, result DatasourceTestResult) (Datasource, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for index := range s.data.Datasources {
 		if s.data.Datasources[index].ID != id {
 			continue
 		}
-		if online {
-			s.data.Datasources[index].ConnectionStatus = DatasourceOnline
+		if result.Success {
+			s.data.Datasources[index].ConnectionStatus = DatasourceAvailable
 		} else {
-			s.data.Datasources[index].ConnectionStatus = DatasourceOffline
+			s.data.Datasources[index].ConnectionStatus = DatasourceFailed
 		}
-		s.data.Datasources[index].LastTestedAt = now()
-		s.data.Datasources[index].LastTestMessage = message
+		s.data.Datasources[index].LastTestedAt = result.TestedAt
+		s.data.Datasources[index].LastTestMessage = result.Message
+		s.data.Datasources[index].LastTestLatencyMS = result.LatencyMS
 		s.data.Datasources[index].UpdatedAt = now()
 		updated := s.data.Datasources[index]
 		s.logLocked("admin", "test", "datasource", id, "Datasource connection tested: "+updated.Name)
 		return cloneJSON(updated), true, s.saveLocked()
 	}
 	return Datasource{}, false, nil
+}
+
+func (s *Store) RecordDatasourceTestLog(targetID string, name string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.logLocked("admin", "test", "datasource", targetID, "Datasource connection tested: "+name)
+	return s.saveLocked()
 }
 
 func (s *Store) ClusterSnapshot() ClusterSnapshot {

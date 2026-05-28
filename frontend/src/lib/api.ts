@@ -7,13 +7,13 @@ import type {
   ClusterNode,
   ClusterNodeInput,
   Datasource,
+  DatasourceInput,
+  DatasourceTestResult,
   LoginResponse,
   NodeConnectionTestResult,
   NodeOperationResult,
   NodeStatusChangeResult,
   OperationLog,
-  TableColumn,
-  TableInfo,
   User
 } from "../types/api";
 
@@ -173,27 +173,13 @@ export const api = {
   datasources() {
     return request<Datasource[]>("/datasources");
   },
-  createDatasource(input: {
-    name: string;
-    host: string;
-    port: number;
-    username: string;
-    password: string;
-    defaultSchema?: string;
-  }) {
+  createDatasource(input: DatasourceInput) {
     return request<Datasource>("/datasources", {
       method: "POST",
       body: JSON.stringify(input)
     });
   },
-  updateDatasource(id: string, input: {
-    name?: string;
-    host?: string;
-    port?: number;
-    username?: string;
-    password?: string;
-    defaultSchema?: string;
-  }) {
+  updateDatasource(id: string, input: DatasourceInput) {
     return request<Datasource>(`/datasources/${id}`, {
       method: "PUT",
       body: JSON.stringify(input)
@@ -202,17 +188,14 @@ export const api = {
   deleteDatasource(id: string) {
     return request<void>(`/datasources/${id}`, { method: "DELETE" });
   },
+  testDatasourceInput(input: DatasourceInput) {
+    return request<DatasourceTestResult>("/datasources/test", {
+      method: "POST",
+      body: JSON.stringify(input)
+    });
+  },
   testDatasource(id: string) {
-    return request<Datasource>(`/datasources/${id}/test`, { method: "POST" });
-  },
-  schemas(datasourceId: string, options?: RequestInit) {
-    return request<string[]>(`/datasources/${datasourceId}/schemas`, options);
-  },
-  tables(datasourceId: string, schema: string, options?: RequestInit) {
-    return request<TableInfo[]>(`/datasources/${datasourceId}/schemas/${schema}/tables`, options);
-  },
-  columns(datasourceId: string, schema: string, table: string, options?: RequestInit) {
-    return request<TableColumn[]>(`/datasources/${datasourceId}/schemas/${schema}/tables/${table}/columns`, options);
+    return request<DatasourceTestResult>(`/datasources/${id}/test`, { method: "POST" });
   },
   logs() {
     return request<OperationLog[]>("/operation-logs");

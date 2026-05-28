@@ -1,21 +1,25 @@
 package app
 
 import (
+	"errors"
 	"net/http"
 	"os"
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
 type Server struct {
-	store           *Store
-	localNodeID     string
-	port            string
-	frontendOrigins []string
-	runtimeConfig   RuntimeConfig
-	allowedOrigins  map[string]struct{}
+	store                             *Store
+	localNodeID                       string
+	port                              string
+	frontendOrigins                   []string
+	runtimeConfig                     RuntimeConfig
+	allowedOrigins                    map[string]struct{}
+	datasourceVerificationMu          sync.Mutex
+	datasourceSuccessfulVerifications map[string]DatasourceTestResult
 }
 
 func NewServer() (*Server, error) {
@@ -58,11 +62,12 @@ func NewServer() (*Server, error) {
 	storageLocation := store.StorageLocation()
 
 	server := &Server{
-		store:           store,
-		localNodeID:     localNodeID,
-		port:            port,
-		frontendOrigins: frontendOrigins,
-		allowedOrigins:  allowedOrigins,
+		store:                             store,
+		localNodeID:                       localNodeID,
+		port:                              port,
+		frontendOrigins:                   frontendOrigins,
+		allowedOrigins:                    allowedOrigins,
+		datasourceSuccessfulVerifications: map[string]DatasourceTestResult{},
 		runtimeConfig: RuntimeConfig{
 			BackendPort:                      port,
 			FrontendOrigins:                  frontendOrigins,
@@ -203,6 +208,8 @@ func (s *Server) handleDatasources(response http.ResponseWriter, request *http.R
 		writeJSON(response, http.StatusOK, publicDatasources)
 	case len(parts) == 1 && request.Method == http.MethodPost:
 		s.createDatasource(response, request)
+	case len(parts) == 2 && parts[1] == "test" && request.Method == http.MethodPost:
+		s.testDatasourceInput(response, request)
 	case len(parts) == 2 && request.Method == http.MethodGet:
 		datasource, ok := s.store.GetDatasource(parts[1])
 		if !ok {
@@ -224,48 +231,45 @@ func (s *Server) handleDatasources(response http.ResponseWriter, request *http.R
 		}
 		response.WriteHeader(http.StatusNoContent)
 	case len(parts) == 3 && parts[2] == "test" && request.Method == http.MethodPost:
-		s.testDatasource(response, parts[1])
-	case len(parts) == 3 && parts[2] == "schemas" && request.Method == http.MethodGet:
-		s.listSchemas(response, parts[1])
-	case len(parts) == 5 && parts[2] == "schemas" && parts[4] == "tables" && request.Method == http.MethodGet:
-		s.listTables(response, parts[1], parts[3])
-	case len(parts) == 7 && parts[2] == "schemas" && parts[4] == "tables" && parts[6] == "columns" && request.Method == http.MethodGet:
-		s.listColumns(response, parts[1], parts[3], parts[5])
+		s.testSavedDatasource(response, parts[1])
 	default:
 		writeError(response, http.StatusNotFound, "not found")
 	}
 }
 
 func (s *Server) createDatasource(response http.ResponseWriter, request *http.Request) {
-	var input struct {
-		Name          string `json:"name"`
-		Host          string `json:"host"`
-		Port          int    `json:"port"`
-		Username      string `json:"username"`
-		Password      string `json:"password"`
-		DefaultSchema string `json:"defaultSchema"`
-	}
+	var input DatasourceInput
 	if err := decodeJSON(request, &input); err != nil {
 		writeError(response, http.StatusBadRequest, "请求体格式错误")
 		return
 	}
-	if input.Name == "" || input.Host == "" || input.Port == 0 || input.Username == "" || input.Password == "" {
-		writeError(response, http.StatusBadRequest, "数据源必填项缺失")
+	normalized, err := normalizeDatasourceInput(input, true)
+	if err != nil {
+		writeError(response, http.StatusBadRequest, err.Error())
 		return
 	}
-	passwordSecret, err := encryptText(input.Password)
+	fingerprint := datasourceInputFingerprint(normalized, "")
+	testResult, ok := s.datasourceVerification(fingerprint)
+	if !ok {
+		writeError(response, http.StatusBadRequest, "请先测试")
+		return
+	}
+	passwordSecret, err := encryptText(normalized.Password)
 	if err != nil {
 		writeError(response, http.StatusInternalServerError, err.Error())
 		return
 	}
 	datasource, err := s.store.CreateDatasource(Datasource{
-		Name:           input.Name,
-		Host:           input.Host,
-		Port:           input.Port,
-		Username:       input.Username,
+		Name:           normalized.Name,
+		Type:           normalized.Type,
+		Purpose:        normalized.Purpose,
+		Host:           normalized.Host,
+		Port:           normalized.Port,
+		Username:       normalized.Username,
 		PasswordSecret: passwordSecret,
-		DefaultSchema:  input.DefaultSchema,
-	})
+		DefaultSchema:  normalized.DefaultSchema,
+		Remark:         normalized.Remark,
+	}, testResult)
 	if err != nil {
 		writeError(response, http.StatusInternalServerError, err.Error())
 		return
@@ -274,34 +278,56 @@ func (s *Server) createDatasource(response http.ResponseWriter, request *http.Re
 }
 
 func (s *Server) updateDatasource(response http.ResponseWriter, request *http.Request, id string) {
-	var input struct {
-		Name          string `json:"name"`
-		Host          string `json:"host"`
-		Port          int    `json:"port"`
-		Username      string `json:"username"`
-		Password      string `json:"password"`
-		DefaultSchema string `json:"defaultSchema"`
+	existing, ok := s.store.GetDatasource(id)
+	if !ok {
+		writeError(response, http.StatusNotFound, "数据源不存在")
+		return
 	}
+	var input DatasourceInput
 	if err := decodeJSON(request, &input); err != nil {
 		writeError(response, http.StatusBadRequest, "请求体格式错误")
 		return
 	}
-	patch := Datasource{
-		Name:          input.Name,
-		Host:          input.Host,
-		Port:          input.Port,
-		Username:      input.Username,
-		DefaultSchema: input.DefaultSchema,
+	normalized, err := normalizeDatasourceInput(input, existing.PasswordSecret == "")
+	if err != nil {
+		writeError(response, http.StatusBadRequest, err.Error())
+		return
 	}
-	if input.Password != "" {
-		passwordSecret, err := encryptText(input.Password)
+	connectionChanged := datasourceConnectionChanged(existing, normalized)
+	var testResult *DatasourceTestResult
+	if connectionChanged {
+		fingerprint := datasourceInputFingerprint(normalized, existing.PasswordSecret)
+		verified, ok := s.datasourceVerification(fingerprint)
+		if !ok {
+			writeError(response, http.StatusBadRequest, "请先测试")
+			return
+		}
+		testResult = &verified
+	}
+	passwordSecret := ""
+	passwordChanged := normalized.Password != ""
+	if passwordChanged {
+		encrypted, err := encryptText(normalized.Password)
 		if err != nil {
 			writeError(response, http.StatusInternalServerError, err.Error())
 			return
 		}
-		patch.PasswordSecret = passwordSecret
+		passwordSecret = encrypted
 	}
-	datasource, ok, err := s.store.UpdateDatasource(id, patch)
+	datasource, ok, err := s.store.UpdateDatasource(id, DatasourcePatch{
+		Name:              normalized.Name,
+		Type:              normalized.Type,
+		Purpose:           normalized.Purpose,
+		Host:              normalized.Host,
+		Port:              normalized.Port,
+		Username:          normalized.Username,
+		PasswordSecret:    passwordSecret,
+		PasswordChanged:   passwordChanged,
+		DefaultSchema:     normalized.DefaultSchema,
+		Remark:            normalized.Remark,
+		ConnectionChanged: connectionChanged,
+		TestResult:        testResult,
+	})
 	if err != nil {
 		writeError(response, http.StatusInternalServerError, err.Error())
 		return
@@ -313,14 +339,51 @@ func (s *Server) updateDatasource(response http.ResponseWriter, request *http.Re
 	writeJSON(response, http.StatusOK, toPublicDatasource(datasource))
 }
 
-func (s *Server) testDatasource(response http.ResponseWriter, id string) {
+func (s *Server) testDatasourceInput(response http.ResponseWriter, request *http.Request) {
+	var input DatasourceInput
+	if err := decodeJSON(request, &input); err != nil {
+		writeError(response, http.StatusBadRequest, "请求体格式错误")
+		return
+	}
+	var existing *Datasource
+	if strings.TrimSpace(input.ID) != "" {
+		datasource, ok := s.store.GetDatasource(strings.TrimSpace(input.ID))
+		if !ok {
+			writeError(response, http.StatusNotFound, "数据源不存在")
+			return
+		}
+		existing = &datasource
+	}
+	requirePassword := existing == nil || existing.PasswordSecret == ""
+	normalized, err := normalizeDatasourceInput(input, requirePassword)
+	if err != nil {
+		writeError(response, http.StatusBadRequest, err.Error())
+		return
+	}
+	datasource, err := datasourceFromTestInput(normalized, existing)
+	if err != nil {
+		writeError(response, http.StatusInternalServerError, err.Error())
+		return
+	}
+	result := datasourceConnectionTester(datasource)
+	if result.Success {
+		s.rememberDatasourceVerification(datasourceInputFingerprint(normalized, datasource.PasswordSecret), result)
+	}
+	if err := s.store.RecordDatasourceTestLog(valueOr(normalized.ID, ""), normalized.Name); err != nil {
+		writeError(response, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(response, http.StatusOK, result)
+}
+
+func (s *Server) testSavedDatasource(response http.ResponseWriter, id string) {
 	datasource, ok := s.store.GetDatasource(id)
 	if !ok {
 		writeError(response, http.StatusNotFound, "数据源不存在")
 		return
 	}
-	online, message := testDatasource(datasource)
-	updated, ok, err := s.store.MarkDatasourceTest(id, online, message)
+	result := datasourceConnectionTester(datasource)
+	_, ok, err := s.store.MarkDatasourceTest(id, result)
 	if err != nil {
 		writeError(response, http.StatusInternalServerError, err.Error())
 		return
@@ -329,53 +392,130 @@ func (s *Server) testDatasource(response http.ResponseWriter, id string) {
 		writeError(response, http.StatusNotFound, "数据源不存在")
 		return
 	}
-	status := http.StatusOK
-	if !online {
-		status = http.StatusUnprocessableEntity
-	}
-	writeJSON(response, status, toPublicDatasource(updated))
+	writeJSON(response, http.StatusOK, result)
 }
 
-func (s *Server) listSchemas(response http.ResponseWriter, id string) {
-	datasource, ok := s.store.GetDatasource(id)
-	if !ok {
-		writeError(response, http.StatusNotFound, "数据源不存在")
-		return
+func normalizeDatasourceInput(input DatasourceInput, requirePassword bool) (DatasourceInput, error) {
+	input.ID = strings.TrimSpace(input.ID)
+	input.Name = strings.TrimSpace(input.Name)
+	input.Type = DatasourceType(strings.TrimSpace(string(input.Type)))
+	input.Purpose = DatasourcePurpose(strings.TrimSpace(string(input.Purpose)))
+	input.Host = strings.TrimSpace(input.Host)
+	input.Username = strings.TrimSpace(input.Username)
+	input.DefaultSchema = strings.TrimSpace(input.DefaultSchema)
+	input.Remark = strings.TrimSpace(input.Remark)
+
+	if input.Name == "" {
+		return DatasourceInput{}, errors.New("名称必填")
 	}
-	schemas, err := listSchemas(datasource)
-	if err != nil {
-		writeError(response, http.StatusUnprocessableEntity, err.Error())
-		return
+	if len([]rune(input.Name)) > 50 {
+		return DatasourceInput{}, errors.New("名称最多 50 字符")
 	}
-	writeJSON(response, http.StatusOK, schemas)
+	if input.Type == "" {
+		return DatasourceInput{}, errors.New("类型必填")
+	}
+	if input.Type != DatasourceTypeMySQL {
+		return DatasourceInput{}, errors.New("类型无效")
+	}
+	if input.Purpose == "" {
+		input.Purpose = DatasourcePurposeGeneral
+	}
+	switch input.Purpose {
+	case DatasourcePurposeSource, DatasourcePurposeTarget, DatasourcePurposeGeneral:
+	default:
+		return DatasourceInput{}, errors.New("用途无效")
+	}
+	if input.Host == "" {
+		return DatasourceInput{}, errors.New("主机必填")
+	}
+	if input.Port < 1 || input.Port > 65535 {
+		return DatasourceInput{}, errors.New("端口无效")
+	}
+	if input.Username == "" {
+		return DatasourceInput{}, errors.New("用户名必填")
+	}
+	if requirePassword && input.Password == "" {
+		return DatasourceInput{}, errors.New("密码必填")
+	}
+	if len([]rune(input.Remark)) > 200 {
+		return DatasourceInput{}, errors.New("备注最多 200 字符")
+	}
+	return input, nil
 }
 
-func (s *Server) listTables(response http.ResponseWriter, id string, schema string) {
-	datasource, ok := s.store.GetDatasource(id)
-	if !ok {
-		writeError(response, http.StatusNotFound, "数据源不存在")
-		return
+func datasourceFromTestInput(input DatasourceInput, existing *Datasource) (Datasource, error) {
+	passwordSecret := ""
+	isDemo := false
+	if existing != nil {
+		passwordSecret = existing.PasswordSecret
+		isDemo = existing.IsDemo
 	}
-	tables, err := listTables(datasource, schema)
-	if err != nil {
-		writeError(response, http.StatusUnprocessableEntity, err.Error())
-		return
+	if input.Password != "" {
+		encrypted, err := encryptText(input.Password)
+		if err != nil {
+			return Datasource{}, err
+		}
+		passwordSecret = encrypted
 	}
-	writeJSON(response, http.StatusOK, tables)
+	return Datasource{
+		ID:             input.ID,
+		Name:           input.Name,
+		Type:           input.Type,
+		Purpose:        input.Purpose,
+		Host:           input.Host,
+		Port:           input.Port,
+		Username:       input.Username,
+		PasswordSecret: passwordSecret,
+		DefaultSchema:  input.DefaultSchema,
+		Remark:         input.Remark,
+		IsDemo:         isDemo,
+	}, nil
 }
 
-func (s *Server) listColumns(response http.ResponseWriter, id string, schema string, table string) {
-	datasource, ok := s.store.GetDatasource(id)
-	if !ok {
-		writeError(response, http.StatusNotFound, "数据源不存在")
+func datasourceConnectionChanged(existing Datasource, input DatasourceInput) bool {
+	return existing.Type != input.Type ||
+		existing.Host != input.Host ||
+		existing.Port != input.Port ||
+		existing.Username != input.Username ||
+		existing.DefaultSchema != input.DefaultSchema ||
+		input.Password != ""
+}
+
+func datasourceInputFingerprint(input DatasourceInput, existingPasswordSecret string) string {
+	passwordKey := "secret:" + existingPasswordSecret
+	if input.Password != "" {
+		passwordKey = "plain:" + input.Password
+	}
+	return checksumJSON(map[string]any{
+		"type":          input.Type,
+		"host":          input.Host,
+		"port":          input.Port,
+		"username":      input.Username,
+		"password":      passwordKey,
+		"defaultSchema": input.DefaultSchema,
+	})
+}
+
+func (s *Server) rememberDatasourceVerification(fingerprint string, result DatasourceTestResult) {
+	if fingerprint == "" || !result.Success {
 		return
 	}
-	columns, err := listColumns(datasource, schema, table)
-	if err != nil {
-		writeError(response, http.StatusUnprocessableEntity, err.Error())
-		return
+	s.datasourceVerificationMu.Lock()
+	defer s.datasourceVerificationMu.Unlock()
+	if s.datasourceSuccessfulVerifications == nil {
+		s.datasourceSuccessfulVerifications = map[string]DatasourceTestResult{}
 	}
-	writeJSON(response, http.StatusOK, columns)
+	s.datasourceSuccessfulVerifications[fingerprint] = result
+}
+
+func (s *Server) datasourceVerification(fingerprint string) (DatasourceTestResult, bool) {
+	s.datasourceVerificationMu.Lock()
+	defer s.datasourceVerificationMu.Unlock()
+	if s.datasourceSuccessfulVerifications == nil {
+		return DatasourceTestResult{}, false
+	}
+	result, ok := s.datasourceSuccessfulVerifications[fingerprint]
+	return result, ok && result.Success
 }
 
 func (s *Server) handleAlertRules(response http.ResponseWriter, request *http.Request, parts []string) {
@@ -595,6 +735,8 @@ func operatorCanMutate(method string, parts []string) bool {
 		return false
 	}
 	switch {
+	case len(parts) == 2 && parts[0] == "datasources" && parts[1] == "test":
+		return true
 	case len(parts) == 3 && parts[0] == "datasources" && parts[2] == "test":
 		return true
 	default:

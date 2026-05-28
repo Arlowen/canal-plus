@@ -38,7 +38,7 @@ import {
   subscribeBackendAvailability
 } from "./lib/api";
 import { cx, formatDate, formatDateTime, secondsSince } from "./lib/format";
-import { canManageConfig, roleLabel } from "./lib/permissions";
+import { canManageConfig, canTestDatasource, roleLabel } from "./lib/permissions";
 import type {
   AlertEvent,
   AlertRule,
@@ -48,6 +48,10 @@ import type {
   ClusterNodeInput,
   ClusterSnapshot,
   Datasource,
+  DatasourceInput,
+  DatasourcePurpose,
+  DatasourceStatus,
+  DatasourceTestResult,
   NodeConnectionTestResult,
   NodeOperationResult,
   NodeStatusChangeResult,
@@ -56,7 +60,7 @@ import type {
 } from "./types/api";
 
 type MainPage = "datasources" | "nodes" | "settings";
-type Page = MainPage | "datasourceDetail" | "nodeDetail";
+type Page = MainPage | "nodeDetail";
 type NoticeTone = "success" | "error" | "warning";
 
 type Notice = {
@@ -83,18 +87,33 @@ type ClusterHandoffReport = {
   after: ClusterSnapshot;
 };
 
+type DatasourceFormState = {
+  name: string;
+  type: "mysql";
+  purpose: DatasourcePurpose;
+  host: string;
+  port: number;
+  username: string;
+  password: string;
+  defaultSchema: string;
+  remark: string;
+};
+
 const navItems: Array<{ id: MainPage; label: string; icon: typeof Database }> = [
   { id: "datasources", label: "数据源", icon: Database },
   { id: "nodes", label: "节点", icon: HardDrives }
 ];
 
-const emptyDatasourceForm = {
+const emptyDatasourceForm: DatasourceFormState = {
   name: "",
+  type: "mysql" as const,
+  purpose: "general" as const,
   host: "",
   port: 3306,
   username: "",
   password: "",
-  defaultSchema: ""
+  defaultSchema: "",
+  remark: ""
 };
 
 const emptyNodeForm: ClusterNodeInput = {
@@ -388,12 +407,11 @@ function App() {
   const [globalError, setGlobalError] = useState<string | null>(null);
   const [serviceUnavailable, setServiceUnavailable] = useState(false);
   const [serviceRecoveryPending, setServiceRecoveryPending] = useState(false);
-  const [datasourceCreateToken, setDatasourceCreateToken] = useState(0);
   const [nodeCreateToken, setNodeCreateToken] = useState(0);
-  const [focusedDatasourceId, setFocusedDatasourceId] = useState<string | null>(null);
   const [focusedNodeId, setFocusedNodeId] = useState<string | null>(null);
   const previousServiceUnavailable = useRef(false);
   const canManage = canManageConfig(user);
+  const canTestDatasources = canTestDatasource(user);
 
   const pushNotice = useCallback((next: Notice) => {
     setNotice(next);
@@ -531,16 +549,6 @@ function App() {
     setNotice(null);
   };
 
-  const openDatasourceCreator = () => {
-    setPage("datasources");
-    setDatasourceCreateToken((value) => value + 1);
-  };
-
-  const openDatasourceDetail = (datasourceId: string) => {
-    setFocusedDatasourceId(datasourceId);
-    setPage("datasourceDetail");
-  };
-
   const openNodeCreator = () => {
     setPage("nodes");
     setNodeCreateToken((value) => value + 1);
@@ -642,12 +650,6 @@ function App() {
                   <ArrowsClockwise size={16} />
                   刷新
                 </Button>
-                {page === "datasources" && canManage && (
-                  <Button onClick={openDatasourceCreator} className="btn-primary">
-                    <Plus size={16} />
-                    新增
-                  </Button>
-                )}
                 {page === "nodes" && canManage && (
                   <Button onClick={openNodeCreator} className="btn-primary">
                     <Plus size={16} />
@@ -656,13 +658,6 @@ function App() {
                 )}
               </div>
             </div>
-
-            <SystemOverview
-              datasources={datasources}
-              cluster={cluster}
-              alertEvents={alertEvents}
-              serviceUnavailable={serviceUnavailable}
-            />
 
             {serviceUnavailable && (
               <NoticeBanner
@@ -696,19 +691,9 @@ function App() {
               <DatasourcePage
                 datasources={datasources}
                 canManage={canManage}
+                canTest={canTestDatasources}
                 onChanged={refresh}
                 pushNotice={pushNotice}
-                openCreateToken={datasourceCreateToken}
-                onOpenDatasource={openDatasourceDetail}
-              />
-            ) : page === "datasourceDetail" ? (
-              <DatasourceDetailPage
-                datasources={datasources}
-                canManage={canManage}
-                onChanged={refresh}
-                pushNotice={pushNotice}
-                datasourceId={focusedDatasourceId}
-                onBack={() => setPage("datasources")}
               />
             ) : page === "nodes" ? (
               <NodesPage
@@ -743,148 +728,54 @@ function App() {
   );
 }
 
-function SystemOverview({
-  datasources,
-  cluster,
-  alertEvents,
-  serviceUnavailable
-}: {
-  datasources: Datasource[];
-  cluster: ClusterSnapshot | null;
-  alertEvents: AlertEvent[];
-  serviceUnavailable: boolean;
-}) {
-  const datasourceTotal = datasources.length;
-  const nodeOnline = cluster?.onlineNodes ?? 0;
-  const nodeTotal = cluster?.totalNodes ?? 0;
-  const triggeredAlerts = alertEvents.filter((event) => event.status === "triggered").length;
-  const nodeRatio = percent(nodeOnline, nodeTotal);
-  const healthText = serviceUnavailable
-    ? "API 异常"
-    : triggeredAlerts > 0
-      ? "需关注"
-      : "健康";
-
-  return (
-    <section className="mb-5 grid gap-4 xl:grid-cols-[1.35fr_0.65fr]">
-      <div className="surface p-5 md:p-6">
-        <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-          <div>
-            <div className="label">运行概览</div>
-            <h2 className="mt-2 text-xl font-semibold tracking-tight text-coal">集群控制台</h2>
-          </div>
-          <Badge tone={serviceUnavailable ? "red" : triggeredAlerts > 0 ? "yellow" : "green"}>{healthText}</Badge>
-        </div>
-        <div className="mt-5 grid gap-5 md:grid-cols-[1.15fr_0.85fr]">
-          <OverviewGauge
-            label="节点在线"
-            value={`${nodeOnline}/${nodeTotal}`}
-            ratio={nodeRatio}
-            tone={serviceUnavailable ? "red" : nodeRatio >= 80 ? "green" : "yellow"}
-          />
-          <OverviewGauge
-            label="数据源"
-            value={`${datasourceTotal}`}
-            ratio={100}
-            tone="green"
-            showBar={false}
-          />
-        </div>
-      </div>
-
-      <div className="surface p-5 md:p-6">
-        <div className="label">事件</div>
-        <div className="mt-4 grid grid-cols-2 gap-4">
-          <OverviewStat label="告警" value={`${triggeredAlerts}`} />
-          <OverviewStat label="刷新" value="8s" />
-        </div>
-        <div className="mt-5 border-t border-line pt-4">
-          <div className="flex items-center justify-between gap-3 text-sm">
-            <span className="text-slate-500">后端</span>
-            <span className={cx("font-medium", serviceUnavailable ? "text-red-700" : "text-emerald-700")}>
-              {serviceUnavailable ? "断开" : "可用"}
-            </span>
-          </div>
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function OverviewGauge({
-  label,
-  value,
-  ratio,
-  tone,
-  showBar = true
-}: {
-  label: string;
-  value: string;
-  ratio: number;
-  tone: "green" | "yellow" | "red";
-  showBar?: boolean;
-}) {
-  const barClass = tone === "green" ? "bg-emerald-500" : tone === "yellow" ? "bg-amber-500" : "bg-red-500";
-  return (
-    <div className="border-t border-line pt-4">
-      <div className="flex items-end justify-between gap-4">
-        <div className="text-sm font-medium text-slate-600">{label}</div>
-        <div className="font-mono text-2xl font-semibold tracking-tight text-coal">{value}</div>
-      </div>
-      {showBar && (
-        <div className="mt-4 h-2 overflow-hidden rounded-full bg-slate-100">
-          <div className={cx("h-full rounded-full transition-all", barClass)} style={{ width: `${Math.min(100, Math.max(0, ratio))}%` }} />
-        </div>
-      )}
-    </div>
-  );
-}
-
-function OverviewStat({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="border-t border-line pt-4">
-      <div className="text-sm text-slate-500">{label}</div>
-      <div className="mt-2 font-mono text-2xl font-semibold tracking-tight text-coal">{value}</div>
-    </div>
-  );
-}
-
 function DatasourcePage({
   datasources,
   canManage,
+  canTest,
   onChanged,
-  pushNotice,
-  openCreateToken,
-  onOpenDatasource
+  pushNotice
 }: {
   datasources: Datasource[];
   canManage: boolean;
+  canTest: boolean;
   onChanged: (quiet?: boolean) => Promise<void>;
   pushNotice: (notice: Notice) => void;
-  openCreateToken: number;
-  onOpenDatasource: (datasourceId: string) => void;
 }) {
   const [keyword, setKeyword] = useState("");
+  const [typeFilter, setTypeFilter] = useState<"all" | "mysql">("all");
+  const [statusFilter, setStatusFilter] = useState<"all" | DatasourceStatus>("all");
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [form, setForm] = useState({ ...emptyDatasourceForm });
+  const [form, setForm] = useState<DatasourceFormState>({ ...emptyDatasourceForm });
+  const [initialForm, setInitialForm] = useState<DatasourceFormState>({ ...emptyDatasourceForm });
+  const [initialConnectionFingerprint, setInitialConnectionFingerprint] = useState(datasourceFormConnectionFingerprint(emptyDatasourceForm));
+  const [testedFingerprint, setTestedFingerprint] = useState<string | null>(null);
+  const [formTestResult, setFormTestResult] = useState<DatasourceTestResult | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [testingId, setTestingId] = useState<string | null>(null);
+  const [testingForm, setTestingForm] = useState(false);
+  const [testingSavedId, setTestingSavedId] = useState<string | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
   const [confirmation, setConfirmation] = useState<ConfirmationDialogState | null>(null);
   const [selectedDatasourceId, setSelectedDatasourceId] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (openCreateToken === 0) return;
-    setEditorOpen(true);
+  const openCreateEditor = useCallback(() => {
+    const nextForm = { ...emptyDatasourceForm };
     setEditingId(null);
-    setForm({ ...emptyDatasourceForm });
-  }, [openCreateToken]);
+    setForm(nextForm);
+    setInitialForm(nextForm);
+    setInitialConnectionFingerprint(datasourceFormConnectionFingerprint(nextForm));
+    setTestedFingerprint(null);
+    setFormTestResult(null);
+    setFormError(null);
+    setEditorOpen(true);
+  }, []);
 
-  const visibleDatasources = useMemo(() => datasources
-    .filter((item) => {
-      return !keyword.trim() || datasourceSearchText(item).includes(keyword.trim().toLowerCase());
-    })
-    .sort((left, right) => left.name.localeCompare(right.name, "zh-Hans-CN")), [datasources, keyword]);
+  const visibleDatasources = useMemo(() => datasources.filter((item) => {
+    const matchesKeyword = !keyword.trim() || datasourceSearchText(item).includes(keyword.trim().toLowerCase());
+    const matchesType = typeFilter === "all" || item.type === typeFilter;
+    const matchesStatus = statusFilter === "all" || item.connectionStatus === statusFilter;
+    return matchesKeyword && matchesType && matchesStatus;
+  }), [datasources, keyword, statusFilter, typeFilter]);
 
   useEffect(() => {
     if (visibleDatasources.length === 0) {
@@ -897,67 +788,123 @@ function DatasourcePage({
   }, [selectedDatasourceId, visibleDatasources]);
 
   const selectedDatasource = visibleDatasources.find((item) => item.id === selectedDatasourceId) ?? visibleDatasources[0] ?? null;
+  const editingDatasource = editingId ? datasources.find((item) => item.id === editingId) ?? null : null;
+  const currentFingerprint = datasourceFormConnectionFingerprint(form);
+  const connectionChanged = editingId ? currentFingerprint !== initialConnectionFingerprint : true;
+  const freshTestResult = testedFingerprint === currentFingerprint ? formTestResult : null;
+  const editorStatus = freshTestResult?.status ?? (editingId ? (connectionChanged ? "stale" : editingDatasource?.connectionStatus ?? "untested") : "untested");
+  const passwordRequired = !editingId || !editingDatasource?.hasPassword;
+  const validationError = validateDatasourceForm(form, passwordRequired);
+  const needsFreshTest = !editingId || connectionChanged;
+  const saveBlockReason = validationError ?? (needsFreshTest && !freshTestResult?.success ? "请先测试" : null);
+  const duplicateName = datasources.some((item) => item.id !== editingId && item.name.trim() === form.name.trim() && form.name.trim() !== "");
+  const editorDirty = isDatasourceFormDirty(form, initialForm) || Boolean(formTestResult);
 
   const openEdit = (item: Datasource) => {
+    const nextForm = datasourceFormFromItem(item);
     setEditingId(item.id);
-    setForm({
-      name: item.name,
-      host: item.host,
-      port: item.port,
-      username: item.username,
-      password: "",
-      defaultSchema: item.defaultSchema || ""
-    });
+    setForm(nextForm);
+    setInitialForm(nextForm);
+    setInitialConnectionFingerprint(datasourceFormConnectionFingerprint(nextForm));
+    setTestedFingerprint(null);
+    setFormTestResult(null);
+    setFormError(null);
     setEditorOpen(true);
+  };
+
+  const requestCloseEditor = () => {
+    if (!editorDirty) {
+      setEditorOpen(false);
+      return;
+    }
+    setConfirmation({
+      title: "放弃更改",
+      description: "关闭后未保存内容会丢失。",
+      confirmLabel: "关闭",
+      confirmTone: "danger",
+      onConfirm: () => {
+        setEditorOpen(false);
+      }
+    });
+  };
+
+  const testFormConnection = async () => {
+    const error = validateDatasourceForm(form, passwordRequired);
+    if (error) {
+      setFormError(error);
+      pushNotice({ tone: "warning", message: error });
+      return;
+    }
+    const fingerprint = datasourceFormConnectionFingerprint(form);
+    setTestingForm(true);
+    setFormError(null);
+    try {
+      const result = await api.testDatasourceInput(datasourceFormPayload(form, editingId ?? undefined));
+      setTestedFingerprint(fingerprint);
+      setFormTestResult(result);
+      pushNotice({ tone: result.success ? "success" : "error", message: result.success ? "测试通过" : "测试失败" });
+    } catch (requestError) {
+      const message = requestError instanceof Error ? requestError.message : "连接失败";
+      setFormError(message);
+      pushNotice({ tone: "error", message });
+    } finally {
+      setTestingForm(false);
+    }
   };
 
   const saveDatasource = async (event: FormEvent) => {
     event.preventDefault();
     if (!canManage) {
-      pushNotice({ tone: "warning", message: "新增和编辑数据源需要管理员权限" });
+      pushNotice({ tone: "warning", message: "权限不足" });
+      return;
+    }
+    if (saveBlockReason) {
+      setFormError(saveBlockReason);
+      pushNotice({ tone: "warning", message: saveBlockReason });
       return;
     }
     setSubmitting(true);
+    setFormError(null);
     try {
-      if (editingId) {
-        await api.updateDatasource(editingId, form);
-        pushNotice({ tone: "success", message: "已保存" });
-      } else {
-        await api.createDatasource(form);
-        pushNotice({ tone: "success", message: "已创建" });
-      }
+      const payload = datasourceFormPayload(form, editingId ?? undefined);
+      const saved = editingId ? await api.updateDatasource(editingId, payload) : await api.createDatasource(payload);
+      setSelectedDatasourceId(saved.id);
       setEditorOpen(false);
+      pushNotice({ tone: "success", message: "已保存" });
       await onChanged();
     } catch (requestError) {
-      pushNotice({ tone: "error", message: requestError instanceof Error ? requestError.message : "保存失败" });
+      const message = requestError instanceof Error ? requestError.message : "保存失败";
+      setFormError(message);
+      pushNotice({ tone: "error", message });
     } finally {
       setSubmitting(false);
     }
   };
 
-  const testConnection = async (item: Datasource) => {
-    setTestingId(item.id);
+  const testSavedDatasource = async (item: Datasource) => {
+    setTestingSavedId(item.id);
     try {
-      const tested = await api.testDatasource(item.id);
-      pushNotice({
-        tone: tested.connectionStatus === "online" ? "success" : "warning",
-        message: tested.lastTestMessage || `${item.name} 已完成连接测试`
-      });
+      const result = await api.testDatasource(item.id);
+      pushNotice({ tone: result.success ? "success" : "error", message: result.success ? "测试通过" : "测试失败" });
       await onChanged(true);
     } catch (requestError) {
-      pushNotice({ tone: "error", message: requestError instanceof Error ? requestError.message : "连接测试失败" });
+      pushNotice({ tone: "error", message: requestError instanceof Error ? requestError.message : "连接失败" });
     } finally {
-      setTestingId(null);
+      setTestingSavedId(null);
     }
   };
 
   const executeRemoveDatasource = async (item: Datasource) => {
     if (!canManage) {
-      pushNotice({ tone: "warning", message: "删除数据源需要管理员权限" });
+      pushNotice({ tone: "warning", message: "权限不足" });
       return;
     }
+    const currentIndex = visibleDatasources.findIndex((candidate) => candidate.id === item.id);
+    const nextCandidates = visibleDatasources.filter((candidate) => candidate.id !== item.id);
+    const nextSelected = nextCandidates[Math.min(currentIndex, Math.max(0, nextCandidates.length - 1))]?.id ?? null;
     try {
       await api.deleteDatasource(item.id);
+      setSelectedDatasourceId(nextSelected);
       pushNotice({ tone: "success", message: "已删除" });
       await onChanged();
     } catch (requestError) {
@@ -967,9 +914,9 @@ function DatasourcePage({
 
   const requestRemoveDatasource = (item: Datasource) => {
     setConfirmation({
-      title: `删除数据源“${item.name}”`,
-      description: "删除后无法恢复。确认继续吗？",
-      confirmLabel: "确认删除",
+      title: `删除 ${item.name}`,
+      description: "删除后无法恢复。",
+      confirmLabel: "删除",
       confirmTone: "danger",
       onConfirm: () => {
         void executeRemoveDatasource(item);
@@ -981,11 +928,7 @@ function DatasourcePage({
     <div className="space-y-5">
       <section className="surface min-w-0 overflow-hidden">
         <div className="border-b border-line px-5 py-4 md:px-6">
-          <SectionHeader title="连接" />
-        </div>
-
-        <div className="grid min-h-[560px] lg:grid-cols-[320px_minmax(0,1fr)]">
-          <aside className="border-b border-line bg-slate-50/70 p-4 lg:border-b-0 lg:border-r">
+          <div className="grid gap-3 xl:grid-cols-[minmax(220px,1fr)_170px_170px_auto_auto] xl:items-end">
             <label className="block">
               <span className="label mb-2 block">搜索</span>
               <span className="relative block">
@@ -994,49 +937,80 @@ function DatasourcePage({
                   className="input pl-9"
                   value={keyword}
                   onChange={(event) => setKeyword(event.target.value)}
-                  placeholder="名称 / 地址 / 库"
+                  placeholder="名称 / 主机 / 库"
                 />
               </span>
             </label>
-
-            <div className="mt-3 flex items-center justify-between gap-3">
-              <div className="text-sm text-slate-500">
-                {visibleDatasources.length}/{datasources.length} 连接
+            <label className="block">
+              <span className="label mb-2 block">类型</span>
+              <SelectInput className="select" value={typeFilter} onChange={(event) => setTypeFilter(event.target.value as "all" | "mysql")}>
+                <option value="all">全部</option>
+                <option value="mysql">MySQL</option>
+              </SelectInput>
+            </label>
+            <label className="block">
+              <span className="label mb-2 block">状态</span>
+              <SelectInput className="select" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as "all" | DatasourceStatus)}>
+                <option value="all">全部</option>
+                <option value="untested">未测</option>
+                <option value="available">可用</option>
+                <option value="failed">失败</option>
+                <option value="stale">过期</option>
+              </SelectInput>
+            </label>
+            <Button type="button" onClick={() => void onChanged()} className="btn-secondary">
+              <ArrowsClockwise size={16} />
+              刷新
+            </Button>
+            {canManage ? (
+              <Button type="button" onClick={openCreateEditor} className="btn-primary">
+                <Plus size={16} />
+                新增
+              </Button>
+            ) : (
+              <div title="权限不足">
+                <Button type="button" disabled className="btn-secondary w-full">
+                  <Plus size={16} />
+                  新增
+                </Button>
               </div>
-              {canManage && (
+            )}
+          </div>
+        </div>
+
+        <div className="grid min-h-[580px] lg:grid-cols-[360px_minmax(0,1fr)]">
+          <aside className="border-b border-line bg-slate-50/70 p-4 lg:border-b-0 lg:border-r">
+            <div className="flex items-center justify-between gap-3">
+              <div className="text-sm text-slate-500">{visibleDatasources.length}/{datasources.length}</div>
+              {(keyword || typeFilter !== "all" || statusFilter !== "all") && (
                 <Button
                   type="button"
-                  aria-label="新增数据源"
-                  title="新增数据源"
                   onClick={() => {
-                    setEditingId(null);
-                    setForm({ ...emptyDatasourceForm });
-                    setEditorOpen(true);
+                    setKeyword("");
+                    setTypeFilter("all");
+                    setStatusFilter("all");
                   }}
-                  className="btn-primary px-0"
+                  className="btn-compact"
                 >
-                  <Plus size={16} />
+                  清除
                 </Button>
               )}
             </div>
 
-            <div className="mt-4 max-h-[460px] space-y-1 overflow-y-auto pr-1">
+            <div className="mt-4 max-h-[500px] space-y-1 overflow-y-auto pr-1">
               {datasources.length === 0 ? (
-                <div className="rounded-lg border border-dashed border-line bg-white px-4 py-8 text-center text-sm text-slate-500">
-                  无数据源
+                <div className="rounded-lg border border-dashed border-line bg-white px-4 py-8 text-center">
+                  <div className="text-sm text-slate-500">暂无数据源</div>
+                  {canManage && (
+                    <Button type="button" onClick={openCreateEditor} className="btn-compact mt-4">
+                      <Plus size={14} />
+                      新增
+                    </Button>
+                  )}
                 </div>
               ) : visibleDatasources.length === 0 ? (
-                <div className="rounded-lg border border-dashed border-line bg-white px-4 py-8 text-center">
-                  <div className="text-sm text-slate-500">无匹配</div>
-                  <Button
-                    type="button"
-                    onClick={() => {
-                      setKeyword("");
-                    }}
-                    className="btn-compact mt-4"
-                  >
-                    清除
-                  </Button>
+                <div className="rounded-lg border border-dashed border-line bg-white px-4 py-8 text-center text-sm text-slate-500">
+                  无匹配
                 </div>
               ) : visibleDatasources.map((item) => {
                 const active = selectedDatasource?.id === item.id;
@@ -1046,7 +1020,6 @@ function DatasourcePage({
                     type="button"
                     aria-pressed={active}
                     onClick={() => setSelectedDatasourceId(item.id)}
-                    onDoubleClick={() => onOpenDatasource(item.id)}
                     className={cx(
                       "group w-full justify-start rounded-lg border px-3 py-3 text-left transition",
                       active
@@ -1056,11 +1029,16 @@ function DatasourcePage({
                   >
                     <Database className={cx("mt-0.5 shrink-0", active ? "text-accent" : "text-slate-400 group-hover:text-accent")} size={18} />
                     <span className="min-w-0 flex-1">
-                      <span className="flex items-center gap-3">
+                      <span className="flex min-w-0 items-center justify-between gap-3">
                         <span className="truncate font-medium text-coal">{item.name}</span>
+                        <Badge tone={datasourceStatusTone(item.connectionStatus)}>{datasourceStatusText(item.connectionStatus)}</Badge>
                       </span>
                       <span className="mt-1 block truncate font-mono text-xs text-slate-500">
                         {item.host}:{item.port}
+                      </span>
+                      <span className="mt-1 flex items-center justify-between gap-2 text-xs text-slate-500">
+                        <span>{datasourceTypeText(item.type)}</span>
+                        <span>{item.lastTestedAt ? formatDate(item.lastTestedAt) : "-"}</span>
                       </span>
                     </span>
                   </Button>
@@ -1073,47 +1051,43 @@ function DatasourcePage({
             {!selectedDatasource ? (
               <EmptyPanel
                 icon={Database}
-                title={datasources.length === 0 ? "无数据源" : "无匹配"}
+                title={datasources.length === 0 ? "暂无数据源" : "无匹配"}
                 action={canManage && datasources.length === 0 ? (
-                  <Button onClick={() => {
-                    setEditingId(null);
-                    setForm({ ...emptyDatasourceForm });
-                    setEditorOpen(true);
-                  }} className="btn-primary">
+                  <Button type="button" onClick={openCreateEditor} className="btn-primary">
                     <Plus size={16} />
                     新增
                   </Button>
-                ) : !canManage && datasources.length === 0 ? <PermissionNotice compact description="仅管理员可新增数据源。" /> : undefined}
+                ) : !canManage && datasources.length === 0 ? <PermissionNotice compact description="仅管理员可新增。" /> : undefined}
               />
             ) : (
               <div>
                 <div className="flex flex-col gap-4 border-b border-line pb-5 xl:flex-row xl:items-start xl:justify-between">
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
-                      {selectedDatasource.isDemo && <Badge tone="blue">Demo</Badge>}
+                      <Badge tone={datasourceStatusTone(selectedDatasource.connectionStatus)}>{datasourceStatusText(selectedDatasource.connectionStatus)}</Badge>
+                      <Badge tone="neutral">{datasourceTypeText(selectedDatasource.type)}</Badge>
+                      <Badge tone="blue">{datasourcePurposeText(selectedDatasource.purpose)}</Badge>
+                      {selectedDatasource.isDemo && <Badge tone="yellow">Demo</Badge>}
                     </div>
-                    <h3 className={cx("truncate text-2xl font-semibold tracking-tight text-coal", selectedDatasource.isDemo ? "mt-3" : "mt-0")}>
-                      {selectedDatasource.name}
-                    </h3>
+                    <h3 className="mt-3 truncate text-2xl font-semibold tracking-tight text-coal">{selectedDatasource.name}</h3>
                     <div className="mt-2 font-mono text-sm text-slate-500">
                       {selectedDatasource.username}@{selectedDatasource.host}:{selectedDatasource.port}
                     </div>
                   </div>
                   <div className="flex flex-wrap gap-2 xl:justify-end">
-                    <Button onClick={() => onOpenDatasource(selectedDatasource.id)} className="btn-secondary">
-                      详情
-                    </Button>
                     <Button
-                      onClick={() => void testConnection(selectedDatasource)}
-                      disabled={testingId === selectedDatasource.id}
+                      type="button"
+                      onClick={() => void testSavedDatasource(selectedDatasource)}
+                      disabled={!canTest || testingSavedId === selectedDatasource.id}
+                      title={!canTest ? "权限不足" : undefined}
                       className="btn-secondary"
                     >
-                      {testingId === selectedDatasource.id ? <ArrowsClockwise size={16} /> : <ShieldCheck size={16} />}
-                      {testingId === selectedDatasource.id ? "测试中" : "测试"}
+                      {testingSavedId === selectedDatasource.id ? <ArrowsClockwise size={16} /> : <ShieldCheck size={16} />}
+                      {testingSavedId === selectedDatasource.id ? "测试中" : selectedDatasource.connectionStatus === "failed" ? "重试" : "测试"}
                     </Button>
                     {canManage && (
                       <>
-                        <Button onClick={() => openEdit(selectedDatasource)} className="btn-primary">
+                        <Button type="button" onClick={() => openEdit(selectedDatasource)} className="btn-primary">
                           编辑
                         </Button>
                         <ActionMenu
@@ -1132,25 +1106,41 @@ function DatasourcePage({
 
                 <div className="mt-5 grid gap-5 xl:grid-cols-[1.08fr_0.92fr]">
                   <div>
-                    <div className="label">属性</div>
+                    <div className="label">详情</div>
                     <div className="mt-3 grid gap-x-6 sm:grid-cols-2">
+                      <DetailCard label="类型" value={datasourceTypeText(selectedDatasource.type)} />
+                      <DetailCard label="用途" value={datasourcePurposeText(selectedDatasource.purpose)} />
                       <DetailCard label="主机" value={selectedDatasource.host} mono />
                       <DetailCard label="端口" value={`${selectedDatasource.port}`} mono />
-                      <DetailCard label="账号" value={selectedDatasource.username} mono />
+                      <DetailCard label="用户名" value={selectedDatasource.username} mono />
                       <DetailCard label="默认库" value={selectedDatasource.defaultSchema || "未设置"} mono />
-                      <DetailCard label="创建" value={formatDate(selectedDatasource.createdAt)} />
-                      <DetailCard label="更新" value={formatDate(selectedDatasource.updatedAt)} />
+                      <DetailCard label="创建时间" value={formatDateTime(selectedDatasource.createdAt)} />
+                      <DetailCard label="更新时间" value={formatDateTime(selectedDatasource.updatedAt)} />
                     </div>
+                    {selectedDatasource.remark && (
+                      <div className="mt-4 border-t border-line pt-4">
+                        <div className="label">备注</div>
+                        <div className="mt-2 text-sm leading-6 text-slate-600">{selectedDatasource.remark}</div>
+                      </div>
+                    )}
                   </div>
 
                   <div>
                     <div className="label">测试</div>
                     <div className="mt-3 border-y border-line py-4">
                       <div className="flex items-center justify-between gap-4">
+                        <span className="text-sm text-slate-500">状态</span>
+                        <Badge tone={datasourceStatusTone(selectedDatasource.connectionStatus)}>{datasourceStatusText(selectedDatasource.connectionStatus)}</Badge>
+                      </div>
+                      <div className="mt-4 flex items-center justify-between gap-4 border-t border-line pt-4">
                         <span className="text-sm text-slate-500">最近测试</span>
                         <span className="text-right text-sm font-medium text-coal">
                           {selectedDatasource.lastTestedAt ? formatDateTime(selectedDatasource.lastTestedAt) : "-"}
                         </span>
+                      </div>
+                      <div className="mt-4 flex items-center justify-between gap-4 border-t border-line pt-4">
+                        <span className="text-sm text-slate-500">耗时</span>
+                        <span className="font-mono text-sm font-medium text-coal">{formatLatency(selectedDatasource.lastTestLatencyMs)}</span>
                       </div>
                       <div className="mt-4 border-t border-line pt-4 text-sm text-slate-500">
                         {selectedDatasource.lastTestMessage || "暂无记录"}
@@ -1164,50 +1154,25 @@ function DatasourcePage({
         </div>
       </section>
 
-      <Modal
+      <DatasourceEditorModal
         open={editorOpen}
-        title={editingId ? "编辑数据源" : "添加数据源"}
-        onClose={() => setEditorOpen(false)}
-      >
-        <form onSubmit={saveDatasource} className="grid gap-4">
-          <Field label="名称">
-            <TextInput className="input" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} required />
-          </Field>
-          <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_130px]">
-            <Field label="主机地址">
-              <TextInput className="input" value={form.host} onChange={(event) => setForm({ ...form, host: event.target.value })} required />
-            </Field>
-            <Field label="端口">
-              <TextInput className="input" type="number" value={form.port} onChange={(event) => setForm({ ...form, port: Number(event.target.value) })} required />
-            </Field>
-          </div>
-          <Field label="账号">
-            <TextInput className="input" value={form.username} onChange={(event) => setForm({ ...form, username: event.target.value })} required />
-          </Field>
-          <Field label="密码">
-            <TextInput
-              className="input"
-              type="password"
-              value={form.password}
-              onChange={(event) => setForm({ ...form, password: event.target.value })}
-              required={!editingId}
-              placeholder={editingId ? "留空表示不修改" : ""}
-            />
-          </Field>
-          <Field label="默认库">
-            <TextInput className="input" value={form.defaultSchema} onChange={(event) => setForm({ ...form, defaultSchema: event.target.value })} />
-          </Field>
-          <div className="flex justify-end gap-3 pt-2">
-            <Button type="button" onClick={() => setEditorOpen(false)} className="btn-secondary">
-              取消
-            </Button>
-            <Button disabled={submitting} className="btn-primary">
-              {submitting ? <ArrowsClockwise size={16} /> : <CheckCircle size={16} />}
-              {submitting ? "保存中" : "保存"}
-            </Button>
-          </div>
-        </form>
-      </Modal>
+        mode={editingId ? "edit" : "create"}
+        form={form}
+        status={editorStatus}
+        testResult={freshTestResult ?? formTestResult}
+        testing={testingForm}
+        submitting={submitting}
+        saveBlockReason={saveBlockReason}
+        formError={formError}
+        duplicateName={duplicateName}
+        onFormChange={(nextForm) => {
+          setForm(nextForm);
+          setFormError(null);
+        }}
+        onClose={requestCloseEditor}
+        onTest={() => void testFormConnection()}
+        onSubmit={saveDatasource}
+      />
 
       <ConfirmDialog
         open={Boolean(confirmation)}
@@ -1226,203 +1191,128 @@ function DatasourcePage({
   );
 }
 
-function DatasourceDetailPage({
-  datasources,
-  canManage,
-  onChanged,
-  pushNotice,
-  datasourceId,
-  onBack
+function DatasourceEditorModal({
+  open,
+  mode,
+  form,
+  status,
+  testResult,
+  testing,
+  submitting,
+  saveBlockReason,
+  formError,
+  duplicateName,
+  onFormChange,
+  onClose,
+  onTest,
+  onSubmit
 }: {
-  datasources: Datasource[];
-  canManage: boolean;
-  onChanged: (quiet?: boolean) => Promise<void>;
-  pushNotice: (notice: Notice) => void;
-  datasourceId: string | null;
-  onBack: () => void;
+  open: boolean;
+  mode: "create" | "edit";
+  form: DatasourceFormState;
+  status: DatasourceStatus;
+  testResult: DatasourceTestResult | null;
+  testing: boolean;
+  submitting: boolean;
+  saveBlockReason: string | null;
+  formError: string | null;
+  duplicateName: boolean;
+  onFormChange: (form: DatasourceFormState) => void;
+  onClose: () => void;
+  onTest: () => void;
+  onSubmit: (event: FormEvent) => void;
 }) {
-  const selected = datasources.find((item) => item.id === datasourceId) || null;
-  const [editorOpen, setEditorOpen] = useState(false);
-  const [form, setForm] = useState({ ...emptyDatasourceForm });
-  const [submitting, setSubmitting] = useState(false);
-  const [testing, setTesting] = useState(false);
-  const [confirmation, setConfirmation] = useState<ConfirmationDialogState | null>(null);
-
-  useEffect(() => {
-    if (!selected) return;
-    setForm({
-      name: selected.name,
-      host: selected.host,
-      port: selected.port,
-      username: selected.username,
-      password: "",
-      defaultSchema: selected.defaultSchema || ""
-    });
-  }, [selected]);
-
-  const saveDatasource = async (event: FormEvent) => {
-    event.preventDefault();
-    if (!selected || !canManage) return;
-    setSubmitting(true);
-    try {
-      await api.updateDatasource(selected.id, form);
-      pushNotice({ tone: "success", message: "已保存" });
-      setEditorOpen(false);
-      await onChanged();
-    } catch (requestError) {
-      pushNotice({ tone: "error", message: requestError instanceof Error ? requestError.message : "保存失败" });
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const testConnection = async () => {
-    if (!selected) return;
-    setTesting(true);
-    try {
-      const tested = await api.testDatasource(selected.id);
-      pushNotice({
-        tone: tested.connectionStatus === "online" ? "success" : "warning",
-        message: tested.lastTestMessage || `${selected.name} 已完成连接测试`
-      });
-      await onChanged(true);
-    } catch (requestError) {
-      pushNotice({ tone: "error", message: requestError instanceof Error ? requestError.message : "连接测试失败" });
-    } finally {
-      setTesting(false);
-    }
-  };
-
-  const executeRemoveDatasource = async () => {
-    if (!selected || !canManage) return;
-    try {
-      await api.deleteDatasource(selected.id);
-      pushNotice({ tone: "success", message: "已删除" });
-      onBack();
-      await onChanged();
-    } catch (requestError) {
-      pushNotice({ tone: "error", message: requestError instanceof Error ? requestError.message : "删除失败" });
-    }
-  };
-
-  const requestRemoveDatasource = () => {
-    if (!selected) return;
-    setConfirmation({
-      title: `删除数据源“${selected.name}”`,
-      description: "删除后无法恢复。确认继续吗？",
-      confirmLabel: "确认删除",
-      confirmTone: "danger",
-      onConfirm: () => {
-        void executeRemoveDatasource();
-      }
-    });
-  };
-
-  if (!selected) {
-    return (
-      <section className="surface p-6">
-        <DetailPageHeader title="数据源详情" onBack={onBack} />
-        <div className="mt-5 text-sm text-slate-500">数据源不存在或已删除。</div>
-      </section>
-    );
-  }
-
   return (
-    <div className="space-y-5">
-      <section className="surface p-6">
-        <DetailPageHeader
-          title={selected.name}
-          subtitle="数据源详情"
-          onBack={onBack}
-          actions={(
-            <div className="flex flex-wrap gap-2">
-              <Button onClick={() => void testConnection()} disabled={testing} className="btn-secondary">
-                {testing ? <ArrowsClockwise size={16} /> : <ShieldCheck size={16} />}
-                {testing ? "测试中" : "测试连接"}
-              </Button>
-              {canManage && (
-                <>
-                  <Button onClick={() => setEditorOpen(true)} className="btn-secondary">
-                    编辑
-                  </Button>
-                  <Button onClick={requestRemoveDatasource} className="btn-danger">
-                    删除
-                  </Button>
-                </>
-              )}
-            </div>
-          )}
-        />
-        <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          <DetailCard label="地址" value={`${selected.host}:${selected.port}`} mono />
-          <DetailCard label="账号" value={selected.username} mono />
-          <DetailCard label="默认库" value={selected.defaultSchema || "未设置"} mono />
-        </div>
-        <div className="mt-4 border-l border-line bg-slate-50/60 px-4 py-4 text-sm text-slate-500">
-          {selected.lastTestMessage
-            ? `最近测试：${formatDateTime(selected.lastTestedAt)} · ${selected.lastTestMessage}`
-            : "暂无测试记录。"}
-        </div>
-      </section>
-
-      <Modal
-        open={editorOpen}
-        title="编辑数据源"
-        onClose={() => setEditorOpen(false)}
-      >
-        <form onSubmit={saveDatasource} className="grid gap-4">
+    <Modal open={open} title={mode === "edit" ? "编辑数据源" : "新增数据源"} onClose={onClose} size="lg">
+      <form onSubmit={onSubmit} className="grid gap-4">
+        <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_160px]">
           <Field label="名称">
-            <TextInput className="input" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} required />
+            <TextInput className="input" value={form.name} maxLength={50} onChange={(event) => onFormChange({ ...form, name: event.target.value })} />
+            {duplicateName && <div className="mt-2 text-xs text-amber-600">同名</div>}
           </Field>
-          <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_130px]">
-            <Field label="主机地址">
-              <TextInput className="input" value={form.host} onChange={(event) => setForm({ ...form, host: event.target.value })} required />
-            </Field>
-            <Field label="端口">
-              <TextInput className="input" type="number" value={form.port} onChange={(event) => setForm({ ...form, port: Number(event.target.value) })} required />
-            </Field>
-          </div>
-          <Field label="账号">
-            <TextInput className="input" value={form.username} onChange={(event) => setForm({ ...form, username: event.target.value })} required />
+          <Field label="类型">
+            <SelectInput className="select" value={form.type} onChange={(event) => onFormChange({ ...form, type: event.target.value as "mysql" })}>
+              <option value="mysql">MySQL</option>
+            </SelectInput>
+          </Field>
+        </div>
+
+        <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_150px_150px]">
+          <Field label="主机">
+            <TextInput className="input" value={form.host} onChange={(event) => onFormChange({ ...form, host: event.target.value })} />
+          </Field>
+          <Field label="端口">
+            <TextInput className="input" type="number" min={1} max={65535} value={form.port} onChange={(event) => onFormChange({ ...form, port: Number(event.target.value) })} />
+          </Field>
+          <Field label="用途">
+            <SelectInput className="select" value={form.purpose} onChange={(event) => onFormChange({ ...form, purpose: event.target.value as DatasourcePurpose })}>
+              <option value="source">源库</option>
+              <option value="target">目标库</option>
+              <option value="general">通用</option>
+            </SelectInput>
+          </Field>
+        </div>
+
+        <div className="grid gap-4 md:grid-cols-2">
+          <Field label="用户名">
+            <TextInput className="input" value={form.username} onChange={(event) => onFormChange({ ...form, username: event.target.value })} />
           </Field>
           <Field label="密码">
             <TextInput
               className="input"
               type="password"
               value={form.password}
-              onChange={(event) => setForm({ ...form, password: event.target.value })}
-              placeholder="留空表示不修改"
+              onChange={(event) => onFormChange({ ...form, password: event.target.value })}
+              placeholder={mode === "edit" ? "留空不变" : ""}
             />
           </Field>
-          <Field label="默认库">
-            <TextInput className="input" value={form.defaultSchema} onChange={(event) => setForm({ ...form, defaultSchema: event.target.value })} />
-          </Field>
-          <div className="flex justify-end gap-3 pt-2">
-            <Button type="button" onClick={() => setEditorOpen(false)} className="btn-secondary">
-              取消
-            </Button>
-            <Button disabled={submitting} className="btn-primary">
-              {submitting ? <ArrowsClockwise size={16} /> : <CheckCircle size={16} />}
-              {submitting ? "保存中" : "保存"}
+        </div>
+
+        <Field label="默认库">
+          <TextInput className="input" value={form.defaultSchema} onChange={(event) => onFormChange({ ...form, defaultSchema: event.target.value })} />
+        </Field>
+
+        <Field label="备注">
+          <TextareaInput className="textarea" maxLength={200} value={form.remark} onChange={(event) => onFormChange({ ...form, remark: event.target.value })} />
+        </Field>
+
+        <div className="rounded-lg border border-line bg-slate-50/70 px-4 py-4">
+          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+            <div>
+              <div className="label">测试</div>
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <Badge tone={datasourceStatusTone(status)}>{datasourceStatusText(status)}</Badge>
+                {testResult?.testedAt && <span className="text-sm text-slate-500">{formatDateTime(testResult.testedAt)}</span>}
+                {testResult?.latencyMs ? <span className="font-mono text-sm text-slate-500">{testResult.latencyMs}ms</span> : null}
+              </div>
+              {testResult?.message && (
+                <div className={cx("mt-3 text-sm", testResult.success ? "text-emerald-700" : "text-red-700")}>{testResult.message}</div>
+              )}
+            </div>
+            <Button type="button" onClick={onTest} disabled={testing} className="btn-secondary">
+              {testing ? <ArrowsClockwise size={16} /> : <ShieldCheck size={16} />}
+              {testing ? "测试中" : testResult?.success === false ? "重试" : "测试"}
             </Button>
           </div>
-        </form>
-      </Modal>
+        </div>
 
-      <ConfirmDialog
-        open={Boolean(confirmation)}
-        title={confirmation?.title || ""}
-        description={confirmation?.description || ""}
-        confirmLabel={confirmation?.confirmLabel || "确认"}
-        confirmTone={confirmation?.confirmTone}
-        onCancel={() => setConfirmation(null)}
-        onConfirm={() => {
-          const action = confirmation?.onConfirm;
-          setConfirmation(null);
-          action?.();
-        }}
-      />
-    </div>
+        {(formError || saveBlockReason) && (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
+            {formError || saveBlockReason}
+          </div>
+        )}
+
+        <div className="flex justify-end gap-3 pt-2">
+          <Button type="button" onClick={onClose} className="btn-secondary">
+            取消
+          </Button>
+          <Button type="submit" disabled={submitting || Boolean(saveBlockReason)} title={saveBlockReason || undefined} className="btn-primary">
+            {submitting ? <ArrowsClockwise size={16} /> : <CheckCircle size={16} />}
+            {submitting ? "保存中" : "保存"}
+          </Button>
+        </div>
+      </form>
+    </Modal>
   );
 }
 
@@ -2894,19 +2784,117 @@ function validateNodeForm(form: ClusterNodeInput) {
 function datasourceSearchText(item: Datasource) {
   return [
     item.name,
+    item.type,
+    item.purpose,
     item.host,
     item.defaultSchema,
-    item.username
+    item.username,
+    item.remark
   ].filter(Boolean).join(" ").toLowerCase();
 }
 
-function percent(value: number, total: number) {
-  if (total <= 0) return 100;
-  return Math.round((value / total) * 100);
+function datasourceFormFromItem(item: Datasource): DatasourceFormState {
+  return {
+    name: item.name,
+    type: item.type || "mysql",
+    purpose: item.purpose || "general",
+    host: item.host,
+    port: item.port,
+    username: item.username,
+    password: "",
+    defaultSchema: item.defaultSchema || "",
+    remark: item.remark || ""
+  };
+}
+
+function datasourceFormPayload(form: DatasourceFormState, id?: string): DatasourceInput {
+  return {
+    ...(id ? { id } : {}),
+    name: form.name.trim(),
+    type: form.type,
+    purpose: form.purpose,
+    host: form.host.trim(),
+    port: Number(form.port),
+    username: form.username.trim(),
+    password: form.password,
+    defaultSchema: form.defaultSchema.trim(),
+    remark: form.remark.trim()
+  };
+}
+
+function datasourceFormConnectionFingerprint(form: DatasourceFormState) {
+  return JSON.stringify({
+    type: form.type,
+    host: form.host.trim(),
+    port: Number(form.port) || 0,
+    username: form.username.trim(),
+    password: form.password,
+    defaultSchema: form.defaultSchema.trim()
+  });
+}
+
+function isDatasourceFormDirty(current: DatasourceFormState, initial: DatasourceFormState) {
+  return JSON.stringify({
+    ...current,
+    name: current.name.trim(),
+    host: current.host.trim(),
+    username: current.username.trim(),
+    defaultSchema: current.defaultSchema.trim(),
+    remark: current.remark.trim(),
+    port: Number(current.port) || 0
+  }) !== JSON.stringify({
+    ...initial,
+    name: initial.name.trim(),
+    host: initial.host.trim(),
+    username: initial.username.trim(),
+    defaultSchema: initial.defaultSchema.trim(),
+    remark: initial.remark.trim(),
+    port: Number(initial.port) || 0
+  });
+}
+
+function validateDatasourceForm(form: DatasourceFormState, passwordRequired: boolean) {
+  if (!form.name.trim()) return "名称必填";
+  if (form.name.trim().length > 50) return "名称最多 50 字符";
+  if (!form.host.trim()) return "主机必填";
+  if (!Number.isFinite(Number(form.port)) || Number(form.port) < 1 || Number(form.port) > 65535) return "端口无效";
+  if (!form.username.trim()) return "用户名必填";
+  if (passwordRequired && !form.password) return "密码必填";
+  if (form.remark.trim().length > 200) return "备注最多 200 字符";
+  return null;
+}
+
+function datasourceStatusText(status: DatasourceStatus) {
+  if (status === "available") return "可用";
+  if (status === "failed") return "失败";
+  if (status === "stale") return "过期";
+  return "未测";
+}
+
+function datasourceStatusTone(status: DatasourceStatus): "blue" | "green" | "yellow" | "red" | "neutral" {
+  if (status === "available") return "green";
+  if (status === "failed") return "red";
+  if (status === "stale") return "yellow";
+  return "neutral";
+}
+
+function datasourceTypeText(type?: Datasource["type"]) {
+  if (type === "mysql") return "MySQL";
+  return "MySQL";
+}
+
+function datasourcePurposeText(purpose?: DatasourcePurpose) {
+  if (purpose === "source") return "源库";
+  if (purpose === "target") return "目标库";
+  return "通用";
+}
+
+function formatLatency(value?: number) {
+  if (!value) return "-";
+  return `${value}ms`;
 }
 
 function navPage(page: Page): MainPage {
-  if (page === "datasourceDetail") return "datasources";
   if (page === "nodeDetail") return "nodes";
   return page;
 }
@@ -2914,7 +2902,6 @@ function navPage(page: Page): MainPage {
 function pageTitle(page: Page) {
   if (page === "datasources") return "数据源";
   if (page === "nodes") return "节点";
-  if (page === "datasourceDetail") return "数据源详情";
   if (page === "nodeDetail") return "节点详情";
   return "设置";
 }

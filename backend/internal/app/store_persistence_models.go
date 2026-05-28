@@ -13,20 +13,24 @@ type userRow struct {
 }
 
 type datasourceRow struct {
-	SortOrder        int              `json:"-" gorm:"not null;index"`
-	ID               string           `json:"id" gorm:"primaryKey;size:64"`
-	Name             string           `json:"name" gorm:"size:255;not null"`
-	Host             string           `json:"host" gorm:"size:255;not null"`
-	Port             int              `json:"port" gorm:"not null"`
-	Username         string           `json:"username" gorm:"size:255;not null"`
-	PasswordSecret   string           `json:"passwordSecret" gorm:"type:text"`
-	DefaultSchema    string           `json:"defaultSchema,omitempty" gorm:"size:255"`
-	ConnectionStatus DatasourceStatus `json:"connectionStatus" gorm:"size:32;not null;index"`
-	LastTestedAt     string           `json:"lastTestedAt,omitempty" gorm:"size:64;index"`
-	LastTestMessage  string           `json:"lastTestMessage,omitempty" gorm:"type:text"`
-	IsDemo           bool             `json:"isDemo" gorm:"not null"`
-	CreatedAt        string           `json:"createdAt" gorm:"size:64;index"`
-	UpdatedAt        string           `json:"updatedAt" gorm:"size:64;index"`
+	SortOrder         int               `json:"-" gorm:"not null;index"`
+	ID                string            `json:"id" gorm:"primaryKey;size:64"`
+	Name              string            `json:"name" gorm:"size:255;not null"`
+	Type              DatasourceType    `json:"type" gorm:"size:32;not null;index"`
+	Purpose           DatasourcePurpose `json:"purpose,omitempty" gorm:"size:32;index"`
+	Host              string            `json:"host" gorm:"size:255;not null"`
+	Port              int               `json:"port" gorm:"not null"`
+	Username          string            `json:"username" gorm:"size:255;not null"`
+	PasswordSecret    string            `json:"passwordSecret" gorm:"type:text"`
+	DefaultSchema     string            `json:"defaultSchema,omitempty" gorm:"size:255"`
+	Remark            string            `json:"remark,omitempty" gorm:"size:255"`
+	ConnectionStatus  DatasourceStatus  `json:"connectionStatus" gorm:"size:32;not null;index"`
+	LastTestedAt      string            `json:"lastTestedAt,omitempty" gorm:"size:64;index"`
+	LastTestMessage   string            `json:"lastTestMessage,omitempty" gorm:"type:text"`
+	LastTestLatencyMS int               `json:"lastTestLatencyMs,omitempty" gorm:"not null"`
+	IsDemo            bool              `json:"isDemo" gorm:"not null"`
+	CreatedAt         string            `json:"createdAt" gorm:"size:64;index"`
+	UpdatedAt         string            `json:"updatedAt" gorm:"size:64;index"`
 }
 
 type operationLogRow struct {

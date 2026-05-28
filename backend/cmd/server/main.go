@@ -3,18 +3,27 @@ package main
 import (
 	"log"
 	"net/http"
+	"os"
+	"time"
 
 	"canal-plus/backend/internal/app"
 )
 
 func main() {
+	log.SetFlags(0)
 	server, err := app.NewServer()
 	if err != nil {
-		log.Fatalf("failed to start Canal Plus backend: %v", err)
+		appLog("error", "server", "Failed to start Canal Plus backend: "+err.Error())
+		os.Exit(1)
 	}
 
-	log.Printf("Canal Plus backend listening on http://localhost:%s", server.Port())
+	appLog("info", "server", "Canal Plus backend listening on http://localhost:"+server.Port())
 	if err := http.ListenAndServe(":"+server.Port(), server); err != nil {
-		log.Fatal(err)
+		appLog("error", "server", "Canal Plus backend stopped: "+err.Error())
+		os.Exit(1)
 	}
+}
+
+func appLog(level string, thread string, message string) {
+	log.Printf("[%s][%s][%s]%s", time.Now().Format(time.RFC3339), level, thread, message)
 }
