@@ -66,7 +66,7 @@ import type {
 } from "./types/api";
 
 type MainPage = "datasources" | "nodes" | "settings";
-type Page = MainPage | "nodeDetail" | "datasourceCreate";
+type Page = MainPage | "nodeDetail" | "datasourceCreate" | "datasourceEdit";
 type NoticeTone = "success" | "error" | "warning";
 
 type Notice = {
@@ -436,17 +436,19 @@ function App() {
   const [serviceRecoveryPending, setServiceRecoveryPending] = useState(false);
   const [nodeCreateToken, setNodeCreateToken] = useState(0);
   const [focusedNodeId, setFocusedNodeId] = useState<string | null>(null);
+  const [focusedDatasourceId, setFocusedDatasourceId] = useState<string | null>(() => datasourceEditIdFromPathname(window.location.pathname));
   const previousServiceUnavailable = useRef(false);
   const canManage = canManageConfig(user);
   const canTestDatasources = canTestDatasource(user);
 
-  const navigateToPage = useCallback((nextPage: Page, mode: "push" | "replace" = "push") => {
+  const navigateToPage = useCallback((nextPage: Page, mode: "push" | "replace" = "push", datasourceId?: string) => {
     setPage(nextPage);
-    const nextPath = pathForPage(nextPage);
+    setFocusedDatasourceId(nextPage === "datasourceEdit" ? datasourceId ?? null : null);
+    const nextPath = pathForPage(nextPage, datasourceId);
     if (window.location.pathname === nextPath) {
       return;
     }
-    const state = { page: nextPage };
+    const state = { page: nextPage, datasourceId };
     if (mode === "replace") {
       window.history.replaceState(state, "", nextPath);
     } else {
@@ -569,6 +571,7 @@ function App() {
   useEffect(() => {
     const handlePopState = () => {
       setPage(pageFromPathname(window.location.pathname));
+      setFocusedDatasourceId(datasourceEditIdFromPathname(window.location.pathname));
     };
     window.addEventListener("popstate", handlePopState);
     return () => window.removeEventListener("popstate", handlePopState);
@@ -617,6 +620,14 @@ function App() {
   };
 
   const closeDatasourceCreate = () => {
+    navigateToPage("datasources", "replace");
+  };
+
+  const openDatasourceEdit = (datasourceId: string) => {
+    navigateToPage("datasourceEdit", "push", datasourceId);
+  };
+
+  const closeDatasourceEdit = () => {
     navigateToPage("datasources", "replace");
   };
 
@@ -686,7 +697,7 @@ function App() {
           </aside>
 
           <main className="min-w-0">
-            {page !== "datasourceCreate" && (
+            {page !== "datasourceCreate" && page !== "datasourceEdit" && (
               <div className="surface mb-4 flex flex-col gap-5 p-5 md:p-6 xl:flex-row xl:items-start xl:justify-between">
                 <div>
                   <h1 className="text-3xl font-semibold tracking-tight text-coal md:text-4xl">
@@ -754,6 +765,7 @@ function App() {
                 canTest={canTestDatasources}
                 onChanged={refresh}
                 onCreate={openDatasourceCreate}
+                onEdit={openDatasourceEdit}
                 pushNotice={pushNotice}
               />
             ) : page === "datasourceCreate" ? (
@@ -761,6 +773,16 @@ function App() {
                 datasources={datasources}
                 canManage={canManage}
                 onBack={closeDatasourceCreate}
+                onChanged={refresh}
+                pushNotice={pushNotice}
+              />
+            ) : page === "datasourceEdit" ? (
+              <DatasourceEditPage
+                key={focusedDatasourceId ?? "missing"}
+                datasourceId={focusedDatasourceId}
+                datasources={datasources}
+                canManage={canManage}
+                onBack={closeDatasourceEdit}
                 onChanged={refresh}
                 pushNotice={pushNotice}
               />
@@ -804,6 +826,7 @@ function DatasourcePage({
   canTest,
   onChanged,
   onCreate,
+  onEdit,
   pushNotice
 }: {
   datasources: Datasource[];
@@ -812,6 +835,7 @@ function DatasourcePage({
   canTest: boolean;
   onChanged: (quiet?: boolean) => Promise<void>;
   onCreate: () => void;
+  onEdit: (datasourceId: string) => void;
   pushNotice: (notice: Notice) => void;
 }) {
   const [draftTypeFilter, setDraftTypeFilter] = useState<"all" | "mysql">("all");
@@ -823,15 +847,6 @@ function DatasourcePage({
   const [jumpPage, setJumpPage] = useState("1");
   const [querying, setQuerying] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const [editorOpen, setEditorOpen] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [form, setForm] = useState<DatasourceFormState>({ ...emptyDatasourceForm });
-  const [initialForm, setInitialForm] = useState<DatasourceFormState>({ ...emptyDatasourceForm });
-  const [initialConnectionFingerprint, setInitialConnectionFingerprint] = useState(datasourceFormConnectionFingerprint(emptyDatasourceForm));
-  const [testedFingerprint, setTestedFingerprint] = useState<string | null>(null);
-  const [formTestResult, setFormTestResult] = useState<DatasourceTestResult | null>(null);
-  const [submitting, setSubmitting] = useState(false);
-  const [testingForm, setTestingForm] = useState(false);
   const [testingSavedId, setTestingSavedId] = useState<string | null>(null);
   const [confirmation, setConfirmation] = useState<ConfirmationDialogState | null>(null);
   const [testDialog, setTestDialog] = useState<DatasourceTestDialogState | null>(null);
@@ -856,17 +871,6 @@ function DatasourcePage({
   const pageStart = (currentPage - 1) * pageSize;
   const pageItems = filteredDatasources.slice(pageStart, pageStart + pageSize);
   const tableBusy = querying || refreshing;
-
-  const editingDatasource = editingId ? datasources.find((item) => item.id === editingId) ?? null : null;
-  const currentFingerprint = datasourceFormConnectionFingerprint(form);
-  const connectionChanged = editingId ? currentFingerprint !== initialConnectionFingerprint : true;
-  const freshTestResult = testedFingerprint === currentFingerprint ? formTestResult : null;
-  const passwordRequired = !editingId || !editingDatasource?.hasPassword;
-  const validationError = validateDatasourceForm(form, passwordRequired);
-  const needsFreshTest = !editingId || connectionChanged;
-  const saveBlockReason = validationError ?? (needsFreshTest && !freshTestResult?.success ? "请先测试" : null);
-  const duplicateName = datasources.some((item) => item.id !== editingId && item.name.trim() === form.name.trim() && form.name.trim() !== "");
-  const editorDirty = isDatasourceFormDirty(form, initialForm) || Boolean(formTestResult);
 
   useEffect(() => {
     setPageIndex((current) => clampPage(current, totalPages));
@@ -918,84 +922,6 @@ function DatasourcePage({
       return;
     }
     goToPage(parsed);
-  };
-
-  const openEdit = (item: Datasource) => {
-    const nextForm = datasourceFormFromItem(item);
-    setEditingId(item.id);
-    setForm(nextForm);
-    setInitialForm(nextForm);
-    setInitialConnectionFingerprint(datasourceFormConnectionFingerprint(nextForm));
-    setTestedFingerprint(null);
-    setFormTestResult(null);
-    setEditorOpen(true);
-  };
-
-  const requestCloseEditor = () => {
-    if (!editorDirty) {
-      setEditorOpen(false);
-      return;
-    }
-    setConfirmation({
-      title: "放弃更改",
-      description: "关闭后未保存内容会丢失。",
-      confirmLabel: "关闭",
-      confirmTone: "danger",
-      onConfirm: () => {
-        setEditorOpen(false);
-      }
-    });
-  };
-
-  const testFormConnection = async () => {
-    const error = validateDatasourceForm(form, passwordRequired);
-    if (error) {
-      return;
-    }
-    const fingerprint = datasourceFormConnectionFingerprint(form);
-    setTestingForm(true);
-    try {
-      const result = await api.testDatasourceInput(datasourceFormPayload(form, editingId ?? undefined));
-      setTestedFingerprint(fingerprint);
-      setFormTestResult(result);
-      pushNotice({ tone: result.success ? "success" : "error", message: result.success ? "测试通过" : "测试失败" });
-    } catch (requestError) {
-      const message = requestError instanceof Error ? requestError.message : "连接失败";
-      pushNotice({ tone: "error", message });
-    } finally {
-      setTestingForm(false);
-    }
-  };
-
-  const saveDatasource = async (event: FormEvent) => {
-    event.preventDefault();
-    if (!canManage) {
-      pushNotice({ tone: "warning", message: "权限不足" });
-      return;
-    }
-    if (saveBlockReason) {
-      return;
-    }
-    setSubmitting(true);
-    try {
-      const payload = datasourceFormPayload(form, editingId ?? undefined);
-      const savedDatasource = editingId ? await api.updateDatasource(editingId, payload) : await api.createDatasource(payload);
-      if (!editingId && savedDatasource.id) {
-        setDraftTypeFilter("all");
-        setDraftStatusFilter("all");
-        setAppliedTypeFilter("all");
-        setAppliedStatusFilter("all");
-        setPageIndex(1);
-      }
-      setEditorOpen(false);
-      pushNotice({ tone: "success", message: "已保存" });
-      await onChanged();
-    } catch (requestError) {
-      const message = requestError instanceof Error ? requestError.message : "保存失败";
-      pushNotice({ tone: "error", message });
-    } finally {
-      setSubmitting(false);
-    }
   };
 
   const openTestDialog = (item: Datasource) => {
@@ -1209,7 +1135,7 @@ function DatasourcePage({
                           items={[
                             {
                               label: "编辑",
-                              onSelect: () => openEdit(item)
+                              onSelect: () => onEdit(item.id)
                             },
                             {
                               label: "删除",
@@ -1258,22 +1184,6 @@ function DatasourcePage({
           </div>
         </div>
       </section>
-
-      <DatasourceEditorModal
-        open={editorOpen}
-        mode={editingId ? "edit" : "create"}
-        form={form}
-        testResult={freshTestResult ?? formTestResult}
-        testing={testingForm}
-        submitting={submitting}
-        saveBlockReason={saveBlockReason}
-        passwordRequired={passwordRequired}
-        duplicateName={duplicateName}
-        onFormChange={setForm}
-        onClose={requestCloseEditor}
-        onTest={() => void testFormConnection()}
-        onSubmit={saveDatasource}
-      />
 
       <DatasourceTestModal
         open={Boolean(testDialog)}
@@ -1592,113 +1502,256 @@ function DatasourceCreatePage({
   );
 }
 
-function DatasourceEditorModal({
-  open,
-  mode,
-  form,
-  testResult,
-  testing,
-  submitting,
-  saveBlockReason,
-  passwordRequired,
-  duplicateName,
-  onFormChange,
-  onClose,
-  onTest,
-  onSubmit
+function DatasourceEditPage({
+  datasourceId,
+  datasources,
+  canManage,
+  onBack,
+  onChanged,
+  pushNotice
 }: {
-  open: boolean;
-  mode: "create" | "edit";
-  form: DatasourceFormState;
-  testResult: DatasourceTestResult | null;
-  testing: boolean;
-  submitting: boolean;
-  saveBlockReason: string | null;
-  passwordRequired: boolean;
-  duplicateName: boolean;
-  onFormChange: (form: DatasourceFormState) => void;
-  onClose: () => void;
-  onTest: () => void;
-  onSubmit: (event: FormEvent) => void;
+  datasourceId: string | null;
+  datasources: Datasource[];
+  canManage: boolean;
+  onBack: () => void;
+  onChanged: (quiet?: boolean) => Promise<void>;
+  pushNotice: (notice: Notice) => void;
 }) {
+  const datasource = datasourceId ? datasources.find((item) => item.id === datasourceId) ?? null : null;
+  const initial = datasource ? datasourceFormFromItem(datasource) : emptyDatasourceFormForType("mysql");
+  const [form, setForm] = useState<DatasourceFormState>(initial);
+  const [initialForm] = useState<DatasourceFormState>(initial);
+  const [initialConnectionFingerprint] = useState(datasourceFormConnectionFingerprint(initial));
+  const [testedFingerprint, setTestedFingerprint] = useState<string | null>(null);
+  const [testResult, setTestResult] = useState<DatasourceTestResult | null>(null);
+  const [testing, setTesting] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [showFieldErrors, setShowFieldErrors] = useState(false);
+  const [confirmation, setConfirmation] = useState<ConfirmationDialogState | null>(null);
+
+  const currentFingerprint = datasource ? datasourceFormConnectionFingerprint(form) : "";
+  const connectionChanged = datasource ? currentFingerprint !== initialConnectionFingerprint : false;
+  const freshTestResult = testedFingerprint === currentFingerprint ? testResult : null;
+  const displayedTestResult = freshTestResult ?? testResult;
+  const passwordRequired = !datasource?.hasPassword;
+  const validationError = datasource ? validateDatasourceForm(form, passwordRequired) : "数据源不存在";
+  const fieldErrors = showFieldErrors ? datasourceFieldErrors(form, passwordRequired) : {};
+  const duplicateName = Boolean(datasource) && datasources.some((item) => item.id !== datasource?.id && item.name.trim() === form.name.trim() && form.name.trim() !== "");
+  const needsFreshTest = connectionChanged;
+  const saveBlockReason = !datasource
+    ? "数据源不存在"
+    : duplicateName
+      ? "同名"
+      : validationError
+        ? "请填写必填项"
+        : needsFreshTest && !freshTestResult?.success
+          ? "请先测试"
+          : null;
+  const dirty = datasource ? isDatasourceFormDirty(form, initialForm) || Boolean(testResult) : false;
+
   const updateAuthType = (authType: DatasourceAuthType) => {
-    onFormChange(authType === "none" ? { ...form, authType, username: "", password: "" } : { ...form, authType });
+    setForm(authType === "none" ? { ...form, authType, username: "", password: "" } : { ...form, authType });
   };
 
+  const requestBack = () => {
+    if (!dirty) {
+      onBack();
+      return;
+    }
+    setConfirmation({
+      title: "放弃更改",
+      description: "离开后未保存内容会丢失。",
+      confirmLabel: "离开",
+      confirmTone: "danger",
+      onConfirm: onBack
+    });
+  };
+
+  const testConnection = async () => {
+    if (!datasource) {
+      pushNotice({ tone: "error", message: "数据源不存在" });
+      return;
+    }
+    if (validateDatasourceForm(form, passwordRequired)) {
+      setShowFieldErrors(true);
+      return;
+    }
+    const fingerprint = datasourceFormConnectionFingerprint(form);
+    setTesting(true);
+    try {
+      const result = await api.testDatasourceInput(datasourceFormPayload(form, datasource.id));
+      setTestedFingerprint(fingerprint);
+      setTestResult(result);
+    } catch (requestError) {
+      setTestResult(null);
+      pushNotice({ tone: "error", message: requestError instanceof Error ? requestError.message : "连接失败" });
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  const saveDatasource = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!datasource) {
+      pushNotice({ tone: "error", message: "数据源不存在" });
+      return;
+    }
+    if (!canManage) {
+      pushNotice({ tone: "warning", message: "权限不足" });
+      return;
+    }
+    if (saveBlockReason) {
+      if (validationError) {
+        setShowFieldErrors(true);
+        return;
+      }
+      pushNotice({ tone: duplicateName ? "warning" : "error", message: saveBlockReason });
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await api.updateDatasource(datasource.id, datasourceFormPayload(form, datasource.id));
+      pushNotice({ tone: "success", message: "已保存" });
+      await onChanged();
+      onBack();
+    } catch (requestError) {
+      pushNotice({ tone: "error", message: requestError instanceof Error ? requestError.message : "保存失败" });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  if (!canManage) {
+    return (
+      <section className="surface p-5 md:p-6">
+        <Button type="button" onClick={onBack} className="btn-secondary">
+          <ArrowRight size={14} className="rotate-180" />
+          返回
+        </Button>
+        <div className="mt-5">
+          <PermissionNotice description="权限不足" />
+        </div>
+      </section>
+    );
+  }
+
+  if (!datasource) {
+    return (
+      <section className="surface p-5 md:p-6">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <h1 className="text-3xl font-semibold tracking-tight text-coal md:text-4xl">编辑数据源</h1>
+          <Button type="button" onClick={onBack} className="btn-secondary">
+            <ArrowRight size={14} className="rotate-180" />
+            返回
+          </Button>
+        </div>
+        <div className="mt-5">
+          <EmptyPanel icon={Database} title="不存在" />
+        </div>
+      </section>
+    );
+  }
+
   return (
-    <Modal open={open} title={mode === "edit" ? "编辑数据源" : "新增数据源"} onClose={onClose} size="lg">
-      <form onSubmit={onSubmit} className="grid gap-4">
-        <div className="grid gap-4">
-          <Field label="名称" required>
-            <TextInput className="input" value={form.name} maxLength={50} onChange={(event) => onFormChange({ ...form, name: event.target.value })} />
-            {duplicateName && <div className="mt-2 text-xs text-amber-600">同名</div>}
-          </Field>
-        </div>
+    <form onSubmit={saveDatasource}>
+      <section className="surface overflow-hidden">
+        <div className="p-5 md:p-6">
+          <div className="flex flex-col gap-4 border-b border-line pb-5 sm:flex-row sm:items-start sm:justify-between">
+            <h1 className="text-3xl font-semibold tracking-tight text-coal md:text-4xl">编辑数据源</h1>
+            <Button type="button" onClick={requestBack} className="btn-secondary">
+              <ArrowRight size={14} className="rotate-180" />
+              返回
+            </Button>
+          </div>
 
-        <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_150px]">
-          <Field label="主机" required>
-            <TextInput className="input" value={form.host} onChange={(event) => onFormChange({ ...form, host: event.target.value })} />
-          </Field>
-          <Field label="端口" required>
-            <TextInput className="input" type="number" min={1} max={65535} value={form.port} onChange={(event) => onFormChange({ ...form, port: Number(event.target.value) })} />
-          </Field>
-        </div>
+          <div className="mt-5 grid gap-4">
+            <div className="grid gap-4">
+              <Field label="名称" required error={fieldErrors.name || (duplicateName ? "同名" : undefined)}>
+                <TextInput className="input" value={form.name} maxLength={50} onChange={(event) => setForm({ ...form, name: event.target.value })} />
+              </Field>
+            </div>
 
-        <div className="grid gap-4">
-          <Field label="认证类型" required>
-            <DropdownSelect
-              value={form.authType}
-              ariaLabel="认证类型"
-              options={datasourceAuthOptions}
-              className="max-w-[180px]"
-              onChange={(nextValue) => updateAuthType(nextValue as DatasourceAuthType)}
-            />
-          </Field>
-        </div>
+            <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_150px]">
+              <Field label="主机" required error={fieldErrors.host}>
+                <TextInput className="input" value={form.host} onChange={(event) => setForm({ ...form, host: event.target.value })} />
+              </Field>
+              <Field label="端口" required error={fieldErrors.port}>
+                <TextInput className="input" type="number" min={1} max={65535} value={form.port} onChange={(event) => setForm({ ...form, port: Number(event.target.value) })} />
+              </Field>
+            </div>
 
-        {form.authType === "password" && (
-          <div className="grid gap-4">
-            <Field label="用户名" required>
-              <TextInput className="input" value={form.username} onChange={(event) => onFormChange({ ...form, username: event.target.value })} />
-            </Field>
-            <Field label="密码" required={form.authType === "password" && passwordRequired}>
-              <TextInput
-                className="input"
-                type="password"
-                value={form.password}
-                onChange={(event) => onFormChange({ ...form, password: event.target.value })}
-                placeholder={mode === "edit" ? "留空不变" : ""}
-              />
+            <div className="grid gap-4">
+              <Field label="认证类型" required>
+                <DropdownSelect
+                  value={form.authType}
+                  ariaLabel="认证类型"
+                  options={datasourceAuthOptions}
+                  className="max-w-[180px]"
+                  onChange={(nextValue) => updateAuthType(nextValue as DatasourceAuthType)}
+                />
+              </Field>
+            </div>
+
+            {form.authType === "password" && (
+              <div className="grid gap-4">
+                <Field label="用户名" required error={fieldErrors.username}>
+                  <TextInput className="input" value={form.username} onChange={(event) => setForm({ ...form, username: event.target.value })} />
+                </Field>
+                <Field label="密码" required={form.authType === "password" && passwordRequired} error={fieldErrors.password}>
+                  <TextInput
+                    className="input"
+                    type="password"
+                    value={form.password}
+                    onChange={(event) => setForm({ ...form, password: event.target.value })}
+                    placeholder="留空不变"
+                  />
+                </Field>
+              </div>
+            )}
+
+            <Field label="备注" error={fieldErrors.remark}>
+              <TextareaInput className="textarea" maxLength={200} value={form.remark} onChange={(event) => setForm({ ...form, remark: event.target.value })} />
             </Field>
           </div>
-        )}
-
-        <Field label="备注">
-          <TextareaInput className="textarea" maxLength={200} value={form.remark} onChange={(event) => onFormChange({ ...form, remark: event.target.value })} />
-        </Field>
-
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-          <Button type="button" onClick={onTest} disabled={testing} className="btn-secondary">
-            {testing ? <ArrowsClockwise size={16} className="animate-spin" /> : <ShieldCheck size={16} />}
-            {testing ? "测试中" : "测试连接"}
-          </Button>
-          <DatasourceTestInlineResult
-            error={testResult?.success === false ? testResult.message || "连接失败" : null}
-            result={testResult}
-          />
         </div>
 
-        <div className="flex justify-end gap-3 pt-2">
-          <Button type="button" onClick={onClose} className="btn-secondary">
-            取消
-          </Button>
-          <Button type="submit" disabled={submitting || Boolean(saveBlockReason)} title={saveBlockReason || undefined} className="btn-primary">
-            {submitting ? <ArrowsClockwise size={16} /> : <CheckCircle size={16} />}
-            {submitting ? "保存中" : "保存"}
-          </Button>
+        <div className="flex flex-col gap-3 border-t border-line p-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+            <Button type="button" onClick={() => void testConnection()} disabled={testing} className="btn-secondary">
+              {testing ? <ArrowsClockwise size={16} className="animate-spin" /> : <ShieldCheck size={16} />}
+              {testing ? "测试中" : "测试连接"}
+            </Button>
+            <DatasourceTestInlineResult
+              error={displayedTestResult?.success === false ? displayedTestResult.message || "连接失败" : null}
+              result={displayedTestResult}
+            />
+          </div>
+          <div className="flex justify-end gap-3 sm:ml-auto">
+            <Button type="button" onClick={requestBack} className="btn-secondary">
+              取消
+            </Button>
+            <Button type="submit" disabled={submitting} title={saveBlockReason || undefined} className="btn-primary">
+              {submitting ? <ArrowsClockwise size={16} className="animate-spin" /> : <CheckCircle size={16} />}
+              {submitting ? "保存中" : "保存"}
+            </Button>
+          </div>
         </div>
-      </form>
-    </Modal>
+      </section>
+
+      <ConfirmDialog
+        open={Boolean(confirmation)}
+        title={confirmation?.title || ""}
+        description={confirmation?.description || ""}
+        confirmLabel={confirmation?.confirmLabel || "确认"}
+        confirmTone={confirmation?.confirmTone}
+        onCancel={() => setConfirmation(null)}
+        onConfirm={() => {
+          const action = confirmation?.onConfirm;
+          setConfirmation(null);
+          action?.();
+        }}
+      />
+    </form>
   );
 }
 
@@ -3495,16 +3548,19 @@ function datasourceAuthTypeFromItem(item: Datasource): DatasourceAuthType {
 
 function pageFromPathname(pathname: string): Page {
   if (pathname === "/datasource/create") return "datasourceCreate";
+  if (datasourceEditIdFromPathname(pathname)) return "datasourceEdit";
   return "datasources";
 }
 
-function pathForPage(page: Page) {
+function pathForPage(page: Page, datasourceId?: string) {
   if (page === "datasourceCreate") return "/datasource/create";
+  if (page === "datasourceEdit" && datasourceId) return `/datasource/${encodeURIComponent(datasourceId)}/edit`;
   return "/";
 }
 
 function navPage(page: Page): MainPage {
   if (page === "datasourceCreate") return "datasources";
+  if (page === "datasourceEdit") return "datasources";
   if (page === "nodeDetail") return "nodes";
   return page;
 }
@@ -3512,6 +3568,7 @@ function navPage(page: Page): MainPage {
 function pageTitle(page: Page) {
   if (page === "datasources") return "数据源";
   if (page === "datasourceCreate") return "新增数据源";
+  if (page === "datasourceEdit") return "编辑数据源";
   if (page === "nodes") return "节点";
   if (page === "nodeDetail") return "节点详情";
   return "设置";
@@ -3520,9 +3577,20 @@ function pageTitle(page: Page) {
 function pageDescription(page: Page) {
   if (page === "datasources") return "连接";
   if (page === "datasourceCreate") return "";
+  if (page === "datasourceEdit") return "";
   if (page === "nodes") return "运维区";
   if (page === "settings") return "告警";
   return "";
+}
+
+function datasourceEditIdFromPathname(pathname: string) {
+  const match = pathname.match(/^\/datasource\/([^/]+)\/edit$/);
+  if (!match) return null;
+  try {
+    return decodeURIComponent(match[1]);
+  } catch {
+    return match[1];
+  }
 }
 
 function nodeStatusText(status: ClusterNode["status"]) {
