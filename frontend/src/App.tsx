@@ -1060,18 +1060,9 @@ function DatasourcePage({
                 <tr>
                   <td colSpan={5} className="px-6 py-12">
                     <div className="mx-auto flex max-w-sm flex-col items-center text-center">
-                      <div className="flex h-12 w-12 items-center justify-center rounded-lg border border-line bg-slate-50 text-accent">
-                        <Database size={20} />
-                      </div>
-                      <div className="mt-4 text-base font-semibold text-coal">
+                      <div className="text-base font-semibold text-coal">
                         {datasources.length === 0 ? "暂无数据源" : "无匹配"}
                       </div>
-                      {canManage && datasources.length === 0 && (
-                        <Button type="button" onClick={onCreate} className="btn-primary mt-5">
-                          <Plus size={16} />
-                          新增数据源
-                        </Button>
-                      )}
                       {!canManage && datasources.length === 0 && (
                         <div className="mt-5">
                           <PermissionNotice compact description="仅管理员可新增。" />
