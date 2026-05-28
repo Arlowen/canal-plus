@@ -1527,6 +1527,7 @@ function DatasourceCreatePage({
                   value={form.authType}
                   ariaLabel="认证类型"
                   options={datasourceAuthOptions}
+                  className="max-w-[180px]"
                   onChange={(nextValue) => updateAuthType(nextValue as DatasourceAuthType)}
                 />
               </Field>
@@ -1646,6 +1647,7 @@ function DatasourceEditorModal({
               value={form.authType}
               ariaLabel="认证类型"
               options={datasourceAuthOptions}
+              className="max-w-[180px]"
               onChange={(nextValue) => updateAuthType(nextValue as DatasourceAuthType)}
             />
           </Field>
