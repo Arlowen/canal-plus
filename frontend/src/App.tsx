@@ -1504,11 +1504,7 @@ function DatasourceCreatePage({
 
         {selectedType && (
           <div className="border-t border-line p-5 md:p-6">
-            <div className="border-b border-line pb-5">
-              <h2 className="text-lg font-semibold text-coal">连接信息</h2>
-            </div>
-
-            <div className="mt-5 grid gap-4">
+            <div className="grid gap-4">
               <div className="grid gap-4">
                 <Field label="名称" required error={fieldErrors.name || (duplicateName ? "同名" : undefined)}>
                   <TextInput className="input" value={form.name} maxLength={50} onChange={(event) => updateForm({ ...form, name: event.target.value })} />
