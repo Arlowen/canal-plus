@@ -2,6 +2,7 @@ import {
   useCallback,
   useEffect,
   useId,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -9,6 +10,7 @@ import {
   type MouseEvent as ReactMouseEvent,
   type ReactNode
 } from "react";
+import { createPortal } from "react-dom";
 import {
   ArrowsClockwise,
   ArrowRight,
@@ -2760,6 +2762,21 @@ function ActionMenu({
   const rootRef = useRef<HTMLDivElement | null>(null);
   const buttonRef = useRef<HTMLButtonElement | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
+  const [position, setPosition] = useState<{ left: number; top: number; width: number } | null>(null);
+
+  const updatePosition = useCallback(() => {
+    const button = buttonRef.current;
+    if (!button) return;
+    const rect = button.getBoundingClientRect();
+    const width = Math.max(160, rect.width);
+    const menuHeight = Math.min(320, 16 + items.length * 40);
+    const left = Math.min(Math.max(12, rect.right - width), Math.max(12, window.innerWidth - width - 12));
+    const bottomTop = rect.bottom + 8;
+    const top = bottomTop + menuHeight > window.innerHeight - 12
+      ? Math.max(12, rect.top - menuHeight - 8)
+      : bottomTop;
+    setPosition({ left, top, width });
+  }, [items.length]);
 
   const focusMenuItem = (index: number) => {
     const enabledItems = Array.from(menuRef.current?.querySelectorAll<HTMLButtonElement>("[role='menuitem']:not([disabled])") || []);
@@ -2771,15 +2788,21 @@ function ActionMenu({
   useEffect(() => {
     if (!open) return;
     const handlePointerDown = (event: MouseEvent) => {
-      if (!rootRef.current?.contains(event.target as Node)) {
-        setOpen(false);
+      const target = event.target as Node;
+      if (rootRef.current?.contains(target) || menuRef.current?.contains(target)) {
+        return;
       }
+      setOpen(false);
     };
     const handleFocusIn = (event: FocusEvent) => {
-      if (!rootRef.current?.contains(event.target as Node)) {
-        setOpen(false);
+      const target = event.target as Node;
+      if (rootRef.current?.contains(target) || menuRef.current?.contains(target)) {
+        return;
       }
+      setOpen(false);
     };
+    const handleResize = () => updatePosition();
+    const handleScroll = () => updatePosition();
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         setOpen(false);
@@ -2789,12 +2812,21 @@ function ActionMenu({
     document.addEventListener("mousedown", handlePointerDown);
     document.addEventListener("focusin", handleFocusIn);
     document.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("resize", handleResize);
+    window.addEventListener("scroll", handleScroll, true);
     return () => {
       document.removeEventListener("mousedown", handlePointerDown);
       document.removeEventListener("focusin", handleFocusIn);
       document.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("resize", handleResize);
+      window.removeEventListener("scroll", handleScroll, true);
     };
-  }, [open]);
+  }, [open, updatePosition]);
+
+  useLayoutEffect(() => {
+    if (!open) return;
+    updatePosition();
+  }, [open, updatePosition]);
 
   if (items.length === 0) {
     return null;
@@ -2827,10 +2859,11 @@ function ActionMenu({
           <DotsThree size={14} />
         )}
       </Button>
-      {open && (
+      {open && position && createPortal(
         <div
           ref={menuRef}
           role="menu"
+          style={position}
           onKeyDown={(event) => {
             const enabledItems = Array.from(menuRef.current?.querySelectorAll<HTMLButtonElement>("[role='menuitem']:not([disabled])") || []);
             const currentIndex = enabledItems.findIndex((item) => item === document.activeElement);
@@ -2850,7 +2883,7 @@ function ActionMenu({
               setOpen(false);
             }
           }}
-          className="absolute right-0 top-11 z-20 w-40 rounded-lg border border-line bg-white p-2 shadow-raised"
+          className="fixed z-[90] rounded-lg border border-line bg-white p-2 shadow-raised"
         >
           {items.map((item) => (
             <Button
@@ -2872,7 +2905,8 @@ function ActionMenu({
               {item.label}
             </Button>
           ))}
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
