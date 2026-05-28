@@ -904,7 +904,6 @@ function DatasourcePage({
   const testFormConnection = async () => {
     const error = validateDatasourceForm(form, passwordRequired);
     if (error) {
-      pushNotice({ tone: "warning", message: error });
       return;
     }
     const fingerprint = datasourceFormConnectionFingerprint(form);
@@ -929,7 +928,6 @@ function DatasourcePage({
       return;
     }
     if (saveBlockReason) {
-      pushNotice({ tone: "warning", message: saveBlockReason });
       return;
     }
     setSubmitting(true);
