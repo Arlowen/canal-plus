@@ -1321,7 +1321,7 @@ function DatasourceCreatePage({
   onChanged: (quiet?: boolean) => Promise<void>;
   pushNotice: (notice: Notice) => void;
 }) {
-  const [selectedType, setSelectedType] = useState<DatasourceFormState["type"] | null>(null);
+  const [selectedType, setSelectedType] = useState<DatasourceFormState["type"] | null>("mysql");
   const [form, setForm] = useState<DatasourceFormState>(() => emptyDatasourceFormForType("mysql"));
   const [testedFingerprint, setTestedFingerprint] = useState<string | null>(null);
   const [testResult, setTestResult] = useState<DatasourceTestResult | null>(null);
