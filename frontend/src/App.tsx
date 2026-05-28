@@ -1470,7 +1470,7 @@ function DatasourceCreatePage({
           </div>
 
           {hasTypes ? (
-            <div role="radiogroup" aria-label="数据源类型" className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-[repeat(auto-fit,minmax(220px,260px))]">
+            <div role="radiogroup" aria-label="数据源类型" className="mt-5 grid grid-cols-[repeat(auto-fit,minmax(160px,180px))] gap-3">
               {datasourceTypeOptions.map((option) => {
                 const selected = selectedType === option.value;
                 return (
@@ -1481,14 +1481,14 @@ function DatasourceCreatePage({
                     aria-checked={selected}
                     onClick={() => requestType(option.value)}
                     className={cx(
-                      "flex min-h-[96px] items-center gap-4 rounded-lg border bg-white p-4 text-left transition active:translate-y-px",
+                      "flex min-h-[64px] items-center gap-3 rounded-lg border bg-white p-3 text-left transition active:translate-y-px",
                       selected
                         ? "border-blue-300 bg-blue-50 shadow-[inset_3px_0_0_#2563eb]"
                         : "border-line hover:border-blue-200 hover:bg-slate-50"
                     )}
                   >
-                    <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg border border-cyan-100 bg-cyan-50">
-                      <DatasourceTypeLogo type={option.value} className="h-9 w-9" />
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-cyan-100 bg-cyan-50">
+                      <DatasourceTypeLogo type={option.value} className="h-7 w-7" />
                     </span>
                     <span className="min-w-0">
                       <span className="block text-base font-semibold text-coal">{option.label}</span>
