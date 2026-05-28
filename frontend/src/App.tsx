@@ -1458,8 +1458,7 @@ function DatasourceCreatePage({
   return (
     <form onSubmit={saveDatasource} className="space-y-5">
       <section className="surface p-5 md:p-6">
-        <div className="flex flex-col gap-3 border-b border-line pb-5 sm:flex-row sm:items-center sm:justify-between">
-          <h2 className="text-lg font-semibold text-coal">数据源类型</h2>
+        <div className="flex justify-end border-b border-line pb-5">
           <Button type="button" onClick={requestBack} className="btn-secondary">
             <ArrowRight size={14} className="rotate-180" />
             返回
