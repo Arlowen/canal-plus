@@ -1510,7 +1510,7 @@ function DatasourceCreatePage({
               </Field>
             </div>
 
-            <div className="grid gap-4 md:grid-cols-2">
+            <div className="grid gap-4">
               <Field label="用户名" required error={fieldErrors.username}>
                 <TextInput className="input" value={form.username} onChange={(event) => updateForm({ ...form, username: event.target.value })} />
               </Field>
@@ -1610,7 +1610,7 @@ function DatasourceEditorModal({
           </Field>
         </div>
 
-        <div className="grid gap-4 md:grid-cols-2">
+        <div className="grid gap-4">
           <Field label="用户名" required>
             <TextInput className="input" value={form.username} onChange={(event) => onFormChange({ ...form, username: event.target.value })} />
           </Field>
