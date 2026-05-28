@@ -1523,7 +1523,7 @@ function DatasourceCreatePage({
               <TextareaInput className="textarea" maxLength={200} value={form.remark} onChange={(event) => updateForm({ ...form, remark: event.target.value })} />
             </Field>
 
-            <div className="rounded-lg border border-line bg-slate-50/70 px-4 py-4">
+            <div className="rounded-lg border border-line px-4 py-4">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
                 <Button type="button" onClick={() => void testConnection()} disabled={testing} className="btn-secondary">
                   {testing ? <ArrowsClockwise size={16} className="animate-spin" /> : <ShieldCheck size={16} />}
@@ -1631,7 +1631,7 @@ function DatasourceEditorModal({
           <TextareaInput className="textarea" maxLength={200} value={form.remark} onChange={(event) => onFormChange({ ...form, remark: event.target.value })} />
         </Field>
 
-        <div className="rounded-lg border border-line bg-slate-50/70 px-4 py-4">
+        <div className="rounded-lg border border-line px-4 py-4">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
             <Button type="button" onClick={onTest} disabled={testing} className="btn-secondary">
               {testing ? <ArrowsClockwise size={16} className="animate-spin" /> : <ShieldCheck size={16} />}
