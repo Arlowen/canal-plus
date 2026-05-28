@@ -1546,29 +1546,32 @@ function DatasourceCreatePage({
               <Field label="备注" error={fieldErrors.remark}>
                 <TextareaInput className="textarea" maxLength={200} value={form.remark} onChange={(event) => updateForm({ ...form, remark: event.target.value })} />
               </Field>
-
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-                <Button type="button" onClick={() => void testConnection()} disabled={testing} className="btn-secondary">
-                  {testing ? <ArrowsClockwise size={16} className="animate-spin" /> : <ShieldCheck size={16} />}
-                  {testing ? "测试中" : "测试连接"}
-                </Button>
-                <DatasourceTestInlineResult
-                  error={displayedTestResult?.success === false ? displayedTestResult.message || "连接失败" : null}
-                  result={displayedTestResult}
-                />
-              </div>
             </div>
           </div>
         )}
 
-        <div className="flex justify-end gap-3 border-t border-line p-4">
-          <Button type="button" onClick={requestBack} className="btn-secondary">
-            取消
-          </Button>
-          <Button type="submit" disabled={submitting || !selectedType} title={!selectedType ? "请选择类型" : undefined} className="btn-primary">
-            {submitting ? <ArrowsClockwise size={16} className="animate-spin" /> : <CheckCircle size={16} />}
-            {submitting ? "保存中" : "保存"}
-          </Button>
+        <div className="flex flex-col gap-3 border-t border-line p-4 sm:flex-row sm:items-center sm:justify-between">
+          {selectedType && (
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+              <Button type="button" onClick={() => void testConnection()} disabled={testing} className="btn-secondary">
+                {testing ? <ArrowsClockwise size={16} className="animate-spin" /> : <ShieldCheck size={16} />}
+                {testing ? "测试中" : "测试连接"}
+              </Button>
+              <DatasourceTestInlineResult
+                error={displayedTestResult?.success === false ? displayedTestResult.message || "连接失败" : null}
+                result={displayedTestResult}
+              />
+            </div>
+          )}
+          <div className="flex justify-end gap-3 sm:ml-auto">
+            <Button type="button" onClick={requestBack} className="btn-secondary">
+              取消
+            </Button>
+            <Button type="submit" disabled={submitting || !selectedType} title={!selectedType ? "请选择类型" : undefined} className="btn-primary">
+              {submitting ? <ArrowsClockwise size={16} className="animate-spin" /> : <CheckCircle size={16} />}
+              {submitting ? "保存中" : "保存"}
+            </Button>
+          </div>
         </div>
       </section>
 
