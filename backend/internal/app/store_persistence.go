@@ -153,6 +153,7 @@ func (p *mySQLStorePersistence) autoMigrate() error {
 		{tableSuffix: "alert_events", name: "max_delay_seconds"},
 		{tableSuffix: "alert_events", name: "pending_errors"},
 		{tableSuffix: "cluster_nodes", name: "running_tasks"},
+		{tableSuffix: "operation_logs", name: "type"},
 	} {
 		if err := p.dropColumnIfExists(p.tableName(column.tableSuffix), column.name); err != nil {
 			return err

@@ -406,6 +406,7 @@ function App() {
   const [alertEvaluations, setAlertEvaluations] = useState<AlertRuleEvaluation[]>([]);
   const [loading, setLoading] = useState(false);
   const [notice, setNotice] = useState<Notice | null>(null);
+  const [errorDialog, setErrorDialog] = useState<string | null>(null);
   const [globalError, setGlobalError] = useState<string | null>(null);
   const [serviceUnavailable, setServiceUnavailable] = useState(false);
   const [serviceRecoveryPending, setServiceRecoveryPending] = useState(false);
@@ -416,6 +417,10 @@ function App() {
   const canTestDatasources = canTestDatasource(user);
 
   const pushNotice = useCallback((next: Notice) => {
+    if (next.tone === "error") {
+      setErrorDialog(next.message);
+      return;
+    }
     setNotice(next);
   }, []);
 
@@ -683,11 +688,14 @@ function App() {
               </NoticeBanner>
             )}
 
-            {globalError && (
-              <NoticeBanner tone="error">
-                {globalError}
-              </NoticeBanner>
-            )}
+            <ErrorDialog
+              open={Boolean(globalError || errorDialog)}
+              message={globalError || errorDialog || ""}
+              onClose={() => {
+                setGlobalError(null);
+                setErrorDialog(null);
+              }}
+            />
 
             {loading && datasources.length === 0 ? (
               <ShellSkeleton />
@@ -2536,6 +2544,30 @@ function ConfirmDialog({
         </Button>
         <Button type="button" onClick={onConfirm} className={confirmTone === "danger" ? "btn-danger" : "btn-primary"}>
           {confirmLabel}
+        </Button>
+      </div>
+    </Modal>
+  );
+}
+
+function ErrorDialog({
+  open,
+  message,
+  onClose
+}: {
+  open: boolean;
+  message: string;
+  onClose: () => void;
+}) {
+  return (
+    <Modal open={open} title="错误" onClose={onClose} size="md" closeOnOverlay={false}>
+      <div className="flex items-start gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+        <XCircle className="mt-0.5 shrink-0" size={18} />
+        <div className="min-w-0 break-words">{message || "请求失败"}</div>
+      </div>
+      <div className="mt-5 flex justify-end">
+        <Button type="button" onClick={onClose} className="btn-primary">
+          关闭
         </Button>
       </div>
     </Modal>
