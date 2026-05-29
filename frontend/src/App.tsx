@@ -1142,7 +1142,7 @@ function DatasourcePage({
   const requestRemoveDatasource = (item: Datasource) => {
     setConfirmation({
       title: `删除 ${item.name}`,
-      description: "删除后无法恢复。",
+      description: "",
       confirmLabel: "删除",
       confirmTone: "danger",
       onConfirm: () => {
