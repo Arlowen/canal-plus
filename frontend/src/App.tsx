@@ -893,13 +893,13 @@ function App() {
 
           <main className="min-w-0">
             {page !== "datasources" && page !== "nodes" && page !== "datasourceCreate" && page !== "datasourceEdit" && (
-              <div className="flex flex-col gap-5 border-b border-line px-5 py-5 md:px-6 xl:flex-row xl:items-start xl:justify-between">
+              <div className="flex h-[81px] flex-col justify-center gap-1 border-b border-line px-5 md:px-6 xl:flex-row xl:items-center xl:justify-between">
                 <div>
                   <h1 className="text-3xl font-semibold tracking-tight text-coal md:text-4xl">
                     {pageTitle(page)}
                   </h1>
                   {pageDescription(page) && (
-                    <p className="mt-2 text-sm text-slate-500">
+                    <p className="mt-1 text-sm text-slate-500">
                       {pageDescription(page)}
                     </p>
                   )}
@@ -1153,7 +1153,7 @@ function DatasourcePage({
   return (
     <>
       <section className="min-w-0 overflow-hidden">
-        <div className="border-b border-line px-5 py-5 md:px-6">
+        <div className="flex h-[81px] items-center border-b border-line px-5 md:px-6">
           <h1 className="text-3xl font-semibold tracking-tight text-coal md:text-4xl">数据源</h1>
         </div>
 
@@ -1507,12 +1507,15 @@ function DatasourceCreatePage({
 
   if (!canManage) {
     return (
-      <section className="p-5 md:p-6">
-        <Button type="button" onClick={onBack} className="btn-secondary">
-          <ArrowRight size={14} className="rotate-180" />
-          返回
-        </Button>
-        <div className="mt-5">
+      <section>
+        <div className="flex h-[81px] items-center justify-between gap-4 border-b border-line px-5 md:px-6">
+          <h1 className="text-3xl font-semibold tracking-tight text-coal md:text-4xl">新增数据源</h1>
+          <Button type="button" onClick={onBack} className="btn-secondary">
+            <ArrowRight size={14} className="rotate-180" />
+            返回
+          </Button>
+        </div>
+        <div className="p-5 md:p-6">
           <PermissionNotice description="权限不足" />
         </div>
       </section>
@@ -1522,17 +1525,17 @@ function DatasourceCreatePage({
   return (
     <form onSubmit={saveDatasource}>
       <section className="overflow-hidden">
-        <div className="p-5 md:p-6">
-          <div className="flex flex-col gap-4 border-b border-line pb-5 sm:flex-row sm:items-start sm:justify-between">
-            <h1 className="text-3xl font-semibold tracking-tight text-coal md:text-4xl">新增数据源</h1>
-            <Button type="button" onClick={requestBack} className="btn-secondary">
-              <ArrowRight size={14} className="rotate-180" />
-              返回
-            </Button>
-          </div>
+        <div className="flex h-[81px] items-center justify-between gap-4 border-b border-line px-5 md:px-6">
+          <h1 className="truncate text-3xl font-semibold tracking-tight text-coal md:text-4xl">新增数据源</h1>
+          <Button type="button" onClick={requestBack} className="btn-secondary">
+            <ArrowRight size={14} className="rotate-180" />
+            返回
+          </Button>
+        </div>
 
+        <div className="p-5 md:p-6">
           {hasTypes ? (
-            <div role="radiogroup" aria-label="数据源类型" className="mt-5 grid grid-cols-[repeat(auto-fit,minmax(160px,180px))] gap-3">
+            <div role="radiogroup" aria-label="数据源类型" className="grid grid-cols-[repeat(auto-fit,minmax(160px,180px))] gap-3">
               {datasourceTypeOptions.map((option) => {
                 const selected = selectedType === option.value;
                 return (
@@ -1776,12 +1779,15 @@ function DatasourceEditPage({
 
   if (!canManage) {
     return (
-      <section className="p-5 md:p-6">
-        <Button type="button" onClick={onBack} className="btn-secondary">
-          <ArrowRight size={14} className="rotate-180" />
-          返回
-        </Button>
-        <div className="mt-5">
+      <section>
+        <div className="flex h-[81px] items-center justify-between gap-4 border-b border-line px-5 md:px-6">
+          <h1 className="text-3xl font-semibold tracking-tight text-coal md:text-4xl">编辑数据源</h1>
+          <Button type="button" onClick={onBack} className="btn-secondary">
+            <ArrowRight size={14} className="rotate-180" />
+            返回
+          </Button>
+        </div>
+        <div className="p-5 md:p-6">
           <PermissionNotice description="权限不足" />
         </div>
       </section>
@@ -1790,15 +1796,15 @@ function DatasourceEditPage({
 
   if (!datasource) {
     return (
-      <section className="p-5 md:p-6">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+      <section>
+        <div className="flex h-[81px] items-center justify-between gap-4 border-b border-line px-5 md:px-6">
           <h1 className="text-3xl font-semibold tracking-tight text-coal md:text-4xl">编辑数据源</h1>
           <Button type="button" onClick={onBack} className="btn-secondary">
             <ArrowRight size={14} className="rotate-180" />
             返回
           </Button>
         </div>
-        <div className="mt-5">
+        <div className="p-5 md:p-6">
           <EmptyPanel icon={Database} title="不存在" />
         </div>
       </section>
@@ -1808,22 +1814,22 @@ function DatasourceEditPage({
   return (
     <form onSubmit={saveDatasource}>
       <section className="overflow-hidden">
-        <div className="p-5 md:p-6">
-          <div className="flex flex-col gap-4 border-b border-line pb-5 sm:flex-row sm:items-start sm:justify-between">
-            <div className="flex min-w-0 flex-wrap items-center gap-3">
-              <h1 className="text-3xl font-semibold tracking-tight text-coal md:text-4xl">编辑数据源</h1>
-              <span className="inline-flex items-center gap-2 rounded-lg border border-line bg-slate-50 px-2.5 py-1.5 text-sm font-medium text-coal">
-                <DatasourceTypeLogo type={form.type} className="h-5 w-5" />
-                {datasourceTypeLabel}
-              </span>
-            </div>
-            <Button type="button" onClick={requestBack} className="btn-secondary">
-              <ArrowRight size={14} className="rotate-180" />
-              返回
-            </Button>
+        <div className="flex h-[81px] items-center justify-between gap-4 border-b border-line px-5 md:px-6">
+          <div className="flex min-w-0 items-center gap-3">
+            <h1 className="shrink-0 text-3xl font-semibold tracking-tight text-coal md:text-4xl">编辑数据源</h1>
+            <span className="inline-flex min-w-0 items-center gap-2 rounded-lg border border-line bg-slate-50 px-2.5 py-1.5 text-sm font-medium text-coal">
+              <DatasourceTypeLogo type={form.type} className="h-5 w-5 shrink-0" />
+              <span className="truncate">{datasourceTypeLabel}</span>
+            </span>
           </div>
+          <Button type="button" onClick={requestBack} className="btn-secondary">
+            <ArrowRight size={14} className="rotate-180" />
+            返回
+          </Button>
+        </div>
 
-          <div className="mt-5 grid gap-4">
+        <div className="p-5 md:p-6">
+          <div className="grid gap-4">
             <div className="grid gap-4">
               <Field label="名称" required error={fieldErrors.name || (duplicateName ? "同名" : undefined)}>
                 <TextInput className="input" value={form.name} maxLength={50} onChange={(event) => setForm({ ...form, name: event.target.value })} />
@@ -2147,7 +2153,7 @@ function NodesPage({
   return (
     <>
       <section className="min-w-0">
-        <div className="border-b border-line px-5 py-5 md:px-6">
+        <div className="flex h-[81px] items-center border-b border-line px-5 md:px-6">
           <h1 className="text-3xl font-semibold tracking-tight text-coal md:text-4xl">节点</h1>
         </div>
 
