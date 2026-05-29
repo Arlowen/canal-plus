@@ -409,9 +409,9 @@ function createBrandTileParticles(width: number, height: number) {
   canvas.height = height;
 
   const label = "Canal Plus";
-  let fontSize = Math.round(Math.min(width * 0.18, height * 0.68));
-  const maxTextWidth = width - 8;
-  const maxTextHeight = height - 8;
+  let fontSize = Math.round(Math.min(width * 0.19, height * 0.72));
+  const maxTextWidth = width - 4;
+  const maxTextHeight = height - 4;
   while (fontSize > 12) {
     context.font = `900 ${fontSize}px ${loginDisplayFont}`;
     const metrics = context.measureText(label);
@@ -431,25 +431,24 @@ function createBrandTileParticles(width: number, height: number) {
 
   const samples: ParticlePoint[] = [];
   const pixels = context.getImageData(0, 0, width, height).data;
-  const step = Math.max(2, Math.floor(Math.min(width, height) / 18));
+  const step = Math.max(3, Math.floor(Math.min(width, height) / 24));
 
   for (let y = 0; y < height; y += step) {
     for (let x = 0; x < width; x += step) {
       const alpha = pixels[(y * width + x) * 4 + 3];
-      if (alpha < 32) continue;
+      if (alpha < 48) continue;
       const seed = particleNoise(x * 0.51, y * 0.47);
-      if (seed < 0.08) continue;
       samples.push({
-        x: x + (seed - 0.5) * 0.9,
-        y: y + (0.5 - seed) * 0.9,
-        size: seed > 0.78 ? 1.08 : seed > 0.42 ? 0.96 : 0.86,
+        x: x + (seed - 0.5) * 0.24,
+        y: y + (0.5 - seed) * 0.24,
+        size: seed > 0.78 ? 1.24 : seed > 0.42 ? 1.14 : 1.04,
         opacity: 1,
         seed
       });
     }
   }
 
-  const limit = 760;
+  const limit = 1400;
   const stride = Math.max(1, Math.ceil(samples.length / limit));
   return samples.filter((_, index) => index % stride === 0).slice(0, limit);
 }
@@ -459,8 +458,8 @@ function BrandParticleTile({ className }: { className?: string }) {
   const particlesRef = useRef<BrandTileParticle[]>([]);
   const frameIdRef = useRef(0);
   const lastFrameAtRef = useRef(0);
-  const sizeRef = useRef({ width: 224, height: 72 });
-  const pointerRef = useRef({ x: 112, y: 36 });
+  const sizeRef = useRef({ width: 240, height: 80 });
+  const pointerRef = useRef({ x: 120, y: 40 });
   const activeRef = useRef(false);
 
   const resetParticles = useCallback((width: number, height: number) => {
@@ -550,7 +549,7 @@ function BrandParticleTile({ className }: { className?: string }) {
         particle.currentY += particle.velocityY * delta;
 
         context.globalAlpha = particle.opacity;
-        context.fillStyle = particle.seed > 0.62 ? "#1e40af" : "#2563eb";
+        context.fillStyle = particle.seed > 0.62 ? "#1d4ed8" : "#2563eb";
         context.beginPath();
         context.arc(particle.currentX, particle.currentY, particle.size, 0, Math.PI * 2);
         context.fill();
@@ -601,7 +600,7 @@ function BrandParticleTile({ className }: { className?: string }) {
         activeRef.current = false;
       }}
       className={cx(
-        "block h-[72px] w-56 shrink-0 bg-transparent outline-none transition duration-200 hover:-translate-y-px focus:ring-4 focus:ring-blue-100",
+        "block h-20 w-60 shrink-0 bg-transparent outline-none transition duration-200 hover:-translate-y-px focus:ring-4 focus:ring-blue-100",
         className
       )}
     />
