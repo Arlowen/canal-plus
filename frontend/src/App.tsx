@@ -1037,12 +1037,11 @@ function DatasourcePage({
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[785px] table-fixed border-collapse text-left">
+          <table className="w-full min-w-[595px] table-fixed border-collapse text-left">
             <colgroup>
               <col className="w-[250px]" />
               <col className="w-[170px]" />
               <col className="w-[95px]" />
-              <col className="w-[190px]" />
               <col className="w-[170px]" />
             </colgroup>
             <thead className="bg-slate-50/90 text-xs font-semibold text-slate-500">
@@ -1050,14 +1049,13 @@ function DatasourcePage({
                 <th className="whitespace-nowrap px-5 py-3 md:px-6">数据源名称</th>
                 <th className="whitespace-nowrap px-4 py-3">Host</th>
                 <th className="whitespace-nowrap px-4 py-3">版本号</th>
-                <th className="whitespace-nowrap px-3 py-3">创建时间</th>
                 <th className="whitespace-nowrap px-4 py-3">操作</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-line bg-white">
               {pageItems.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-6 py-12">
+                  <td colSpan={4} className="px-6 py-12">
                     <div className="mx-auto flex max-w-sm flex-col items-center text-center">
                       <div className="text-base font-semibold text-coal">
                         {datasources.length === 0 ? "暂无数据源" : "无匹配"}
@@ -1088,7 +1086,6 @@ function DatasourcePage({
                     </div>
                   </td>
                   <td className="px-4 py-4 align-middle font-mono text-sm text-slate-600">{item.version?.trim() || "-"}</td>
-                  <td className="whitespace-nowrap px-3 py-4 align-middle font-mono text-[13px] text-slate-600">{formatDateTime(item.createdAt)}</td>
                   <td className="px-4 py-4 align-middle">
                     <div className="flex items-center justify-start gap-2">
                       {canTest && (
