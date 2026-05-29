@@ -2,12 +2,13 @@
 
 ## Completion Notification
 
-- After completing and pushing any code, asset, UI, documentation, or project change, notify the user through the Slack bot configured by local environment variables `SLACK_BOT_TOKEN` and `SLACK_NOTIFY_CHANNEL`.
-- Send the notification with Slack `chat.postMessage` so it appears from the bot app instead of the user's profile.
-- If the bot-token notification fails for any reason, fall back to `[@slack](plugin://slack@openai-curated)` and send the same notification message.
-- Mention the user with `<@U0ALQ0WRQHE>` at the start of the notification.
-- Use this exact message format: `<@U0ALQ0WRQHE> 【项目名】【chat 名称】【会话名】变更已完成，【完成时间】`.
-- Use the current repository or workspace name as `项目名`, the current chat/thread title as `chat 名称`, the current task/conversation name as `会话名`, and the local completion time as `完成时间`.
+- After completing and pushing any code, asset, UI, documentation, or project change, notify the user through the Feishu application bot configured by local environment variables `FEISHU_APP_ID`, `FEISHU_APP_SECRET`, `FEISHU_RECEIVE_ID_TYPE`, and `FEISHU_RECEIVE_ID`.
+- Do not use Slack for completion notifications.
+- Get `tenant_access_token` with `POST https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal`, using `FEISHU_APP_ID` and `FEISHU_APP_SECRET`.
+- Send the notification with `POST https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=${FEISHU_RECEIVE_ID_TYPE}`, using `Authorization: Bearer ${tenant_access_token}` and `FEISHU_RECEIVE_ID` as the message receiver.
+- Send a text message where `content` is a JSON string, for example `{"text":"message"}`.
+- Use this exact message format: `【项目名】【chat 名称】【会话名】变更已完成，【完成时间】`.
+- Use the current repository or workspace name as `项目名`; if the name is `codex`, render it as `Codex`. Use the current chat/thread title as `chat 名称`, the current task/conversation name as `会话名`, and the local completion time as `完成时间`.
 
 ## Small Change Auto Publish
 
