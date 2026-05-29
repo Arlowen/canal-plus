@@ -4,7 +4,7 @@ export default {
   theme: {
     extend: {
       fontFamily: {
-        sans: ["Geist", "Satoshi", "Avenir Next", "ui-sans-serif", "system-ui"],
+        sans: ["Inter Variable", "Noto Sans SC Variable", "ui-sans-serif", "system-ui"],
         mono: ["JetBrains Mono", "SFMono-Regular", "ui-monospace", "monospace"]
       },
       colors: {

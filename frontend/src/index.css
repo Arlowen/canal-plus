@@ -5,8 +5,8 @@
 :root {
   color: #1d2430;
   background: #f5f8ff;
-  --font-display: "Geist", "Satoshi", "Avenir Next", "Segoe UI Variable Display", "PingFang SC", "Helvetica Neue", sans-serif;
-  --font-body: "Geist", "Satoshi", "Segoe UI Variable Text", "PingFang SC", "Helvetica Neue", sans-serif;
+  --font-display: "Inter Variable", "Noto Sans SC Variable", "PingFang SC", "Microsoft YaHei UI", sans-serif;
+  --font-body: "Inter Variable", "Noto Sans SC Variable", "PingFang SC", "Microsoft YaHei UI", sans-serif;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
