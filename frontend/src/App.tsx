@@ -1285,11 +1285,6 @@ function DatasourceCreatePage({
   };
 
   const updateName = (name: string) => {
-    if (name.trim() === "") {
-      nameManuallyEditedRef.current = false;
-      setForm((currentForm) => ({ ...currentForm, name: datasourceGeneratedName(currentForm) }));
-      return;
-    }
     const generatedName = datasourceGeneratedName(form);
     nameManuallyEditedRef.current = name.trim() !== generatedName;
     setForm((currentForm) => ({ ...currentForm, name }));
