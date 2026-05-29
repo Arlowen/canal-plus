@@ -341,7 +341,7 @@ function ParticleWordmark({ wordmark }: { wordmark: string }) {
 
         const pulse = phaseRef.current === "hold" ? 0.9 + Math.sin(now / 320 + index * 0.45) * 0.12 : 1;
         context.globalAlpha = particle.opacity * 0.2;
-        context.fillStyle = "#bfdbfe";
+        context.fillStyle = "#dbeafe";
         context.beginPath();
         context.arc(particle.currentX, particle.currentY, particle.size * 2.1 * pulse, 0, Math.PI * 2);
         context.fill();
@@ -560,7 +560,7 @@ function BrandParticleTile({ className }: { className?: string }) {
         context.fill();
 
         context.globalAlpha = particle.opacity;
-        context.fillStyle = particle.seed > 0.62 ? "#ffffff" : "#dbeafe";
+        context.fillStyle = particle.seed > 0.62 ? "#1d4ed8" : "#2563eb";
         context.beginPath();
         context.arc(particle.currentX, particle.currentY, particle.size, 0, Math.PI * 2);
         context.fill();
@@ -611,7 +611,7 @@ function BrandParticleTile({ className }: { className?: string }) {
         activeRef.current = false;
       }}
       className={cx(
-        "relative flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-blue-200/70 bg-[radial-gradient(circle_at_35%_18%,#60a5fa_0%,#2563eb_38%,#141820_100%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.24),0_16px_30px_-24px_rgba(37,99,235,0.82)] outline-none transition duration-200 hover:-translate-y-px focus:ring-4 focus:ring-blue-100",
+        "relative flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-line/70 bg-transparent shadow-none outline-none transition duration-200 hover:-translate-y-px focus:ring-4 focus:ring-blue-100",
         className
       )}
     >
