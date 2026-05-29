@@ -633,8 +633,8 @@ function App() {
   return (
     <div className="min-h-[100dvh] bg-mist text-ink">
       <div className="page-shell">
-        <div className="grid gap-4 lg:grid-cols-[260px_minmax(0,1fr)]">
-          <aside className="surface flex h-fit flex-col p-3 lg:sticky lg:top-3 lg:min-h-[calc(100dvh-1.5rem)]">
+        <div className="surface grid min-h-[calc(100dvh-1.5rem)] overflow-hidden lg:grid-cols-[260px_minmax(0,1fr)]">
+          <aside className="flex h-fit flex-col border-b border-line/80 p-3 lg:sticky lg:top-3 lg:min-h-[calc(100dvh-1.5rem)] lg:border-b-0 lg:border-r">
             <div className="border-b border-line/80 px-2 pb-4">
               <div className="brand-wordmark" aria-label="Canal Plus">
                 <span>Canal</span>
@@ -690,7 +690,7 @@ function App() {
 
           <main className="min-w-0">
             {page !== "datasources" && page !== "nodes" && page !== "datasourceCreate" && page !== "datasourceEdit" && (
-              <div className="surface mb-4 flex flex-col gap-5 p-5 md:p-6 xl:flex-row xl:items-start xl:justify-between">
+              <div className="flex flex-col gap-5 border-b border-line px-5 py-5 md:px-6 xl:flex-row xl:items-start xl:justify-between">
                 <div>
                   <h1 className="text-3xl font-semibold tracking-tight text-coal md:text-4xl">
                     {pageTitle(page)}
@@ -947,7 +947,7 @@ function DatasourcePage({
 
   return (
     <>
-      <section className="surface min-w-0 overflow-hidden">
+      <section className="min-w-0 overflow-hidden">
         <div className="border-b border-line px-5 py-5 md:px-6">
           <h1 className="text-3xl font-semibold tracking-tight text-coal md:text-4xl">数据源</h1>
         </div>
@@ -1294,7 +1294,7 @@ function DatasourceCreatePage({
 
   if (!canManage) {
     return (
-      <section className="surface p-5 md:p-6">
+      <section className="p-5 md:p-6">
         <Button type="button" onClick={onBack} className="btn-secondary">
           <ArrowRight size={14} className="rotate-180" />
           返回
@@ -1308,7 +1308,7 @@ function DatasourceCreatePage({
 
   return (
     <form onSubmit={saveDatasource}>
-      <section className="surface overflow-hidden">
+      <section className="overflow-hidden">
         <div className="p-5 md:p-6">
           <div className="flex flex-col gap-4 border-b border-line pb-5 sm:flex-row sm:items-start sm:justify-between">
             <h1 className="text-3xl font-semibold tracking-tight text-coal md:text-4xl">新增数据源</h1>
@@ -1563,7 +1563,7 @@ function DatasourceEditPage({
 
   if (!canManage) {
     return (
-      <section className="surface p-5 md:p-6">
+      <section className="p-5 md:p-6">
         <Button type="button" onClick={onBack} className="btn-secondary">
           <ArrowRight size={14} className="rotate-180" />
           返回
@@ -1577,7 +1577,7 @@ function DatasourceEditPage({
 
   if (!datasource) {
     return (
-      <section className="surface p-5 md:p-6">
+      <section className="p-5 md:p-6">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <h1 className="text-3xl font-semibold tracking-tight text-coal md:text-4xl">编辑数据源</h1>
           <Button type="button" onClick={onBack} className="btn-secondary">
@@ -1594,7 +1594,7 @@ function DatasourceEditPage({
 
   return (
     <form onSubmit={saveDatasource}>
-      <section className="surface overflow-hidden">
+      <section className="overflow-hidden">
         <div className="p-5 md:p-6">
           <div className="flex flex-col gap-4 border-b border-line pb-5 sm:flex-row sm:items-start sm:justify-between">
             <div className="flex min-w-0 flex-wrap items-center gap-3">
@@ -1899,7 +1899,7 @@ function NodesPage({
 
   return (
     <div className="space-y-5">
-      <section className="surface min-w-0 p-6">
+      <section className="min-w-0 p-6">
         <div className="flex flex-col gap-5 border-b border-line pb-5 xl:flex-row xl:items-start xl:justify-between">
           <h1 className="text-3xl font-semibold tracking-tight text-coal md:text-4xl">节点</h1>
           {canManage && (
@@ -2121,7 +2121,7 @@ function NodeDetailPage({
 
   if (!selected) {
     return (
-      <section className="surface p-6">
+      <section className="p-6">
         <DetailPageHeader title="节点详情" onBack={onBack} />
         <div className="mt-5 text-sm text-slate-500">节点不存在或已删除。</div>
       </section>
@@ -2130,7 +2130,7 @@ function NodeDetailPage({
 
   return (
     <div className="space-y-5">
-      <section className="surface p-6">
+      <section className="p-6">
         <DetailPageHeader title={selected.name} subtitle="节点详情" onBack={onBack} />
         <div className="mt-5 space-y-4">
           <div className="flex flex-wrap items-center gap-2">
@@ -2153,7 +2153,7 @@ function NodeDetailPage({
       </section>
 
       {nodeEvents.length > 0 && (
-        <section className="surface p-6">
+        <section className="border-t border-line p-6">
           <SectionHeader title="最近运维事件" />
           <div className="mt-3 grid gap-3">
             {nodeEvents.map((log) => (
@@ -2264,7 +2264,7 @@ function SettingsPage({
   };
 
   return (
-    <section className="surface p-6">
+    <section className="p-6">
       <div className="flex flex-wrap items-center gap-2 border-b border-line pb-4">
         <Button
           type="button"
