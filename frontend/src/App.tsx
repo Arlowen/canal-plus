@@ -635,7 +635,7 @@ function App() {
       <div className="page-shell">
         <div className="surface grid min-h-[calc(100dvh-1.5rem)] overflow-hidden lg:grid-cols-[260px_minmax(0,1fr)]">
           <aside className="flex h-fit flex-col border-b border-line/80 p-3 lg:sticky lg:top-3 lg:min-h-[calc(100dvh-1.5rem)] lg:border-b-0 lg:border-r">
-            <div className="border-b border-line/80 px-2 pb-4">
+            <div className="border-b border-line/80 px-2 pb-4 lg:h-[69px] lg:pb-0">
               <div className="brand-wordmark" aria-label="Canal Plus">
                 <span>Canal</span>
                 <span>Plus</span>
