@@ -1899,8 +1899,8 @@ function NodesPage({
 
   return (
     <div className="space-y-5">
-      <section className="min-w-0 p-6">
-        <div className="flex flex-col gap-5 border-b border-line pb-5 xl:flex-row xl:items-start xl:justify-between">
+      <section className="min-w-0">
+        <div className="flex flex-col gap-5 border-b border-line px-5 py-[19px] md:px-6 xl:flex-row xl:items-start xl:justify-between">
           <h1 className="text-3xl font-semibold tracking-tight text-coal md:text-4xl">节点</h1>
           {canManage && (
             <Button onClick={() => setCreatorOpen(true)} className="btn-primary">
@@ -1910,93 +1910,95 @@ function NodesPage({
           )}
         </div>
 
-        <div className="mt-5 grid gap-3 rounded-lg border border-line bg-slate-50/70 p-3 lg:grid-cols-[minmax(0,1fr)_220px]">
-          <label className="block">
-            <span className="label mb-2 block">搜索</span>
-            <span className="relative block">
-              <MagnifyingGlass className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-              <TextInput
-                className="input pl-9"
-                value={keyword}
-                onChange={(event) => setKeyword(event.target.value)}
-                placeholder="节点名、地址、角色"
+        <div className="p-6">
+          <div className="grid gap-3 rounded-lg border border-line bg-slate-50/70 p-3 lg:grid-cols-[minmax(0,1fr)_220px]">
+            <label className="block">
+              <span className="label mb-2 block">搜索</span>
+              <span className="relative block">
+                <MagnifyingGlass className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                <TextInput
+                  className="input pl-9"
+                  value={keyword}
+                  onChange={(event) => setKeyword(event.target.value)}
+                  placeholder="节点名、地址、角色"
+                />
+              </span>
+            </label>
+            <Field label="状态">
+              <DropdownSelect
+                value={statusFilter}
+                ariaLabel="状态"
+                options={[
+                  { value: "all", label: "全部" },
+                  { value: "online", label: "在线" },
+                  { value: "offline", label: "离线" }
+                ]}
+                onChange={(nextValue) => setStatusFilter(nextValue as "all" | ClusterNode["status"])}
               />
-            </span>
-          </label>
-          <Field label="状态">
-            <DropdownSelect
-              value={statusFilter}
-              ariaLabel="状态"
-              options={[
-                { value: "all", label: "全部" },
-                { value: "online", label: "在线" },
-                { value: "offline", label: "离线" }
-              ]}
-              onChange={(nextValue) => setStatusFilter(nextValue as "all" | ClusterNode["status"])}
-            />
-          </Field>
-        </div>
-
-        {nodes.length === 0 ? (
-          <EmptyPanel
-            icon={HardDrives}
-            title="无节点"
-            action={canManage ? (
-              <Button onClick={() => setCreatorOpen(true)} className="btn-primary">
-                <Plus size={16} />
-                新增
-              </Button>
-            ) : <PermissionNotice compact description="仅管理员可管节点。" />}
-          />
-        ) : (
-          <div className="table-shell mt-5">
-            <table className="w-full min-w-[820px] text-left text-sm">
-              <thead className="bg-slate-50 text-xs uppercase tracking-[0.18em] text-slate-500">
-                <tr>
-                  <th className="px-4 py-3">名称</th>
-                  <th className="px-4 py-3">状态</th>
-                  <th className="px-4 py-3">地址</th>
-                  <th className="px-4 py-3">资源</th>
-                  <th className="px-4 py-3 text-right">操作</th>
-                </tr>
-              </thead>
-              <tbody>
-                {visibleNodes.map((node) => {
-                  const isCurrentNode = localNodeId === node.id;
-                  return (
-                    <tr key={node.id} className="table-row hover:bg-slate-50/70">
-                      <td className="px-4 py-4">
-                        <Button onClick={() => onOpenNode(node.id)} className="link-button">
-                          <div className="font-medium text-coal">{node.name}</div>
-                          <div className="mt-1 text-xs text-slate-500">{node.version}</div>
-                        </Button>
-                      </td>
-                      <td className="px-4 py-4">
-                        <Badge tone={nodeTone(node.status)}>{nodeStatusText(node.status)}</Badge>
-                      </td>
-                      <td className="px-4 py-4">
-                        <div className="mono text-slate-700">{node.endpoint}</div>
-                      </td>
-                      <td className="px-4 py-4 text-slate-600">CPU {node.cpuPercent}% · 内存 {node.memoryPercent}%</td>
-                      <td className="px-4 py-4">
-                        <div className="flex justify-end">
-                          <ActionMenu
-                            items={[
-                              { label: "详情", onSelect: () => onOpenNode(node.id) },
-                              { label: "升级", onSelect: () => requestQuickAction(node, "upgrade"), disabled: !canManage },
-                              { label: "卸载", onSelect: () => requestQuickAction(node, "uninstall"), danger: true, disabled: !canManage || isCurrentNode },
-                              { label: node.status === "online" ? "下线" : "上线", onSelect: () => requestMoreAction(node, node.status === "online" ? "offline" : "online"), disabled: !canManage || (isCurrentNode && node.status === "online") },
-                            ]}
-                          />
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+            </Field>
           </div>
-        )}
+
+          {nodes.length === 0 ? (
+            <EmptyPanel
+              icon={HardDrives}
+              title="无节点"
+              action={canManage ? (
+                <Button onClick={() => setCreatorOpen(true)} className="btn-primary">
+                  <Plus size={16} />
+                  新增
+                </Button>
+              ) : <PermissionNotice compact description="仅管理员可管节点。" />}
+            />
+          ) : (
+            <div className="table-shell mt-5">
+              <table className="w-full min-w-[820px] text-left text-sm">
+                <thead className="bg-slate-50 text-xs uppercase tracking-[0.18em] text-slate-500">
+                  <tr>
+                    <th className="px-4 py-3">名称</th>
+                    <th className="px-4 py-3">状态</th>
+                    <th className="px-4 py-3">地址</th>
+                    <th className="px-4 py-3">资源</th>
+                    <th className="px-4 py-3 text-right">操作</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {visibleNodes.map((node) => {
+                    const isCurrentNode = localNodeId === node.id;
+                    return (
+                      <tr key={node.id} className="table-row hover:bg-slate-50/70">
+                        <td className="px-4 py-4">
+                          <Button onClick={() => onOpenNode(node.id)} className="link-button">
+                            <div className="font-medium text-coal">{node.name}</div>
+                            <div className="mt-1 text-xs text-slate-500">{node.version}</div>
+                          </Button>
+                        </td>
+                        <td className="px-4 py-4">
+                          <Badge tone={nodeTone(node.status)}>{nodeStatusText(node.status)}</Badge>
+                        </td>
+                        <td className="px-4 py-4">
+                          <div className="mono text-slate-700">{node.endpoint}</div>
+                        </td>
+                        <td className="px-4 py-4 text-slate-600">CPU {node.cpuPercent}% · 内存 {node.memoryPercent}%</td>
+                        <td className="px-4 py-4">
+                          <div className="flex justify-end">
+                            <ActionMenu
+                              items={[
+                                { label: "详情", onSelect: () => onOpenNode(node.id) },
+                                { label: "升级", onSelect: () => requestQuickAction(node, "upgrade"), disabled: !canManage },
+                                { label: "卸载", onSelect: () => requestQuickAction(node, "uninstall"), danger: true, disabled: !canManage || isCurrentNode },
+                                { label: node.status === "online" ? "下线" : "上线", onSelect: () => requestMoreAction(node, node.status === "online" ? "offline" : "online"), disabled: !canManage || (isCurrentNode && node.status === "online") },
+                              ]}
+                            />
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
       </section>
 
       <NodeCreatorModal
