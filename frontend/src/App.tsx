@@ -163,6 +163,8 @@ type AnimatedParticle = ParticlePoint & {
   velocityY: number;
 };
 
+type BrandTileParticle = AnimatedParticle;
+
 const loginDisplayFont = "\"Arial Black\", \"Avenir Next\", \"Segoe UI Variable Display\", \"PingFang SC\", \"Helvetica Neue\", sans-serif";
 
 function particleNoise(x: number, y: number) {
@@ -398,6 +400,227 @@ function ParticleWordmark({ wordmark }: { wordmark: string }) {
   );
 }
 
+function createBrandTileParticles(width: number, height: number) {
+  if (typeof document === "undefined") return [];
+  const canvas = document.createElement("canvas");
+  const context = canvas.getContext("2d");
+  if (!context) return [];
+  canvas.width = width;
+  canvas.height = height;
+
+  const lines = ["Canal", "Plus"];
+  let fontSize = Math.round(Math.min(width * 0.28, height * 0.25));
+  let lineHeight = fontSize * 1.08;
+  const maxTextWidth = width - 10;
+  const maxTextHeight = height - 14;
+  while (fontSize > 10) {
+    context.font = `900 ${fontSize}px ${loginDisplayFont}`;
+    const widestLine = Math.max(...lines.map((line) => context.measureText(line).width));
+    lineHeight = fontSize * 1.08;
+    if (widestLine <= maxTextWidth && lineHeight * lines.length <= maxTextHeight) {
+      break;
+    }
+    fontSize -= 1;
+  }
+
+  context.clearRect(0, 0, width, height);
+  context.font = `900 ${fontSize}px ${loginDisplayFont}`;
+  context.textAlign = "center";
+  context.textBaseline = "middle";
+  context.fillStyle = "#ffffff";
+  const firstLineY = height / 2 - (lineHeight * (lines.length - 1)) / 2;
+  lines.forEach((line, index) => {
+    context.fillText(line, width / 2, firstLineY + index * lineHeight);
+  });
+
+  const samples: ParticlePoint[] = [];
+  const pixels = context.getImageData(0, 0, width, height).data;
+  const step = Math.max(1, Math.floor(Math.min(width, height) / 30));
+
+  for (let y = 0; y < height; y += step) {
+    for (let x = 0; x < width; x += step) {
+      const alpha = pixels[(y * width + x) * 4 + 3];
+      if (alpha < 32) continue;
+      const seed = particleNoise(x * 0.51, y * 0.47);
+      if (seed < 0.12) continue;
+      samples.push({
+        x: x + (seed - 0.5) * 0.9,
+        y: y + (0.5 - seed) * 0.9,
+        size: seed > 0.78 ? 1.32 : seed > 0.42 ? 1.08 : 0.92,
+        opacity: seed > 0.68 ? 0.98 : 0.82,
+        seed
+      });
+    }
+  }
+
+  return samples.slice(0, 260);
+}
+
+function BrandParticleTile({ className }: { className?: string }) {
+  const frameRef = useRef<HTMLDivElement | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const particlesRef = useRef<BrandTileParticle[]>([]);
+  const frameIdRef = useRef(0);
+  const lastFrameAtRef = useRef(0);
+  const sizeRef = useRef({ width: 48, height: 48 });
+  const pointerRef = useRef({ x: 24, y: 24 });
+  const activeRef = useRef(false);
+
+  const resetParticles = useCallback((width: number, height: number) => {
+    const centerX = width / 2;
+    const centerY = height / 2;
+    particlesRef.current = createBrandTileParticles(width, height).map((point) => {
+      const angle = point.seed * Math.PI * 2;
+      const radius = Math.min(width, height) * (0.16 + point.seed * 0.22);
+      return {
+        ...point,
+        currentX: centerX + Math.cos(angle) * radius,
+        currentY: centerY + Math.sin(angle) * radius,
+        velocityX: 0,
+        velocityY: 0
+      };
+    });
+  }, []);
+
+  const updatePointer = useCallback((clientX: number, clientY: number) => {
+    const rect = frameRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    pointerRef.current = {
+      x: clientX - rect.left,
+      y: clientY - rect.top
+    };
+  }, []);
+
+  useEffect(() => {
+    const resizeCanvas = () => {
+      const canvas = canvasRef.current;
+      const frame = frameRef.current;
+      if (!canvas || !frame) return;
+      const rect = frame.getBoundingClientRect();
+      const width = Math.max(40, Math.round(rect.width));
+      const height = Math.max(40, Math.round(rect.height));
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width = width * dpr;
+      canvas.height = height * dpr;
+      canvas.style.width = `${width}px`;
+      canvas.style.height = `${height}px`;
+      const context = canvas.getContext("2d");
+      if (!context) return;
+      context.setTransform(dpr, 0, 0, dpr, 0, 0);
+      sizeRef.current = { width, height };
+      pointerRef.current = { x: width / 2, y: height / 2 };
+      resetParticles(width, height);
+      lastFrameAtRef.current = 0;
+    };
+
+    const drawFrame = (now: number) => {
+      const canvas = canvasRef.current;
+      const context = canvas?.getContext("2d");
+      if (!canvas || !context) return;
+      const { width, height } = sizeRef.current;
+      const delta = lastFrameAtRef.current ? Math.min(2, (now - lastFrameAtRef.current) / 16.6667) : 1;
+      lastFrameAtRef.current = now;
+
+      context.clearRect(0, 0, width, height);
+
+      particlesRef.current.forEach((particle) => {
+        let targetX = particle.x;
+        let targetY = particle.y;
+
+        if (activeRef.current) {
+          const wave = now / 260 + particle.seed * Math.PI * 2;
+          targetX += Math.cos(wave) * (1.8 + particle.seed * 2.2);
+          targetY += Math.sin(wave * 1.18) * (1.4 + particle.seed * 2);
+
+          const dx = particle.currentX - pointerRef.current.x;
+          const dy = particle.currentY - pointerRef.current.y;
+          const distance = Math.max(1, Math.hypot(dx, dy));
+          const radius = Math.min(width, height) * 0.58;
+          if (distance < radius) {
+            const force = (1 - distance / radius) * (0.62 + particle.seed * 0.36);
+            particle.velocityX += (dx / distance) * force * delta;
+            particle.velocityY += (dy / distance) * force * delta;
+            particle.velocityX += (-dy / distance) * force * 0.14 * delta;
+            particle.velocityY += (dx / distance) * force * 0.14 * delta;
+          }
+        }
+
+        const spring = activeRef.current ? 0.052 : 0.088;
+        particle.velocityX += (targetX - particle.currentX) * spring * delta;
+        particle.velocityY += (targetY - particle.currentY) * spring * delta;
+        particle.velocityX *= activeRef.current ? 0.84 : 0.76;
+        particle.velocityY *= activeRef.current ? 0.84 : 0.76;
+        particle.currentX += particle.velocityX * delta;
+        particle.currentY += particle.velocityY * delta;
+
+        context.globalAlpha = particle.opacity * 0.22;
+        context.fillStyle = "#bfdbfe";
+        context.beginPath();
+        context.arc(particle.currentX, particle.currentY, particle.size * 2.35, 0, Math.PI * 2);
+        context.fill();
+
+        context.globalAlpha = particle.opacity;
+        context.fillStyle = particle.seed > 0.62 ? "#ffffff" : "#dbeafe";
+        context.beginPath();
+        context.arc(particle.currentX, particle.currentY, particle.size, 0, Math.PI * 2);
+        context.fill();
+      });
+
+      context.globalAlpha = 1;
+      frameIdRef.current = window.requestAnimationFrame(drawFrame);
+    };
+
+    resizeCanvas();
+    frameIdRef.current = window.requestAnimationFrame(drawFrame);
+    const observer = new ResizeObserver(resizeCanvas);
+    if (frameRef.current) observer.observe(frameRef.current);
+
+    return () => {
+      window.cancelAnimationFrame(frameIdRef.current);
+      observer.disconnect();
+    };
+  }, [resetParticles]);
+
+  return (
+    <div
+      ref={frameRef}
+      role="img"
+      aria-label="Canal Plus"
+      tabIndex={0}
+      title="Canal Plus"
+      onPointerEnter={(event) => {
+        activeRef.current = true;
+        updatePointer(event.clientX, event.clientY);
+      }}
+      onPointerMove={(event) => updatePointer(event.clientX, event.clientY)}
+      onPointerLeave={() => {
+        activeRef.current = false;
+      }}
+      onMouseEnter={(event) => {
+        activeRef.current = true;
+        updatePointer(event.clientX, event.clientY);
+      }}
+      onMouseMove={(event) => updatePointer(event.clientX, event.clientY)}
+      onMouseLeave={() => {
+        activeRef.current = false;
+      }}
+      onFocus={() => {
+        activeRef.current = true;
+      }}
+      onBlur={() => {
+        activeRef.current = false;
+      }}
+      className={cx(
+        "relative flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-blue-200/70 bg-[radial-gradient(circle_at_35%_18%,#60a5fa_0%,#2563eb_38%,#141820_100%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.24),0_16px_30px_-24px_rgba(37,99,235,0.82)] outline-none transition duration-200 hover:-translate-y-px focus:ring-4 focus:ring-blue-100",
+        className
+      )}
+    >
+      <canvas ref={canvasRef} aria-hidden="true" className="absolute inset-0 h-full w-full" />
+      <span className="sr-only">Canal Plus</span>
+    </div>
+  );
+}
+
 function App() {
   const [tokenState, setTokenState] = useState(getToken());
   const [user, setUser] = useState<User | null>(null);
@@ -617,11 +840,8 @@ function App() {
       <div className="page-shell">
         <div className="surface grid min-h-[calc(100dvh-1.5rem)] overflow-hidden lg:grid-cols-[260px_minmax(0,1fr)]">
           <aside className="flex h-fit flex-col border-b border-line/80 p-3 lg:sticky lg:top-0 lg:min-h-[calc(100dvh-1.5rem)] lg:border-b-0 lg:border-r">
-            <div className="-mx-3 border-b border-line/80 px-5 pb-4 lg:h-[69px] lg:pb-0">
-              <div className="brand-wordmark" aria-label="Canal Plus">
-                <span>Canal</span>
-                <span>Plus</span>
-              </div>
+            <div className="-mx-3 flex h-[88px] items-center justify-center border-b border-line/80 px-5">
+              <BrandParticleTile />
             </div>
 
             <nav className="mt-4 grid grid-cols-3 gap-2 lg:grid-cols-1">
@@ -2470,9 +2690,8 @@ function LoginScreen({ onLogin }: { onLogin: (username: string, password: string
 
         <form onSubmit={submit} className="pointer-events-auto order-1 flex items-center lg:order-2 lg:min-h-[640px]">
           <div className="surface mx-auto w-full max-w-[410px] p-6 md:p-8">
-            <div className="brand-wordmark" aria-label="Canal Plus">
-              <span>Canal</span>
-              <span>Plus</span>
+            <div className="flex justify-center">
+              <BrandParticleTile />
             </div>
             <h2
               style={{ fontFamily: "var(--font-display)" }}
