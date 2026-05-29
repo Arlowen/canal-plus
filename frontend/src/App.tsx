@@ -1072,8 +1072,8 @@ function DatasourcePage({
                 </tr>
               ) : pageItems.map((item) => (
                 <tr key={item.id} className={cx("transition hover:bg-slate-50/70", tableBusy && "opacity-70")}>
-                  <td className="max-w-[340px] px-5 py-4 align-top md:px-6">
-                    <div className="flex min-w-0 items-start gap-3">
+                  <td className="max-w-[340px] px-5 py-4 align-middle md:px-6">
+                    <div className="flex min-w-0 items-center gap-3">
                       <DatasourceTypeIcon type={item.type} />
                       <div className="min-w-0">
                         <div className="flex min-w-0 items-center gap-2">
@@ -1082,14 +1082,14 @@ function DatasourcePage({
                       </div>
                     </div>
                   </td>
-                  <td className="px-4 py-4 align-top">
+                  <td className="px-4 py-4 align-middle">
                     <div className="flex min-w-0 items-center gap-2">
                       <span title={`${item.host}:${item.port}`} className="min-w-0 truncate font-mono text-sm text-coal">{item.host}:{item.port}</span>
                     </div>
                   </td>
-                  <td className="px-4 py-4 align-top font-mono text-sm text-slate-600">{item.version?.trim() || "-"}</td>
-                  <td className="whitespace-nowrap px-3 py-4 align-top font-mono text-[13px] text-slate-600">{formatDateTime(item.createdAt)}</td>
-                  <td className="px-4 py-4 align-top">
+                  <td className="px-4 py-4 align-middle font-mono text-sm text-slate-600">{item.version?.trim() || "-"}</td>
+                  <td className="whitespace-nowrap px-3 py-4 align-middle font-mono text-[13px] text-slate-600">{formatDateTime(item.createdAt)}</td>
+                  <td className="px-4 py-4 align-middle">
                     <div className="flex items-center justify-start gap-2">
                       {canTest && (
                         <Button
@@ -2826,7 +2826,7 @@ function DatasourceTypeIcon({ type }: { type?: Datasource["type"] }) {
       onFocus={() => setIsFocused(true)}
       onBlur={() => setIsFocused(false)}
       onClick={() => setIsFocused(true)}
-      className="relative mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-cyan-100 bg-cyan-50 text-cyan-700 outline-none focus:ring-4 focus:ring-blue-100"
+      className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-cyan-100 bg-cyan-50 text-cyan-700 outline-none focus:ring-4 focus:ring-blue-100"
     >
       <DatasourceTypeLogo type={type} className="h-8 w-8" />
       <span
