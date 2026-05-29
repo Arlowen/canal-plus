@@ -3582,7 +3582,7 @@ function pageTitle(page: Page) {
 }
 
 function pageDescription(page: Page) {
-  if (page === "datasources") return "连接";
+  if (page === "datasources") return "";
   if (page === "datasourceCreate") return "";
   if (page === "datasourceEdit") return "";
   if (page === "nodes") return "运维区";
