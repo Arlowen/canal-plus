@@ -409,9 +409,9 @@ function createBrandTileParticles(width: number, height: number) {
   canvas.height = height;
 
   const label = "Canal Plus";
-  let fontSize = Math.round(Math.min(width * 0.17, height * 0.66));
-  const maxTextWidth = width - 12;
-  const maxTextHeight = height - 10;
+  let fontSize = Math.round(Math.min(width * 0.18, height * 0.68));
+  const maxTextWidth = width - 8;
+  const maxTextHeight = height - 8;
   while (fontSize > 12) {
     context.font = `900 ${fontSize}px ${loginDisplayFont}`;
     const metrics = context.measureText(label);
@@ -449,7 +449,7 @@ function createBrandTileParticles(width: number, height: number) {
     }
   }
 
-  const limit = 520;
+  const limit = 760;
   const stride = Math.max(1, Math.ceil(samples.length / limit));
   return samples.filter((_, index) => index % stride === 0).slice(0, limit);
 }
@@ -459,8 +459,8 @@ function BrandParticleTile({ className }: { className?: string }) {
   const particlesRef = useRef<BrandTileParticle[]>([]);
   const frameIdRef = useRef(0);
   const lastFrameAtRef = useRef(0);
-  const sizeRef = useRef({ width: 176, height: 56 });
-  const pointerRef = useRef({ x: 88, y: 28 });
+  const sizeRef = useRef({ width: 224, height: 72 });
+  const pointerRef = useRef({ x: 112, y: 36 });
   const activeRef = useRef(false);
 
   const resetParticles = useCallback((width: number, height: number) => {
@@ -601,7 +601,7 @@ function BrandParticleTile({ className }: { className?: string }) {
         activeRef.current = false;
       }}
       className={cx(
-        "block h-14 w-44 shrink-0 bg-transparent outline-none transition duration-200 hover:-translate-y-px focus:ring-4 focus:ring-blue-100",
+        "block h-[72px] w-56 shrink-0 bg-transparent outline-none transition duration-200 hover:-translate-y-px focus:ring-4 focus:ring-blue-100",
         className
       )}
     />
