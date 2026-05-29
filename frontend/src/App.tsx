@@ -663,24 +663,6 @@ function App() {
               })}
             </nav>
 
-            <div className="mt-4 rounded-lg border border-line/80 bg-slate-50/80 p-4">
-              <div className="label">状态</div>
-              <div className="mt-3 flex items-center justify-between gap-3">
-                <div>
-                  <div className="text-sm font-semibold text-coal">
-                    {serviceUnavailable ? "异常" : "运行中"}
-                  </div>
-                  <div className="mt-1 text-xs text-slate-500">
-                    {cluster?.onlineNodes ?? 0}/{cluster?.totalNodes ?? 0} 节点
-                  </div>
-                </div>
-                <span className={cx(
-                  "h-2.5 w-2.5 rounded-full",
-                  serviceUnavailable ? "bg-red-500" : "bg-emerald-500"
-                )} />
-              </div>
-            </div>
-
             <UserProfileMenu
               user={user}
               onOpenSettings={() => navigateToPage("settings")}
