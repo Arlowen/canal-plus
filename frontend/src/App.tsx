@@ -598,7 +598,6 @@ function BrandParticleTile({ className }: { className?: string }) {
       role="img"
       aria-label="Canal Plus"
       tabIndex={0}
-      title="Canal Plus"
       onPointerEnter={(event) => {
         activeRef.current = true;
         updatePointer(event.clientX, event.clientY);
