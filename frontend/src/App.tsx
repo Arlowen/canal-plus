@@ -787,6 +787,7 @@ function DatasourcePage({
   const [pageIndex, setPageIndex] = useState(1);
   const pageSize = 20;
   const [querying, setQuerying] = useState(false);
+  const [queryRevealKey, setQueryRevealKey] = useState(0);
   const [testingSavedId, setTestingSavedId] = useState<string | null>(null);
   const [confirmation, setConfirmation] = useState<ConfirmationDialogState | null>(null);
   const [testDialog, setTestDialog] = useState<DatasourceTestDialogState | null>(null);
@@ -829,11 +830,12 @@ function DatasourcePage({
 
   const runQuery = async () => {
     setQuerying(true);
-    setAppliedTypeFilter(draftTypeFilter);
-    setAppliedNameQuery(draftNameQuery);
-    setPageIndex(1);
     try {
       await onChanged(true);
+      setAppliedTypeFilter(draftTypeFilter);
+      setAppliedNameQuery(draftNameQuery);
+      setPageIndex(1);
+      setQueryRevealKey((current) => current + 1);
     } finally {
       setQuerying(false);
     }
@@ -988,7 +990,11 @@ function DatasourcePage({
             </thead>
             <tbody className="divide-y divide-line bg-white">
               {pageItems.length === 0 ? (
-                <tr>
+                <tr
+                  key={`empty-${queryRevealKey}`}
+                  className={cx(queryRevealKey > 0 && !tableBusy && "query-reveal-row")}
+                  style={queryRevealKey > 0 && !tableBusy ? { animationDelay: "0ms" } : undefined}
+                >
                   <td colSpan={4} className="px-6 py-12">
                     <div className="mx-auto flex max-w-sm flex-col items-center text-center">
                       <div className="text-base font-semibold text-coal">
@@ -1002,8 +1008,12 @@ function DatasourcePage({
                     </div>
                   </td>
                 </tr>
-              ) : pageItems.map((item) => (
-                <tr key={item.id} className={cx("transition hover:bg-slate-50/70", tableBusy && "opacity-70")}>
+              ) : pageItems.map((item, index) => (
+                <tr
+                  key={`${queryRevealKey}-${item.id}`}
+                  className={cx("transition hover:bg-slate-50/70", tableBusy && "opacity-70", queryRevealKey > 0 && !tableBusy && "query-reveal-row")}
+                  style={queryRevealKey > 0 && !tableBusy ? { animationDelay: `${Math.min(index, 14) * 44}ms` } : undefined}
+                >
                   <td className="max-w-[340px] px-5 py-4 align-middle md:px-6">
                     <div className="flex min-w-0 items-center gap-3">
                       <DatasourceTypeIcon type={item.type} />
@@ -1784,6 +1794,7 @@ function NodesPage({
   const [pageIndex, setPageIndex] = useState(1);
   const pageSize = 20;
   const [querying, setQuerying] = useState(false);
+  const [queryRevealKey, setQueryRevealKey] = useState(0);
   const [operationResult, setOperationResult] = useState<NodeOperationResult | null>(null);
   const [handoffReport, setHandoffReport] = useState<ClusterHandoffReport | null>(null);
   const [busyKey, setBusyKey] = useState<string | null>(null);
@@ -1810,11 +1821,12 @@ function NodesPage({
 
   const runQuery = async () => {
     setQuerying(true);
-    setAppliedStatusFilter(draftStatusFilter);
-    setAppliedNameQuery(draftNameQuery);
-    setPageIndex(1);
     try {
       await onChanged(true);
+      setAppliedStatusFilter(draftStatusFilter);
+      setAppliedNameQuery(draftNameQuery);
+      setPageIndex(1);
+      setQueryRevealKey((current) => current + 1);
     } finally {
       setQuerying(false);
     }
@@ -1963,7 +1975,11 @@ function NodesPage({
             </thead>
             <tbody className="divide-y divide-line bg-white">
               {pageItems.length === 0 ? (
-                <tr>
+                <tr
+                  key={`empty-${queryRevealKey}`}
+                  className={cx(queryRevealKey > 0 && !tableBusy && "query-reveal-row")}
+                  style={queryRevealKey > 0 && !tableBusy ? { animationDelay: "0ms" } : undefined}
+                >
                   <td colSpan={6} className="px-6 py-12">
                     <div className="mx-auto flex max-w-sm flex-col items-center text-center">
                       <div className="text-base font-semibold text-coal">
@@ -1972,11 +1988,15 @@ function NodesPage({
                     </div>
                   </td>
                 </tr>
-              ) : pageItems.map((node) => {
+              ) : pageItems.map((node, index) => {
                 const isCurrentNode = localNodeId === node.id;
                 const actionBusy = busyKey?.startsWith(`${node.id}:`) ?? false;
                 return (
-                  <tr key={node.id} className={cx("transition hover:bg-slate-50/70", tableBusy && "opacity-70")}>
+                  <tr
+                    key={`${queryRevealKey}-${node.id}`}
+                    className={cx("transition hover:bg-slate-50/70", tableBusy && "opacity-70", queryRevealKey > 0 && !tableBusy && "query-reveal-row")}
+                    style={queryRevealKey > 0 && !tableBusy ? { animationDelay: `${Math.min(index, 14) * 44}ms` } : undefined}
+                  >
                     <td className="max-w-[340px] px-5 py-4 align-middle md:px-6">
                       <div className="flex min-w-0 items-center gap-3">
                         <NodeTypeIcon status={node.status} />
