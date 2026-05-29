@@ -408,16 +408,15 @@ function createBrandTileParticles(width: number, height: number) {
   canvas.width = width;
   canvas.height = height;
 
-  const lines = ["Canal", "Plus"];
-  let fontSize = Math.round(Math.min(width * 0.28, height * 0.25));
-  let lineHeight = fontSize * 1.08;
-  const maxTextWidth = width - 10;
-  const maxTextHeight = height - 14;
-  while (fontSize > 10) {
+  const label = "Canal Plus";
+  let fontSize = Math.round(Math.min(width * 0.17, height * 0.66));
+  const maxTextWidth = width - 12;
+  const maxTextHeight = height - 10;
+  while (fontSize > 12) {
     context.font = `900 ${fontSize}px ${loginDisplayFont}`;
-    const widestLine = Math.max(...lines.map((line) => context.measureText(line).width));
-    lineHeight = fontSize * 1.08;
-    if (widestLine <= maxTextWidth && lineHeight * lines.length <= maxTextHeight) {
+    const metrics = context.measureText(label);
+    const textHeight = metrics.actualBoundingBoxAscent + metrics.actualBoundingBoxDescent;
+    if (metrics.width <= maxTextWidth && textHeight <= maxTextHeight) {
       break;
     }
     fontSize -= 1;
@@ -428,32 +427,31 @@ function createBrandTileParticles(width: number, height: number) {
   context.textAlign = "center";
   context.textBaseline = "middle";
   context.fillStyle = "#ffffff";
-  const firstLineY = height / 2 - (lineHeight * (lines.length - 1)) / 2;
-  lines.forEach((line, index) => {
-    context.fillText(line, width / 2, firstLineY + index * lineHeight);
-  });
+  context.fillText(label, width / 2, height / 2 + height * 0.02);
 
   const samples: ParticlePoint[] = [];
   const pixels = context.getImageData(0, 0, width, height).data;
-  const step = Math.max(1, Math.floor(Math.min(width, height) / 30));
+  const step = Math.max(1, Math.floor(Math.min(width, height) / 40));
 
   for (let y = 0; y < height; y += step) {
     for (let x = 0; x < width; x += step) {
       const alpha = pixels[(y * width + x) * 4 + 3];
       if (alpha < 32) continue;
       const seed = particleNoise(x * 0.51, y * 0.47);
-      if (seed < 0.12) continue;
+      if (seed < 0.02) continue;
       samples.push({
         x: x + (seed - 0.5) * 0.9,
         y: y + (0.5 - seed) * 0.9,
-        size: seed > 0.78 ? 1.32 : seed > 0.42 ? 1.08 : 0.92,
-        opacity: seed > 0.68 ? 0.98 : 0.82,
+        size: seed > 0.78 ? 1.58 : seed > 0.42 ? 1.32 : 1.08,
+        opacity: seed > 0.68 ? 1 : 0.86,
         seed
       });
     }
   }
 
-  return samples.slice(0, 260);
+  const limit = 1800;
+  const stride = Math.max(1, Math.ceil(samples.length / limit));
+  return samples.filter((_, index) => index % stride === 0).slice(0, limit);
 }
 
 function BrandParticleTile({ className }: { className?: string }) {
@@ -461,8 +459,8 @@ function BrandParticleTile({ className }: { className?: string }) {
   const particlesRef = useRef<BrandTileParticle[]>([]);
   const frameIdRef = useRef(0);
   const lastFrameAtRef = useRef(0);
-  const sizeRef = useRef({ width: 64, height: 64 });
-  const pointerRef = useRef({ x: 32, y: 32 });
+  const sizeRef = useRef({ width: 176, height: 56 });
+  const pointerRef = useRef({ x: 88, y: 28 });
   const activeRef = useRef(false);
 
   const resetParticles = useCallback((width: number, height: number) => {
@@ -551,10 +549,10 @@ function BrandParticleTile({ className }: { className?: string }) {
         particle.currentX += particle.velocityX * delta;
         particle.currentY += particle.velocityY * delta;
 
-        context.globalAlpha = particle.opacity * 0.22;
+        context.globalAlpha = particle.opacity * 0.16;
         context.fillStyle = "#bfdbfe";
         context.beginPath();
-        context.arc(particle.currentX, particle.currentY, particle.size * 2.35, 0, Math.PI * 2);
+        context.arc(particle.currentX, particle.currentY, particle.size * 1.85, 0, Math.PI * 2);
         context.fill();
 
         context.globalAlpha = particle.opacity;
@@ -609,7 +607,7 @@ function BrandParticleTile({ className }: { className?: string }) {
         activeRef.current = false;
       }}
       className={cx(
-        "block h-16 w-16 shrink-0 bg-transparent outline-none transition duration-200 hover:-translate-y-px focus:ring-4 focus:ring-blue-100",
+        "block h-14 w-44 shrink-0 bg-transparent outline-none transition duration-200 hover:-translate-y-px focus:ring-4 focus:ring-blue-100",
         className
       )}
     />
