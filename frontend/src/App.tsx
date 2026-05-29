@@ -432,7 +432,6 @@ function App() {
   const [globalError, setGlobalError] = useState<string | null>(null);
   const [serviceUnavailable, setServiceUnavailable] = useState(false);
   const [serviceRecoveryPending, setServiceRecoveryPending] = useState(false);
-  const [nodeCreateToken, setNodeCreateToken] = useState(0);
   const [focusedNodeId, setFocusedNodeId] = useState<string | null>(null);
   const [focusedDatasourceId, setFocusedDatasourceId] = useState<string | null>(() => datasourceEditIdFromPathname(window.location.pathname));
   const previousServiceUnavailable = useRef(false);
@@ -603,11 +602,6 @@ function App() {
     setNotice(null);
   };
 
-  const openNodeCreator = () => {
-    navigateToPage("nodes");
-    setNodeCreateToken((value) => value + 1);
-  };
-
   const openNodeDetail = (nodeID: string) => {
     setFocusedNodeId(nodeID);
     navigateToPage("nodeDetail");
@@ -695,7 +689,7 @@ function App() {
           </aside>
 
           <main className="min-w-0">
-            {page !== "datasources" && page !== "datasourceCreate" && page !== "datasourceEdit" && (
+            {page !== "datasources" && page !== "nodes" && page !== "datasourceCreate" && page !== "datasourceEdit" && (
               <div className="surface mb-4 flex flex-col gap-5 p-5 md:p-6 xl:flex-row xl:items-start xl:justify-between">
                 <div>
                   <h1 className="text-3xl font-semibold tracking-tight text-coal md:text-4xl">
@@ -707,14 +701,7 @@ function App() {
                     </p>
                   )}
                 </div>
-                <div className="flex flex-wrap gap-2 xl:justify-end">
-                  {page === "nodes" && canManage && (
-                    <Button onClick={openNodeCreator} className="btn-primary">
-                      <Plus size={16} />
-                      新增
-                    </Button>
-                  )}
-                </div>
+                <div className="flex flex-wrap gap-2 xl:justify-end" />
               </div>
             )}
 
@@ -784,7 +771,6 @@ function App() {
                 canManage={canManage}
                 onChanged={refresh}
                 pushNotice={pushNotice}
-                openCreateToken={nodeCreateToken}
                 onOpenNode={openNodeDetail}
               />
             ) : page === "nodeDetail" ? (
@@ -1818,14 +1804,12 @@ function NodesPage({
   canManage,
   onChanged,
   pushNotice,
-  openCreateToken,
   onOpenNode
 }: {
   cluster: ClusterSnapshot | null;
   canManage: boolean;
   onChanged: (quiet?: boolean) => Promise<void>;
   pushNotice: (notice: Notice) => void;
-  openCreateToken: number;
   onOpenNode: (nodeID: string) => void;
 }) {
   const nodes = cluster?.nodes ?? emptyNodes;
@@ -1837,11 +1821,6 @@ function NodesPage({
   const [, setBusyKey] = useState<string | null>(null);
   const [confirmation, setConfirmation] = useState<ConfirmationDialogState | null>(null);
   const localNodeId = cluster?.localNodeId;
-
-  useEffect(() => {
-    if (openCreateToken === 0) return;
-    setCreatorOpen(true);
-  }, [openCreateToken]);
 
   const visibleNodes = nodes.filter((node) => {
     const matchesKeyword = !keyword.trim()
@@ -1921,7 +1900,17 @@ function NodesPage({
   return (
     <div className="space-y-5">
       <section className="surface min-w-0 p-6">
-        <div className="grid gap-3 rounded-lg border border-line bg-slate-50/70 p-3 lg:grid-cols-[minmax(0,1fr)_220px]">
+        <div className="flex flex-col gap-5 border-b border-line pb-5 xl:flex-row xl:items-start xl:justify-between">
+          <h1 className="text-3xl font-semibold tracking-tight text-coal md:text-4xl">节点</h1>
+          {canManage && (
+            <Button onClick={() => setCreatorOpen(true)} className="btn-primary">
+              <Plus size={16} />
+              新增
+            </Button>
+          )}
+        </div>
+
+        <div className="mt-5 grid gap-3 rounded-lg border border-line bg-slate-50/70 p-3 lg:grid-cols-[minmax(0,1fr)_220px]">
           <label className="block">
             <span className="label mb-2 block">搜索</span>
             <span className="relative block">
