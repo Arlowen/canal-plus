@@ -21,6 +21,7 @@ import {
   GearSix,
   HardDrives,
   MagnifyingGlass,
+  PencilSimple,
   Plus,
   ShieldCheck,
   SignOut,
@@ -1288,10 +1289,12 @@ function DatasourcePage({
                           items={[
                             {
                               label: "编辑",
+                              icon: PencilSimple,
                               onSelect: () => onEdit(item.id)
                             },
                             {
                               label: "删除",
+                              icon: Trash,
                               danger: true,
                               onSelect: () => requestRemoveDatasource(item)
                             }
@@ -3152,7 +3155,7 @@ function ActionMenu({
   items
 }: {
   label?: string;
-  items: Array<{ label: string; onSelect: () => void; disabled?: boolean; danger?: boolean }>;
+  items: Array<{ label: string; icon?: typeof Database; onSelect: () => void; disabled?: boolean; danger?: boolean }>;
 }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
@@ -3281,26 +3284,30 @@ function ActionMenu({
           }}
           className="fixed z-[90] rounded-lg border border-line bg-white p-2 shadow-raised"
         >
-          {items.map((item) => (
-            <Button
-              key={item.label}
-              type="button"
-              role="menuitem"
-              onClick={() => {
-                if (item.disabled) return;
-                setOpen(false);
-                item.onSelect();
-              }}
-              disabled={item.disabled}
-              className={cx(
-                "block w-full rounded-md px-3 py-2 text-left text-sm transition",
-                item.danger ? "text-red-700 hover:bg-red-50" : "text-slate-700 hover:bg-slate-50",
-                item.disabled && "cursor-not-allowed opacity-45"
-              )}
-            >
-              {item.label}
-            </Button>
-          ))}
+          {items.map((item) => {
+            const Icon = item.icon;
+            return (
+              <Button
+                key={item.label}
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  if (item.disabled) return;
+                  setOpen(false);
+                  item.onSelect();
+                }}
+                disabled={item.disabled}
+                className={cx(
+                  "flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-left text-sm transition",
+                  item.danger ? "text-red-700 hover:bg-red-50" : "text-slate-700 hover:bg-slate-50",
+                  item.disabled && "cursor-not-allowed opacity-45"
+                )}
+              >
+                {Icon && <Icon size={16} className="shrink-0" />}
+                <span>{item.label}</span>
+              </Button>
+            );
+          })}
         </div>,
         document.body
       )}
