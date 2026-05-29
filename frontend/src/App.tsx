@@ -457,21 +457,19 @@ function BrandParticleTile({ className }: { className?: string }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const particlesRef = useRef<BrandTileParticle[]>([]);
   const frameIdRef = useRef(0);
+  const animationRunningRef = useRef(false);
+  const drawFrameRef = useRef<(now: number) => void>(() => undefined);
   const lastFrameAtRef = useRef(0);
   const sizeRef = useRef({ width: 240, height: 80 });
   const pointerRef = useRef({ x: 120, y: 40 });
   const activeRef = useRef(false);
 
   const resetParticles = useCallback((width: number, height: number) => {
-    const centerX = width / 2;
-    const centerY = height / 2;
     particlesRef.current = createBrandTileParticles(width, height).map((point) => {
-      const angle = point.seed * Math.PI * 2;
-      const radius = Math.min(width, height) * (0.16 + point.seed * 0.22);
       return {
         ...point,
-        currentX: centerX + Math.cos(angle) * radius,
-        currentY: centerY + Math.sin(angle) * radius,
+        currentX: point.x,
+        currentY: point.y,
         velocityX: 0,
         velocityY: 0
       };
@@ -487,6 +485,12 @@ function BrandParticleTile({ className }: { className?: string }) {
     };
   }, []);
 
+  const requestParticleFrame = useCallback(() => {
+    if (animationRunningRef.current) return;
+    animationRunningRef.current = true;
+    frameIdRef.current = window.requestAnimationFrame((now) => drawFrameRef.current(now));
+  }, []);
+
   useEffect(() => {
     const resizeCanvas = () => {
       const canvas = canvasRef.current;
@@ -494,7 +498,7 @@ function BrandParticleTile({ className }: { className?: string }) {
       const rect = canvas.getBoundingClientRect();
       const width = Math.max(40, Math.round(rect.width));
       const height = Math.max(40, Math.round(rect.height));
-      const dpr = window.devicePixelRatio || 1;
+      const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
       canvas.width = width * dpr;
       canvas.height = height * dpr;
       canvas.style.width = `${width}px`;
@@ -506,6 +510,11 @@ function BrandParticleTile({ className }: { className?: string }) {
       pointerRef.current = { x: width / 2, y: height / 2 };
       resetParticles(width, height);
       lastFrameAtRef.current = 0;
+      if (activeRef.current) {
+        requestParticleFrame();
+      } else if (!animationRunningRef.current) {
+        drawFrameRef.current(performance.now());
+      }
     };
 
     const drawFrame = (now: number) => {
@@ -518,6 +527,8 @@ function BrandParticleTile({ className }: { className?: string }) {
 
       context.clearRect(0, 0, width, height);
 
+      let maxDistance = 0;
+      let maxVelocity = 0;
       particlesRef.current.forEach((particle) => {
         let targetX = particle.x;
         let targetY = particle.y;
@@ -548,6 +559,11 @@ function BrandParticleTile({ className }: { className?: string }) {
         particle.currentX += particle.velocityX * delta;
         particle.currentY += particle.velocityY * delta;
 
+        const distance = Math.hypot(particle.x - particle.currentX, particle.y - particle.currentY);
+        const velocity = Math.hypot(particle.velocityX, particle.velocityY);
+        if (distance > maxDistance) maxDistance = distance;
+        if (velocity > maxVelocity) maxVelocity = velocity;
+
         context.globalAlpha = particle.opacity;
         context.fillStyle = particle.seed > 0.62 ? "#1d4ed8" : "#2563eb";
         context.beginPath();
@@ -556,19 +572,25 @@ function BrandParticleTile({ className }: { className?: string }) {
       });
 
       context.globalAlpha = 1;
-      frameIdRef.current = window.requestAnimationFrame(drawFrame);
+      if (activeRef.current || maxDistance > 0.18 || maxVelocity > 0.02) {
+        frameIdRef.current = window.requestAnimationFrame(drawFrame);
+      } else {
+        animationRunningRef.current = false;
+        lastFrameAtRef.current = 0;
+      }
     };
 
+    drawFrameRef.current = drawFrame;
     resizeCanvas();
-    frameIdRef.current = window.requestAnimationFrame(drawFrame);
     const observer = new ResizeObserver(resizeCanvas);
     if (canvasRef.current) observer.observe(canvasRef.current);
 
     return () => {
       window.cancelAnimationFrame(frameIdRef.current);
+      animationRunningRef.current = false;
       observer.disconnect();
     };
-  }, [resetParticles]);
+  }, [requestParticleFrame, resetParticles]);
 
   return (
     <canvas
@@ -580,24 +602,36 @@ function BrandParticleTile({ className }: { className?: string }) {
       onPointerEnter={(event) => {
         activeRef.current = true;
         updatePointer(event.clientX, event.clientY);
+        requestParticleFrame();
       }}
-      onPointerMove={(event) => updatePointer(event.clientX, event.clientY)}
+      onPointerMove={(event) => {
+        updatePointer(event.clientX, event.clientY);
+        requestParticleFrame();
+      }}
       onPointerLeave={() => {
         activeRef.current = false;
+        requestParticleFrame();
       }}
       onMouseEnter={(event) => {
         activeRef.current = true;
         updatePointer(event.clientX, event.clientY);
+        requestParticleFrame();
       }}
-      onMouseMove={(event) => updatePointer(event.clientX, event.clientY)}
+      onMouseMove={(event) => {
+        updatePointer(event.clientX, event.clientY);
+        requestParticleFrame();
+      }}
       onMouseLeave={() => {
         activeRef.current = false;
+        requestParticleFrame();
       }}
       onFocus={() => {
         activeRef.current = true;
+        requestParticleFrame();
       }}
       onBlur={() => {
         activeRef.current = false;
+        requestParticleFrame();
       }}
       className={cx(
         "block h-20 w-60 shrink-0 bg-transparent outline-none transition duration-200 hover:-translate-y-px focus:ring-4 focus:ring-blue-100",
