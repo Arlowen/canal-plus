@@ -189,6 +189,11 @@ const (
 	NodeOffline NodeStatus = "offline"
 )
 
+const (
+	NodeRoleMaster  = "master"
+	NodeRoleStandby = "standby"
+)
+
 type NodeAuthMode string
 
 const (
@@ -268,6 +273,8 @@ type ClusterSnapshot struct {
 	Nodes                   []ClusterNode `json:"nodes"`
 	LocalNodeID             string        `json:"localNodeId,omitempty"`
 	LocalNodeName           string        `json:"localNodeName,omitempty"`
+	MasterNodeID            string        `json:"masterNodeId,omitempty"`
+	MasterNodeName          string        `json:"masterNodeName,omitempty"`
 	OnlineNodes             int           `json:"onlineNodes"`
 	TotalNodes              int           `json:"totalNodes"`
 	DegradedNodes           int           `json:"degradedNodes"`

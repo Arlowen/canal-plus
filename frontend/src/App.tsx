@@ -87,7 +87,7 @@ type DatasourceTestDialogState = {
 
 type ClusterHandoffReport = {
   id: string;
-  kind: "offline" | "online";
+  kind: "offline" | "online" | "promote" | "standby";
   happenedAt: string;
   node?: ClusterNode;
   success: boolean;
@@ -1996,6 +1996,8 @@ function DatasourceTestInlineResult({ error, result }: { error: string | null; r
 
 function handoffTitle(kind: ClusterHandoffReport["kind"]) {
   if (kind === "offline") return "节点下线结果";
+  if (kind === "promote") return "主节点切换结果";
+  if (kind === "standby") return "从节点切换结果";
   return "节点上线结果";
 }
 
@@ -2107,7 +2109,7 @@ function NodesPage({
     });
   };
 
-  const executeMoreAction = async (node: ClusterNode, action: "offline" | "online") => {
+  const executeMoreAction = async (node: ClusterNode, action: "offline" | "online" | "promote" | "standby") => {
     if (!canManage) {
       pushNotice({ tone: "warning", message: "节点运维需要管理员权限" });
       return;
@@ -2119,7 +2121,7 @@ function NodesPage({
         setHandoffReport(fromNodeStatusChangeResult(result));
         pushNotice({ tone: result.success ? "success" : "warning", message: result.message });
       } else {
-        pushNotice({ tone: "success", message: action === "online" ? "已上线" : "已下线" });
+        pushNotice({ tone: "success", message: actionText(action) });
       }
       await onChanged();
     } catch (requestError) {
@@ -2129,10 +2131,10 @@ function NodesPage({
     }
   };
 
-  const requestMoreAction = (node: ClusterNode, action: "offline" | "online") => {
-    const title = action === "offline" ? `下线节点“${node.name}”` : `恢复节点“${node.name}”`;
-    const description = action === "offline" ? "节点会被标记为离线。确认继续吗？" : "确认上线该节点？";
-    const confirmLabel = action === "online" ? "确认上线" : "确认下线";
+  const requestMoreAction = (node: ClusterNode, action: "offline" | "online" | "promote" | "standby") => {
+    const title = nodeActionConfirmTitle(node, action);
+    const description = nodeActionConfirmDescription(action);
+    const confirmLabel = actionText(action);
     setConfirmation({
       title,
       description,
@@ -2193,19 +2195,21 @@ function NodesPage({
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[880px] table-fixed border-collapse text-left">
+          <table className="w-full min-w-[940px] table-fixed border-collapse text-left">
             <colgroup>
-              <col className="w-[220px]" />
-              <col className="w-[100px]" />
-              <col className="w-[170px]" />
-              <col className="w-[105px]" />
-              <col className="w-[170px]" />
-              <col className="w-[170px]" />
+              <col className="w-[190px]" />
+              <col className="w-[75px]" />
+              <col className="w-[90px]" />
+              <col className="w-[155px]" />
+              <col className="w-[85px]" />
+              <col className="w-[165px]" />
+              <col className="w-[180px]" />
             </colgroup>
             <thead className="bg-slate-50/90 text-xs font-semibold text-slate-500">
               <tr className="border-b border-line">
                 <th className="whitespace-nowrap px-5 py-3 md:px-6">节点名称</th>
                 <th className="whitespace-nowrap px-4 py-3">状态</th>
+                <th className="whitespace-nowrap px-4 py-3">角色</th>
                 <th className="whitespace-nowrap px-4 py-3">Host</th>
                 <th className="whitespace-nowrap px-4 py-3">版本号</th>
                 <th className="whitespace-nowrap px-4 py-3">资源</th>
@@ -2219,7 +2223,7 @@ function NodesPage({
                   className={cx(queryRevealKey > 0 && !tableBusy && "query-reveal-row")}
                   style={queryRevealKey > 0 && !tableBusy ? { animationDelay: "0ms" } : undefined}
                 >
-                  <td colSpan={6} className="px-6 py-12">
+                  <td colSpan={7} className="px-6 py-12">
                     <div className="mx-auto flex max-w-sm flex-col items-center text-center">
                       <div className="text-base font-semibold text-coal">
                         {nodes.length === 0 ? "暂无节点" : "无匹配"}
@@ -2229,6 +2233,8 @@ function NodesPage({
                 </tr>
               ) : pageItems.map((node, index) => {
                 const isCurrentNode = localNodeId === node.id;
+                const isMaster = isNodeMaster(node);
+                const hasOnlineReplacement = nodes.some((candidate) => candidate.id !== node.id && candidate.status === "online");
                 const actionBusy = busyKey?.startsWith(`${node.id}:`) ?? false;
                 return (
                   <tr
@@ -2246,6 +2252,9 @@ function NodesPage({
                     </td>
                     <td className="px-4 py-4 align-middle">
                       <Badge tone={nodeTone(node.status)}>{nodeStatusText(node.status)}</Badge>
+                    </td>
+                    <td className="px-4 py-4 align-middle">
+                      <Badge tone={nodeRoleTone(node.role)}>{nodeRoleText(node.role)}</Badge>
                     </td>
                     <td className="px-4 py-4 align-middle">
                       <span title={node.endpoint} className="block truncate font-mono text-sm text-coal">{node.endpoint}</span>
@@ -2270,9 +2279,11 @@ function NodesPage({
                           <ActionMenu
                             label="更多"
                             items={[
-                              { label: "升级", onSelect: () => requestQuickAction(node, "upgrade"), disabled: tableBusy },
-                              { label: "卸载", onSelect: () => requestQuickAction(node, "uninstall"), danger: true, disabled: tableBusy || isCurrentNode },
-                              { label: node.status === "online" ? "下线" : "上线", onSelect: () => requestMoreAction(node, node.status === "online" ? "offline" : "online"), disabled: tableBusy || (isCurrentNode && node.status === "online") },
+                              { label: "设为主节点", icon: ShieldCheck, onSelect: () => requestMoreAction(node, "promote"), disabled: tableBusy || node.status !== "online" || isMaster },
+                              { label: "设为从节点", icon: HardDrives, onSelect: () => requestMoreAction(node, "standby"), disabled: tableBusy || !isMaster || !hasOnlineReplacement },
+                              { label: "升级", icon: ArrowsClockwise, onSelect: () => requestQuickAction(node, "upgrade"), disabled: tableBusy },
+                              { label: "卸载", icon: Trash, onSelect: () => requestQuickAction(node, "uninstall"), danger: true, disabled: tableBusy || isCurrentNode },
+                              { label: node.status === "online" ? "下线" : "上线", icon: node.status === "online" ? XCircle : CheckCircle, onSelect: () => requestMoreAction(node, node.status === "online" ? "offline" : "online"), disabled: tableBusy || (isCurrentNode && node.status === "online") },
                             ]}
                           />
                         )}
@@ -2310,9 +2321,10 @@ function NodesPage({
       >
         {handoffReport && (
           <div className="grid gap-4">
-            <div className="grid gap-3 sm:grid-cols-3">
+            <div className="grid gap-3 sm:grid-cols-4">
               <DetailCard label="发生时间" value={formatDateTime(handoffReport.happenedAt)} />
               <DetailCard label="在线节点" value={`${handoffReport.after.onlineNodes}/${handoffReport.after.totalNodes}`} />
+              <DetailCard label="主节点" value={handoffReport.after.masterNodeName || "-"} />
               <DetailCard label="状态" value={handoffReport.success ? "完成" : "失败"} />
             </div>
 
@@ -2430,10 +2442,12 @@ function NodeDetailPage({
         <div className="mt-5 space-y-4">
           <div className="flex flex-wrap items-center gap-2">
             <Badge tone={nodeTone(selected.status)}>{nodeStatusText(selected.status)}</Badge>
+            <Badge tone={nodeRoleTone(selected.role)}>{nodeRoleText(selected.role)}</Badge>
             {localNodeId === selected.id && <Badge tone="blue">本机节点</Badge>}
           </div>
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
             <DetailCard label="主机地址" value={selected.endpoint} mono />
+            <DetailCard label="角色" value={nodeRoleText(selected.role)} />
             <DetailCard label="SSH" value={`${selected.sshUser}@${selected.sshPort} · ${selected.authMode === "private_key" ? "私钥" : "密码"}`} mono />
             <DetailCard label="安装目录" value={selected.installDir} mono />
             <DetailCard label="版本" value={selected.version} mono />
@@ -3238,7 +3252,7 @@ function ActionMenu({
             window.requestAnimationFrame(() => focusMenuItem(0));
           }
         }}
-        className={cx("btn-compact", label ? "px-3" : "px-2.5")}
+        className={cx("btn-compact whitespace-nowrap", label ? "px-3" : "px-2.5")}
       >
         {label ? (
           <>
@@ -3607,6 +3621,20 @@ function datasourceEditIdFromPathname(pathname: string) {
   }
 }
 
+function isNodeMaster(node: ClusterNode) {
+  return node.role === "master";
+}
+
+function nodeRoleText(role: ClusterNode["role"]) {
+  if (role === "master") return "主节点";
+  return "从节点";
+}
+
+function nodeRoleTone(role: ClusterNode["role"]) {
+  if (role === "master") return "blue";
+  return "neutral";
+}
+
 function nodeStatusText(status: ClusterNode["status"]) {
   if (status === "online") return "在线";
   return "离线";
@@ -3615,6 +3643,27 @@ function nodeStatusText(status: ClusterNode["status"]) {
 function nodeTone(status: ClusterNode["status"]) {
   if (status === "online") return "green";
   return "neutral";
+}
+
+function actionText(action: "offline" | "online" | "promote" | "standby") {
+  if (action === "online") return "确认上线";
+  if (action === "offline") return "确认下线";
+  if (action === "promote") return "设为主节点";
+  return "设为从节点";
+}
+
+function nodeActionConfirmTitle(node: ClusterNode, action: "offline" | "online" | "promote" | "standby") {
+  if (action === "offline") return `下线节点“${node.name}”`;
+  if (action === "online") return `恢复节点“${node.name}”`;
+  if (action === "promote") return `设为主节点“${node.name}”`;
+  return `设为从节点“${node.name}”`;
+}
+
+function nodeActionConfirmDescription(action: "offline" | "online" | "promote" | "standby") {
+  if (action === "offline") return "节点会被标记为离线。确认继续吗？";
+  if (action === "online") return "确认上线该节点？";
+  if (action === "promote") return "其他节点会切为从节点。确认继续吗？";
+  return "将由其他在线节点接管主节点。确认继续吗？";
 }
 
 function nodeActionTitle(action: NodeOperationResult["action"]) {

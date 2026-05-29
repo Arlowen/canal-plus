@@ -71,7 +71,7 @@ func defaultLocalClusterNode(timestamp string) ClusterNode {
 		Version:         input.Version,
 		Zone:            input.Zone,
 		Status:          NodeOnline,
-		Role:            input.Role,
+		Role:            NodeRoleMaster,
 		CPUPercent:      0,
 		MemoryPercent:   0,
 		Capacity:        input.Capacity,
@@ -112,7 +112,7 @@ func localClusterNodeInput(port string) ClusterNodeInput {
 		InstallDir: envString("CANAL_PLUS_NODE_INSTALL_DIR", "/opt/canal-plus"),
 		Version:    envString("CANAL_PLUS_NODE_VERSION", "v1.0.0"),
 		Zone:       envString("CANAL_PLUS_NODE_ZONE", "local"),
-		Role:       envString("CANAL_PLUS_NODE_ROLE", "scheduler+worker"),
+		Role:       envString("CANAL_PLUS_NODE_ROLE", ""),
 		Capacity:   envPositiveInt("CANAL_PLUS_NODE_CAPACITY", 1),
 	}
 }

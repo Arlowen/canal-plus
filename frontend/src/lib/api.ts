@@ -235,7 +235,7 @@ export const api = {
   uninstallNode(id: string) {
     return request<NodeOperationResult>(`/cluster/nodes/${id}/uninstall`, { method: "POST" });
   },
-  nodeAction(id: string, action: "online" | "offline" | "heartbeat") {
+  nodeAction(id: string, action: "online" | "offline" | "heartbeat" | "promote" | "standby") {
     return request<NodeStatusChangeResult | ClusterNode>(`/cluster/nodes/${id}/${action}`, { method: "POST" });
   }
 };

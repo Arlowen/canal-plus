@@ -105,6 +105,7 @@ export interface AlertEvent {
 
 export type NodeStatus = "online" | "offline";
 export type NodeAuthMode = "password" | "private_key";
+export type NodeRole = "master" | "standby";
 
 export interface ClusterNode {
   id: string;
@@ -117,7 +118,7 @@ export interface ClusterNode {
   version: string;
   zone: string;
   status: NodeStatus;
-  role: string;
+  role: NodeRole | string;
   cpuPercent: number;
   memoryPercent: number;
   capacity: number;
@@ -147,7 +148,7 @@ export interface NodeOperationResult {
 
 export interface NodeStatusChangeResult {
   id: string;
-  action: "online" | "offline";
+  action: "online" | "offline" | "promote" | "standby";
   node: ClusterNode;
   success: boolean;
   message: string;
@@ -160,6 +161,8 @@ export interface ClusterSnapshot {
   nodes: ClusterNode[];
   localNodeId?: string;
   localNodeName?: string;
+  masterNodeId?: string;
+  masterNodeName?: string;
   onlineNodes: number;
   totalNodes: number;
   degradedNodes: number;

@@ -698,6 +698,30 @@ func (s *Server) handleCluster(response http.ResponseWriter, request *http.Reque
 			}
 			writeJSON(response, http.StatusOK, result)
 			return
+		case "promote":
+			result, ok, err := s.store.SetNodeRole(parts[2], NodeRoleMaster)
+			if err != nil {
+				writeError(response, http.StatusBadRequest, err.Error())
+				return
+			}
+			if !ok {
+				writeError(response, http.StatusNotFound, "节点不存在")
+				return
+			}
+			writeJSON(response, http.StatusOK, result)
+			return
+		case "standby":
+			result, ok, err := s.store.SetNodeRole(parts[2], NodeRoleStandby)
+			if err != nil {
+				writeError(response, http.StatusBadRequest, err.Error())
+				return
+			}
+			if !ok {
+				writeError(response, http.StatusNotFound, "节点不存在")
+				return
+			}
+			writeJSON(response, http.StatusOK, result)
+			return
 		default:
 			writeError(response, http.StatusNotFound, "not found")
 			return

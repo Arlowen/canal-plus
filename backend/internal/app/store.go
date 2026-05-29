@@ -29,8 +29,8 @@ func NewStore() (*Store, error) {
 	if found {
 		store.data = data
 		store.ensureUsersLocked()
-		store.ensureClusterLocked()
 		store.normalizeSupportedDataLocked()
+		store.reconcileClusterLocked()
 		if err := store.saveLocked(); err != nil {
 			return nil, err
 		}
@@ -43,6 +43,7 @@ func NewStore() (*Store, error) {
 	}
 	store.data = seed
 	store.normalizeSupportedDataLocked()
+	store.reconcileClusterLocked()
 	if err := store.saveLocked(); err != nil {
 		return nil, err
 	}
@@ -136,6 +137,11 @@ func (s *Store) normalizeSupportedDataLocked() {
 	for index := range s.data.Nodes {
 		if string(s.data.Nodes[index].Status) == "draining" {
 			s.data.Nodes[index].Status = NodeOnline
+		}
+		if normalizeNodeRole(s.data.Nodes[index].Role) == "" {
+			s.data.Nodes[index].Role = ""
+		} else {
+			s.data.Nodes[index].Role = normalizeNodeRole(s.data.Nodes[index].Role)
 		}
 	}
 }
@@ -366,7 +372,11 @@ func (s *Store) registerNode(input ClusterNodeInput, actor string, action string
 		node.InstallDir = valueOr(strings.TrimSpace(input.InstallDir), "/opt/canal-plus")
 		node.Version = normalizeNodeVersion(input.Version)
 		node.Zone = valueOr(strings.TrimSpace(input.Zone), "default")
-		node.Role = valueOr(strings.TrimSpace(input.Role), "worker")
+		if role := normalizeNodeRole(input.Role); role != "" {
+			node.Role = role
+		} else if normalizeNodeRole(node.Role) == "" {
+			node.Role = NodeRoleStandby
+		}
 		node.Capacity = normalizeNodeCapacity(input.Capacity)
 		node.CPUPercent = clampPercent(input.CPUPercent)
 		node.MemoryPercent = clampPercent(input.MemoryPercent)
@@ -393,7 +403,7 @@ func (s *Store) registerNode(input ClusterNodeInput, actor string, action string
 		Version:         normalizeNodeVersion(input.Version),
 		Zone:            valueOr(strings.TrimSpace(input.Zone), "default"),
 		Status:          NodeOnline,
-		Role:            valueOr(strings.TrimSpace(input.Role), "worker"),
+		Role:            valueOr(normalizeNodeRole(input.Role), NodeRoleStandby),
 		CPUPercent:      clampPercent(input.CPUPercent),
 		MemoryPercent:   clampPercent(input.MemoryPercent),
 		Capacity:        normalizeNodeCapacity(input.Capacity),
@@ -506,9 +516,9 @@ func (s *Store) MarkNodeStatus(id string, status NodeStatus) (ClusterNode, bool,
 			s.data.Nodes[index].LastHeartbeatAt = now()
 		}
 		s.data.Nodes[index].UpdatedAt = now()
-		updated := s.data.Nodes[index]
-		s.logLocked("admin", "node_"+string(updated.Status), "cluster_node", id, "Node status changed: "+updated.Name+" -> "+string(updated.Status))
+		s.logLocked("admin", "node_"+string(s.data.Nodes[index].Status), "cluster_node", id, "Node status changed: "+s.data.Nodes[index].Name+" -> "+string(s.data.Nodes[index].Status))
 		s.reconcileClusterLocked()
+		updated := s.data.Nodes[index]
 		if err := s.saveLocked(); err != nil {
 			return ClusterNode{}, false, err
 		}
@@ -574,6 +584,73 @@ func (s *Store) BringNodeOnline(id string) (NodeStatusChangeResult, bool, error)
 		Node:      cloneJSON(*node),
 		Success:   true,
 		Message:   "节点已上线",
+		Before:    before,
+		After:     after,
+		ChangedAt: timestamp,
+	}, true, nil
+}
+
+func (s *Store) SetNodeRole(id string, role string) (NodeStatusChangeResult, bool, error) {
+	normalizedRole := normalizeNodeRole(role)
+	if normalizedRole == "" {
+		return NodeStatusChangeResult{}, false, errors.New("节点角色不合法")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.ensureClusterLocked()
+	before := s.clusterSnapshotLocked()
+	node := s.getNodeLocked(id)
+	if node == nil {
+		return NodeStatusChangeResult{}, false, nil
+	}
+	if normalizedRole == NodeRoleMaster && node.Status != NodeOnline {
+		return NodeStatusChangeResult{}, true, errors.New("离线节点不能设为主节点")
+	}
+	replacement := s.onlineRoleReplacementLocked(id)
+	if normalizedRole == NodeRoleStandby && node.Role == NodeRoleMaster && replacement == nil {
+		return NodeStatusChangeResult{}, true, errors.New("没有可接管的在线从节点")
+	}
+
+	timestamp := now()
+	if normalizedRole == NodeRoleStandby && node.Role == NodeRoleMaster && replacement != nil {
+		replacement.Role = NodeRoleMaster
+		replacement.UpdatedAt = timestamp
+		s.logLocked("admin", "node_promote", "cluster_node", replacement.ID, "Node promoted to master: "+replacement.Name)
+	}
+	if normalizedRole == NodeRoleMaster {
+		for index := range s.data.Nodes {
+			if s.data.Nodes[index].ID == id || s.data.Nodes[index].Role != NodeRoleMaster {
+				continue
+			}
+			s.data.Nodes[index].Role = NodeRoleStandby
+			s.data.Nodes[index].UpdatedAt = timestamp
+			s.logLocked("admin", "node_standby", "cluster_node", s.data.Nodes[index].ID, "Node changed to standby: "+s.data.Nodes[index].Name)
+		}
+	}
+	if node.Role != normalizedRole {
+		node.Role = normalizedRole
+		node.UpdatedAt = timestamp
+	}
+	action := "standby"
+	message := "已设为从节点"
+	if normalizedRole == NodeRoleMaster {
+		action = "promote"
+		message = "已设为主节点"
+		s.logLocked("admin", "node_promote", "cluster_node", id, "Node promoted to master: "+node.Name)
+	} else {
+		s.logLocked("admin", "node_standby", "cluster_node", id, "Node changed to standby: "+node.Name)
+	}
+	s.reconcileClusterLocked()
+	after := s.clusterSnapshotLocked()
+	if err := s.saveLocked(); err != nil {
+		return NodeStatusChangeResult{}, true, err
+	}
+	return NodeStatusChangeResult{
+		ID:        newID(),
+		Action:    action,
+		Node:      cloneJSON(*node),
+		Success:   true,
+		Message:   message,
 		Before:    before,
 		After:     after,
 		ChangedAt: timestamp,
@@ -785,12 +862,19 @@ func (s *Store) ensureClusterLocked() {
 		if string(s.data.Nodes[index].Status) == "draining" {
 			s.data.Nodes[index].Status = NodeOnline
 		}
+		role := normalizeNodeRole(s.data.Nodes[index].Role)
+		if role == "" {
+			s.data.Nodes[index].Role = ""
+		} else {
+			s.data.Nodes[index].Role = role
+		}
 	}
 }
 
 func (s *Store) reconcileClusterLocked() {
 	s.ensureClusterLocked()
 	s.markStaleNodesLocked()
+	s.reconcileNodeRolesLocked()
 }
 
 func (s *Store) markStaleNodesLocked() {
@@ -805,6 +889,71 @@ func (s *Store) markStaleNodesLocked() {
 	}
 }
 
+func (s *Store) reconcileNodeRolesLocked() {
+	if len(s.data.Nodes) == 0 {
+		return
+	}
+	timestamp := now()
+	masterIndex := -1
+	if len(s.data.Nodes) == 1 {
+		masterIndex = 0
+	} else {
+		for index, node := range s.data.Nodes {
+			if node.Status == NodeOnline && node.Role == NodeRoleMaster {
+				masterIndex = index
+				break
+			}
+		}
+		if masterIndex == -1 {
+			for index, node := range s.data.Nodes {
+				if node.Status == NodeOnline {
+					masterIndex = index
+					break
+				}
+			}
+		}
+		if masterIndex == -1 {
+			for index, node := range s.data.Nodes {
+				if node.Role == NodeRoleMaster {
+					masterIndex = index
+					break
+				}
+			}
+		}
+		if masterIndex == -1 {
+			masterIndex = 0
+		}
+	}
+
+	for index := range s.data.Nodes {
+		role := NodeRoleStandby
+		if index == masterIndex {
+			role = NodeRoleMaster
+		}
+		if s.data.Nodes[index].Role == role {
+			continue
+		}
+		s.data.Nodes[index].Role = role
+		s.data.Nodes[index].UpdatedAt = timestamp
+		if role == NodeRoleMaster {
+			s.logLocked("system", "node_promote", "cluster_node", s.data.Nodes[index].ID, "Node promoted to master: "+s.data.Nodes[index].Name)
+		} else {
+			s.logLocked("system", "node_standby", "cluster_node", s.data.Nodes[index].ID, "Node changed to standby: "+s.data.Nodes[index].Name)
+		}
+	}
+}
+
+func (s *Store) onlineRoleReplacementLocked(excludedID string) *ClusterNode {
+	for index := range s.data.Nodes {
+		node := &s.data.Nodes[index]
+		if node.ID == excludedID || node.Status != NodeOnline {
+			continue
+		}
+		return node
+	}
+	return nil
+}
+
 func (s *Store) getNodeLocked(id string) *ClusterNode {
 	for index := range s.data.Nodes {
 		if s.data.Nodes[index].ID == id {
@@ -817,13 +966,21 @@ func (s *Store) getNodeLocked(id string) *ClusterNode {
 func (s *Store) clusterSnapshotLocked() ClusterSnapshot {
 	nodes := cloneJSON(s.data.Nodes)
 	online := 0
+	masterNodeID := ""
+	masterNodeName := ""
 	for _, node := range nodes {
 		if node.Status == NodeOnline {
 			online++
 		}
+		if node.Role == NodeRoleMaster && masterNodeID == "" {
+			masterNodeID = node.ID
+			masterNodeName = node.Name
+		}
 	}
 	return ClusterSnapshot{
 		Nodes:                   nodes,
+		MasterNodeID:            masterNodeID,
+		MasterNodeName:          masterNodeName,
 		OnlineNodes:             online,
 		TotalNodes:              len(nodes),
 		DegradedNodes:           len(nodes) - online,
@@ -849,6 +1006,17 @@ func normalizeNodeCapacity(capacity int) int {
 		return 4
 	}
 	return capacity
+}
+
+func normalizeNodeRole(role string) string {
+	switch strings.ToLower(strings.TrimSpace(role)) {
+	case NodeRoleMaster, "primary", "leader", "main":
+		return NodeRoleMaster
+	case NodeRoleStandby, "slave", "backup", "replica", "worker":
+		return NodeRoleStandby
+	default:
+		return ""
+	}
 }
 
 func normalizeNodeSSHPort(port int) int {
