@@ -1795,21 +1795,54 @@ function NodesPage({
   onOpenNode: (nodeID: string) => void;
 }) {
   const nodes = cluster?.nodes ?? emptyNodes;
-  const [keyword, setKeyword] = useState("");
-  const [statusFilter, setStatusFilter] = useState<"all" | ClusterNode["status"]>("all");
+  const [draftStatusFilter, setDraftStatusFilter] = useState<"all" | ClusterNode["status"]>("all");
+  const [draftNameQuery, setDraftNameQuery] = useState("");
+  const [appliedStatusFilter, setAppliedStatusFilter] = useState<"all" | ClusterNode["status"]>("all");
+  const [appliedNameQuery, setAppliedNameQuery] = useState("");
+  const [pageIndex, setPageIndex] = useState(1);
+  const pageSize = 20;
+  const [querying, setQuerying] = useState(false);
   const [creatorOpen, setCreatorOpen] = useState(false);
   const [operationResult, setOperationResult] = useState<NodeOperationResult | null>(null);
   const [handoffReport, setHandoffReport] = useState<ClusterHandoffReport | null>(null);
-  const [, setBusyKey] = useState<string | null>(null);
+  const [busyKey, setBusyKey] = useState<string | null>(null);
   const [confirmation, setConfirmation] = useState<ConfirmationDialogState | null>(null);
   const localNodeId = cluster?.localNodeId;
+  const tableBusy = querying || Boolean(busyKey);
 
-  const visibleNodes = nodes.filter((node) => {
-    const matchesKeyword = !keyword.trim()
-      || `${node.name} ${node.endpoint} ${node.zone} ${node.role} ${node.installDir}`.toLowerCase().includes(keyword.trim().toLowerCase());
-    const matchesStatus = statusFilter === "all" || node.status === statusFilter;
-    return matchesKeyword && matchesStatus;
-  });
+  const filteredNodes = useMemo(() => nodes.filter((node) => {
+    const matchesStatus = appliedStatusFilter === "all" || node.status === appliedStatusFilter;
+    const query = appliedNameQuery.trim().toLowerCase();
+    const matchesName = query === "" || node.name.toLowerCase().includes(query);
+    return matchesStatus && matchesName;
+  }), [appliedNameQuery, appliedStatusFilter, nodes]);
+
+  const totalItems = filteredNodes.length;
+  const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
+  const currentPage = clampPage(pageIndex, totalPages);
+  const pageStart = (currentPage - 1) * pageSize;
+  const pageItems = filteredNodes.slice(pageStart, pageStart + pageSize);
+
+  useEffect(() => {
+    setPageIndex((current) => clampPage(current, totalPages));
+  }, [totalPages]);
+
+  const runQuery = async () => {
+    setQuerying(true);
+    setAppliedStatusFilter(draftStatusFilter);
+    setAppliedNameQuery(draftNameQuery);
+    setPageIndex(1);
+    try {
+      await onChanged(true);
+    } finally {
+      setQuerying(false);
+    }
+  };
+
+  const goToPage = (nextPage: number) => {
+    setPageIndex(clampPage(nextPage, totalPages));
+  };
+
   const executeQuickAction = async (node: ClusterNode, action: "upgrade" | "uninstall") => {
     if (!canManage) {
       pushNotice({ tone: "warning", message: "节点运维需要管理员权限" });
@@ -1880,106 +1913,171 @@ function NodesPage({
   };
 
   return (
-    <div className="space-y-5">
+    <>
       <section className="min-w-0">
-        <div className="flex flex-col gap-5 border-b border-line px-5 py-[19px] md:px-6 xl:flex-row xl:items-start xl:justify-between">
+        <div className="border-b border-line px-5 py-5 md:px-6">
           <h1 className="text-3xl font-semibold tracking-tight text-coal md:text-4xl">节点</h1>
-          {canManage && (
-            <Button onClick={() => setCreatorOpen(true)} className="btn-primary">
-              <Plus size={16} />
-              新增
-            </Button>
-          )}
         </div>
 
-        <div className="p-6">
-          <div className="grid gap-3 rounded-lg border border-line bg-slate-50/70 p-3 lg:grid-cols-[minmax(0,1fr)_220px]">
+        <div className="flex flex-col gap-3 border-b border-line px-5 py-4 md:px-6 xl:flex-row xl:items-end xl:justify-between">
+          <div className="grid gap-3 sm:grid-cols-[170px_240px_auto] sm:items-end">
             <label className="block">
-              <span className="label mb-2 block">搜索</span>
-              <span className="relative block">
-                <MagnifyingGlass className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-                <TextInput
-                  className="input pl-9"
-                  value={keyword}
-                  onChange={(event) => setKeyword(event.target.value)}
-                  placeholder="节点名、地址、角色"
-                />
-              </span>
-            </label>
-            <Field label="状态">
+              <span className="label mb-2 block">状态</span>
               <DropdownSelect
-                value={statusFilter}
+                value={draftStatusFilter}
+                disabled={tableBusy}
                 ariaLabel="状态"
                 options={[
                   { value: "all", label: "全部" },
                   { value: "online", label: "在线" },
                   { value: "offline", label: "离线" }
                 ]}
-                onChange={(nextValue) => setStatusFilter(nextValue as "all" | ClusterNode["status"])}
+                onChange={(nextValue) => setDraftStatusFilter(nextValue as "all" | ClusterNode["status"])}
               />
-            </Field>
+            </label>
+            <label className="block">
+              <span className="label mb-2 block">名称</span>
+              <TextInput
+                className="input"
+                value={draftNameQuery}
+                disabled={tableBusy}
+                placeholder="名称"
+                onChange={(event) => setDraftNameQuery(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    void runQuery();
+                  }
+                }}
+              />
+            </label>
+            <Button type="button" onClick={() => void runQuery()} disabled={tableBusy} className="btn-primary">
+              {querying ? <ArrowsClockwise size={16} /> : <MagnifyingGlass size={16} />}
+              {querying ? "查询中" : "查询"}
+            </Button>
           </div>
 
-          {nodes.length === 0 ? (
-            <EmptyPanel
-              icon={HardDrives}
-              title="无节点"
-              action={canManage ? (
-                <Button onClick={() => setCreatorOpen(true)} className="btn-primary">
+          <div className="flex flex-wrap gap-2 xl:justify-end">
+            {canManage ? (
+              <Button type="button" onClick={() => setCreatorOpen(true)} className="btn-primary">
+                <Plus size={16} />
+                新增节点
+              </Button>
+            ) : (
+              <div title="权限不足">
+                <Button type="button" disabled className="btn-secondary w-full">
                   <Plus size={16} />
-                  新增
+                  新增节点
                 </Button>
-              ) : <PermissionNotice compact description="仅管理员可管节点。" />}
-            />
-          ) : (
-            <div className="table-shell mt-5">
-              <table className="w-full min-w-[820px] text-left text-sm">
-                <thead className="bg-slate-50 text-xs uppercase tracking-[0.18em] text-slate-500">
-                  <tr>
-                    <th className="px-4 py-3">名称</th>
-                    <th className="px-4 py-3">状态</th>
-                    <th className="px-4 py-3">地址</th>
-                    <th className="px-4 py-3">资源</th>
-                    <th className="px-4 py-3 text-right">操作</th>
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[880px] table-fixed border-collapse text-left">
+            <colgroup>
+              <col className="w-[220px]" />
+              <col className="w-[100px]" />
+              <col className="w-[170px]" />
+              <col className="w-[105px]" />
+              <col className="w-[170px]" />
+              <col className="w-[170px]" />
+            </colgroup>
+            <thead className="bg-slate-50/90 text-xs font-semibold text-slate-500">
+              <tr className="border-b border-line">
+                <th className="whitespace-nowrap px-5 py-3 md:px-6">节点名称</th>
+                <th className="whitespace-nowrap px-4 py-3">状态</th>
+                <th className="whitespace-nowrap px-4 py-3">Host</th>
+                <th className="whitespace-nowrap px-4 py-3">版本号</th>
+                <th className="whitespace-nowrap px-4 py-3">资源</th>
+                <th className="whitespace-nowrap px-4 py-3">操作</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-line bg-white">
+              {pageItems.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="px-6 py-12">
+                    <div className="mx-auto flex max-w-sm flex-col items-center text-center">
+                      <div className="text-base font-semibold text-coal">
+                        {nodes.length === 0 ? "暂无节点" : "无匹配"}
+                      </div>
+                      {!canManage && nodes.length === 0 && (
+                        <div className="mt-5">
+                          <PermissionNotice compact description="仅管理员可新增。" />
+                        </div>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              ) : pageItems.map((node) => {
+                const isCurrentNode = localNodeId === node.id;
+                const actionBusy = busyKey?.startsWith(`${node.id}:`) ?? false;
+                return (
+                  <tr key={node.id} className={cx("transition hover:bg-slate-50/70", tableBusy && "opacity-70")}>
+                    <td className="max-w-[340px] px-5 py-4 align-middle md:px-6">
+                      <div className="flex min-w-0 items-center gap-3">
+                        <NodeTypeIcon status={node.status} />
+                        <Button type="button" onClick={() => onOpenNode(node.id)} className="panel-link min-w-0">
+                          <span className="block truncate text-sm font-semibold text-coal">{node.name || node.id}</span>
+                        </Button>
+                      </div>
+                    </td>
+                    <td className="px-4 py-4 align-middle">
+                      <Badge tone={nodeTone(node.status)}>{nodeStatusText(node.status)}</Badge>
+                    </td>
+                    <td className="px-4 py-4 align-middle">
+                      <span title={node.endpoint} className="block truncate font-mono text-sm text-coal">{node.endpoint}</span>
+                    </td>
+                    <td className="px-4 py-4 align-middle font-mono text-sm text-slate-600">{node.version?.trim() || "-"}</td>
+                    <td className="px-4 py-4 align-middle text-sm text-slate-600">
+                      <span className="block truncate" title={`CPU ${node.cpuPercent}% · 内存 ${node.memoryPercent}%`}>
+                        CPU {node.cpuPercent}% · 内存 {node.memoryPercent}%
+                      </span>
+                    </td>
+                    <td className="px-4 py-4 align-middle">
+                      <div className="flex items-center justify-start gap-2">
+                        <Button
+                          type="button"
+                          onClick={() => onOpenNode(node.id)}
+                          className="btn-compact whitespace-nowrap"
+                        >
+                          <ArrowRight size={14} />
+                          详情
+                        </Button>
+                        {canManage && (
+                          <ActionMenu
+                            label="更多"
+                            items={[
+                              { label: "升级", onSelect: () => requestQuickAction(node, "upgrade"), disabled: tableBusy },
+                              { label: "卸载", onSelect: () => requestQuickAction(node, "uninstall"), danger: true, disabled: tableBusy || isCurrentNode },
+                              { label: node.status === "online" ? "下线" : "上线", onSelect: () => requestMoreAction(node, node.status === "online" ? "offline" : "online"), disabled: tableBusy || (isCurrentNode && node.status === "online") },
+                            ]}
+                          />
+                        )}
+                        {actionBusy && <ArrowsClockwise size={14} className="animate-spin text-slate-400" />}
+                      </div>
+                    </td>
                   </tr>
-                </thead>
-                <tbody>
-                  {visibleNodes.map((node) => {
-                    const isCurrentNode = localNodeId === node.id;
-                    return (
-                      <tr key={node.id} className="table-row hover:bg-slate-50/70">
-                        <td className="px-4 py-4">
-                          <Button onClick={() => onOpenNode(node.id)} className="link-button">
-                            <div className="font-medium text-coal">{node.name}</div>
-                            <div className="mt-1 text-xs text-slate-500">{node.version}</div>
-                          </Button>
-                        </td>
-                        <td className="px-4 py-4">
-                          <Badge tone={nodeTone(node.status)}>{nodeStatusText(node.status)}</Badge>
-                        </td>
-                        <td className="px-4 py-4">
-                          <div className="mono text-slate-700">{node.endpoint}</div>
-                        </td>
-                        <td className="px-4 py-4 text-slate-600">CPU {node.cpuPercent}% · 内存 {node.memoryPercent}%</td>
-                        <td className="px-4 py-4">
-                          <div className="flex justify-end">
-                            <ActionMenu
-                              items={[
-                                { label: "详情", onSelect: () => onOpenNode(node.id) },
-                                { label: "升级", onSelect: () => requestQuickAction(node, "upgrade"), disabled: !canManage },
-                                { label: "卸载", onSelect: () => requestQuickAction(node, "uninstall"), danger: true, disabled: !canManage || isCurrentNode },
-                                { label: node.status === "online" ? "下线" : "上线", onSelect: () => requestMoreAction(node, node.status === "online" ? "offline" : "online"), disabled: !canManage || (isCurrentNode && node.status === "online") },
-                              ]}
-                            />
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="flex flex-col gap-3 border-t border-line px-5 py-4 text-sm text-slate-600 md:px-6 lg:flex-row lg:items-center lg:justify-between">
+          <div>共 {totalItems} 条</div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button type="button" onClick={() => goToPage(currentPage - 1)} disabled={currentPage <= 1} className="btn-compact">
+              <ArrowRight size={14} className="rotate-180" />
+              上一页
+            </Button>
+            <span className="min-w-16 text-center font-mono text-sm text-coal">{currentPage}/{totalPages}</span>
+            <Button type="button" onClick={() => goToPage(currentPage + 1)} disabled={currentPage >= totalPages} className="btn-compact">
+              下一页
+              <ArrowRight size={14} />
+            </Button>
+          </div>
         </div>
       </section>
 
@@ -2076,7 +2174,7 @@ function NodesPage({
           action?.();
         }}
       />
-    </div>
+    </>
   );
 }
 
@@ -2756,6 +2854,21 @@ function DatasourceTypeIcon({ type }: { type?: Datasource["type"] }) {
       >
         {label}
       </span>
+    </span>
+  );
+}
+
+function NodeTypeIcon({ status }: { status: ClusterNode["status"] }) {
+  const online = status === "online";
+  return (
+    <span
+      aria-hidden="true"
+      className={cx(
+        "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border",
+        online ? "border-emerald-100 bg-emerald-50 text-emerald-700" : "border-slate-200 bg-slate-50 text-slate-500"
+      )}
+    >
+      <HardDrives size={18} />
     </span>
   );
 }
