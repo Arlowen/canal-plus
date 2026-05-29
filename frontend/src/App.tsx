@@ -1288,7 +1288,7 @@ function DatasourcePage({
           </table>
         </div>
 
-        <div className="flex flex-col gap-3 border-t border-line px-5 py-4 text-sm text-slate-600 md:px-6 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex flex-col items-center justify-center gap-3 border-t border-line px-5 py-4 text-sm text-slate-600 md:px-6 sm:flex-row sm:items-center">
           <div>共 {totalItems} 条</div>
           <div className="flex flex-wrap items-center gap-2">
             <Button type="button" onClick={() => goToPage(currentPage - 1)} disabled={currentPage <= 1} className="btn-compact">
@@ -2267,7 +2267,7 @@ function NodesPage({
           </table>
         </div>
 
-        <div className="flex flex-col gap-3 border-t border-line px-5 py-4 text-sm text-slate-600 md:px-6 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex flex-col items-center justify-center gap-3 border-t border-line px-5 py-4 text-sm text-slate-600 md:px-6 sm:flex-row sm:items-center">
           <div>共 {totalItems} 条</div>
           <div className="flex flex-wrap items-center gap-2">
             <Button type="button" onClick={() => goToPage(currentPage - 1)} disabled={currentPage <= 1} className="btn-compact">
