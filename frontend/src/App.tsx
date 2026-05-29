@@ -457,13 +457,12 @@ function createBrandTileParticles(width: number, height: number) {
 }
 
 function BrandParticleTile({ className }: { className?: string }) {
-  const frameRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const particlesRef = useRef<BrandTileParticle[]>([]);
   const frameIdRef = useRef(0);
   const lastFrameAtRef = useRef(0);
-  const sizeRef = useRef({ width: 48, height: 48 });
-  const pointerRef = useRef({ x: 24, y: 24 });
+  const sizeRef = useRef({ width: 64, height: 64 });
+  const pointerRef = useRef({ x: 32, y: 32 });
   const activeRef = useRef(false);
 
   const resetParticles = useCallback((width: number, height: number) => {
@@ -483,7 +482,7 @@ function BrandParticleTile({ className }: { className?: string }) {
   }, []);
 
   const updatePointer = useCallback((clientX: number, clientY: number) => {
-    const rect = frameRef.current?.getBoundingClientRect();
+    const rect = canvasRef.current?.getBoundingClientRect();
     if (!rect) return;
     pointerRef.current = {
       x: clientX - rect.left,
@@ -494,9 +493,8 @@ function BrandParticleTile({ className }: { className?: string }) {
   useEffect(() => {
     const resizeCanvas = () => {
       const canvas = canvasRef.current;
-      const frame = frameRef.current;
-      if (!canvas || !frame) return;
-      const rect = frame.getBoundingClientRect();
+      if (!canvas) return;
+      const rect = canvas.getBoundingClientRect();
       const width = Math.max(40, Math.round(rect.width));
       const height = Math.max(40, Math.round(rect.height));
       const dpr = window.devicePixelRatio || 1;
@@ -573,7 +571,7 @@ function BrandParticleTile({ className }: { className?: string }) {
     resizeCanvas();
     frameIdRef.current = window.requestAnimationFrame(drawFrame);
     const observer = new ResizeObserver(resizeCanvas);
-    if (frameRef.current) observer.observe(frameRef.current);
+    if (canvasRef.current) observer.observe(canvasRef.current);
 
     return () => {
       window.cancelAnimationFrame(frameIdRef.current);
@@ -582,8 +580,8 @@ function BrandParticleTile({ className }: { className?: string }) {
   }, [resetParticles]);
 
   return (
-    <div
-      ref={frameRef}
+    <canvas
+      ref={canvasRef}
       role="img"
       aria-label="Canal Plus"
       tabIndex={0}
@@ -611,13 +609,10 @@ function BrandParticleTile({ className }: { className?: string }) {
         activeRef.current = false;
       }}
       className={cx(
-        "relative flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-line/70 bg-transparent shadow-none outline-none transition duration-200 hover:-translate-y-px focus:ring-4 focus:ring-blue-100",
+        "block h-16 w-16 shrink-0 bg-transparent outline-none transition duration-200 hover:-translate-y-px focus:ring-4 focus:ring-blue-100",
         className
       )}
-    >
-      <canvas ref={canvasRef} aria-hidden="true" className="absolute inset-0 h-full w-full" />
-      <span className="sr-only">Canal Plus</span>
-    </div>
+    />
   );
 }
 
