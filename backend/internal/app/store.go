@@ -2,7 +2,6 @@ package app
 
 import (
 	"errors"
-	"math/rand"
 	"sort"
 	"strconv"
 	"strings"
@@ -326,7 +325,12 @@ func (s *Store) ReconcileCluster() (ClusterSnapshot, error) {
 	return s.clusterSnapshotLocked(), nil
 }
 
-func (s *Store) RegisterNode(input ClusterNodeInput) (ClusterNode, bool, error) {
+func (s *Store) RegisterLocalNode(input ClusterNodeInput) (ClusterNode, error) {
+	node, _, err := s.registerNode(input, "system", "node_self_register")
+	return node, err
+}
+
+func (s *Store) registerNode(input ClusterNodeInput, actor string, action string) (ClusterNode, bool, error) {
 	if err := validateClusterNodeInput(input); err != nil {
 		return ClusterNode{}, false, err
 	}
@@ -370,7 +374,7 @@ func (s *Store) RegisterNode(input ClusterNodeInput) (ClusterNode, bool, error) 
 		node.LastHeartbeatAt = timestamp
 		node.UpdatedAt = timestamp
 		created = false
-		s.logLocked("admin", "node_register", "cluster_node", node.ID, "Node registered or updated: "+node.Name)
+		s.logLocked(actor, action, "cluster_node", node.ID, "Node registered or updated: "+node.Name)
 		s.reconcileClusterLocked()
 		if err := s.saveLocked(); err != nil {
 			return ClusterNode{}, false, err
@@ -398,55 +402,12 @@ func (s *Store) RegisterNode(input ClusterNodeInput) (ClusterNode, bool, error) 
 		UpdatedAt:       timestamp,
 	}
 	s.data.Nodes = append(s.data.Nodes, node)
-	s.logLocked("admin", "node_register", "cluster_node", node.ID, "Node registered: "+node.Name)
+	s.logLocked(actor, action, "cluster_node", node.ID, "Node registered: "+node.Name)
 	s.reconcileClusterLocked()
 	if err := s.saveLocked(); err != nil {
 		return ClusterNode{}, false, err
 	}
 	return cloneJSON(node), created, nil
-}
-
-func (s *Store) TestNodeConnection(input ClusterNodeInput) NodeConnectionTestResult {
-	message, success := simulateNodeConnection(input)
-	return NodeConnectionTestResult{
-		Success:   success,
-		Message:   message,
-		CheckedAt: now(),
-		LatencyMS: 18 + rand.Intn(42),
-	}
-}
-
-func (s *Store) DeployNode(input ClusterNodeInput) (NodeOperationResult, error) {
-	checked := s.TestNodeConnection(input)
-	steps := []NodeOperationStep{
-		{Key: "connect", Label: "连接机器", Status: "done", Detail: checked.Message},
-		{Key: "upload", Label: "上传安装包", Status: "done", Detail: "安装包已上传到目标机器"},
-		{Key: "install", Label: "安装依赖", Status: "done", Detail: "运行环境与依赖检查通过"},
-		{Key: "start", Label: "启动节点", Status: "done", Detail: "节点进程已启动"},
-		{Key: "register", Label: "注册节点", Status: "done", Detail: "节点已加入集群"},
-	}
-	if !checked.Success {
-		steps[0].Status = "failed"
-		return NodeOperationResult{
-			Action:     "deploy",
-			Success:    false,
-			Message:    "SSH 连接失败，请检查地址、端口和凭据",
-			FinishedAt: now(),
-			Steps:      steps[:1],
-		}, nil
-	}
-	node, _, err := s.RegisterNode(input)
-	if err != nil {
-		return NodeOperationResult{}, err
-	}
-	return NodeOperationResult{
-		Action:     "deploy",
-		Success:    true,
-		Message:    node.Name + " 已部署完成",
-		FinishedAt: now(),
-		Node:       &node,
-		Steps:      steps,
-	}, nil
 }
 
 func (s *Store) UpgradeNode(id string) (NodeOperationResult, bool, error) {
@@ -881,23 +842,6 @@ func validateClusterNodeInput(input ClusterNodeInput) error {
 		return errors.New("节点容量不能为负数")
 	}
 	return nil
-}
-
-func simulateNodeConnection(input ClusterNodeInput) (string, bool) {
-	endpoint := strings.TrimSpace(strings.ToLower(input.Endpoint))
-	if endpoint == "" || strings.TrimSpace(input.SSHUser) == "" {
-		return "请先填写主机地址和 SSH 用户", false
-	}
-	if strings.Contains(endpoint, "fail") || strings.Contains(endpoint, "offline") || strings.Contains(endpoint, "unreachable") {
-		return "目标机器不可达，SSH 握手超时", false
-	}
-	if input.AuthMode == string(NodeAuthPrivateKey) && strings.TrimSpace(input.PrivateKey) == "" {
-		return "私钥为空，无法建立 SSH 连接", false
-	}
-	if input.AuthMode != string(NodeAuthPrivateKey) && strings.TrimSpace(input.Password) == "" {
-		return "密码为空，无法建立 SSH 连接", false
-	}
-	return "SSH 连接正常，可继续部署", true
 }
 
 func normalizeNodeCapacity(capacity int) int {

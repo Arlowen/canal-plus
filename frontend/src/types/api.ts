@@ -126,31 +126,6 @@ export interface ClusterNode {
   updatedAt: string;
 }
 
-export interface ClusterNodeInput {
-  id?: string;
-  name: string;
-  endpoint: string;
-  sshPort?: number;
-  sshUser?: string;
-  authMode?: NodeAuthMode;
-  password?: string;
-  privateKey?: string;
-  installDir?: string;
-  version?: string;
-  zone?: string;
-  role?: string;
-  capacity?: number;
-  cpuPercent?: number;
-  memoryPercent?: number;
-}
-
-export interface NodeConnectionTestResult {
-  success: boolean;
-  message: string;
-  checkedAt: string;
-  latencyMs: number;
-}
-
 export interface NodeOperationStep {
   key: string;
   label: string;
@@ -159,7 +134,7 @@ export interface NodeOperationStep {
 }
 
 export interface NodeOperationResult {
-  action: "deploy" | "upgrade" | "uninstall";
+  action: "upgrade" | "uninstall";
   success: boolean;
   message: string;
   finishedAt: string;

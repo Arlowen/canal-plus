@@ -14,7 +14,7 @@ canal-plus/
 ## 功能
 
 - 数据源：新增、编辑、测试连接、删除。
-- 节点：注册、部署、升级、卸载、上线、下线。
+- 节点：启动注册、升级、卸载、上线、下线。
 - 设置：告警规则。
 
 ## 启动
@@ -50,6 +50,11 @@ npm run dev
 - `CANAL_PLUS_METADATA_DSN`: 元数据 MySQL DSN
 - `CANAL_PLUS_METADATA_TABLE_PREFIX`: ORM 表前缀，默认 `canal_plus`
 - `CANAL_PLUS_NODE_ID`: 当前控制节点 ID
+- `CANAL_PLUS_NODE_NAME`: 当前控制节点名称，默认跟随节点 ID
+- `CANAL_PLUS_NODE_ENDPOINT`: 当前控制节点访问地址，默认 `127.0.0.1:${PORT}`
+- `CANAL_PLUS_NODE_ROLE`: 当前控制节点角色，默认 `scheduler+worker`
+- `CANAL_PLUS_NODE_ZONE`: 当前控制节点可用区，默认 `local`
+- `CANAL_PLUS_NODE_CAPACITY`: 当前控制节点容量，默认 `1`
 - `CANAL_PLUS_CLUSTER_SUPERVISOR`: 集群巡检开关
 - `CANAL_PLUS_CLUSTER_SUPERVISOR_INTERVAL_SECONDS`: 集群巡检间隔秒
 - `CANAL_PLUS_EMBEDDED_NODE_HEARTBEAT`: 当前节点心跳开关
@@ -72,11 +77,15 @@ npm run dev
 节点：
 
 - `GET /api/cluster`
-- `POST /api/cluster/nodes`
-- `POST /api/cluster/nodes/test-connection`
 - `POST /api/cluster/nodes/{id}/online|offline`
 - `POST /api/cluster/nodes/{id}/upgrade`
 - `POST /api/cluster/nodes/{id}/uninstall`
+
+新增节点：
+
+- 在新机器启动后端服务。
+- 连接同一个 `CANAL_PLUS_METADATA_DSN`。
+- 使用唯一 `CANAL_PLUS_NODE_ID`。
 
 告警：
 

@@ -32,7 +32,11 @@ func NewServer() (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	localNodeID := resolveLocalNodeID(store, os.Getenv("CANAL_PLUS_NODE_ID"))
+	localNode, err := registerLocalControlNode(store, port)
+	if err != nil {
+		return nil, err
+	}
+	localNodeID := localNode.ID
 	clusterSupervisorEnabled := os.Getenv("CANAL_PLUS_CLUSTER_SUPERVISOR") != "false"
 	clusterSupervisorInterval := envDurationSeconds("CANAL_PLUS_CLUSTER_SUPERVISOR_INTERVAL_SECONDS", 5*time.Second)
 	if clusterSupervisorEnabled {
@@ -95,21 +99,8 @@ func envDurationSeconds(name string, fallback time.Duration) time.Duration {
 	return time.Duration(seconds) * time.Second
 }
 
-func resolveLocalNodeID(store *Store, preferred string) string {
-	preferred = strings.TrimSpace(preferred)
-	if preferred != "" {
-		return preferred
-	}
-	snapshot := store.ClusterSnapshot()
-	for _, node := range snapshot.Nodes {
-		if node.Status == NodeOnline {
-			return node.ID
-		}
-	}
-	if len(snapshot.Nodes) > 0 {
-		return snapshot.Nodes[0].ID
-	}
-	return ""
+func registerLocalControlNode(store *Store, port string) (ClusterNode, error) {
+	return store.RegisterLocalNode(localClusterNodeInput(port))
 }
 
 func (s *Server) Port() string {
@@ -639,41 +630,6 @@ func (s *Server) handleCluster(response http.ResponseWriter, request *http.Reque
 		writeJSON(response, http.StatusOK, s.clusterResponse())
 	case len(parts) == 2 && parts[1] == "nodes" && request.Method == http.MethodGet:
 		writeJSON(response, http.StatusOK, s.clusterResponse().Nodes)
-	case len(parts) == 3 && parts[1] == "nodes" && parts[2] == "test-connection" && request.Method == http.MethodPost:
-		var input ClusterNodeInput
-		if err := decodeJSON(request, &input); err != nil {
-			writeError(response, http.StatusBadRequest, "请求体格式错误")
-			return
-		}
-		writeJSON(response, http.StatusOK, s.store.TestNodeConnection(input))
-	case len(parts) == 3 && parts[1] == "nodes" && parts[2] == "deploy" && request.Method == http.MethodPost:
-		var input ClusterNodeInput
-		if err := decodeJSON(request, &input); err != nil {
-			writeError(response, http.StatusBadRequest, "请求体格式错误")
-			return
-		}
-		result, err := s.store.DeployNode(input)
-		if err != nil {
-			writeError(response, http.StatusBadRequest, err.Error())
-			return
-		}
-		writeJSON(response, http.StatusOK, result)
-	case len(parts) == 2 && parts[1] == "nodes" && request.Method == http.MethodPost:
-		var input ClusterNodeInput
-		if err := decodeJSON(request, &input); err != nil {
-			writeError(response, http.StatusBadRequest, "请求体格式错误")
-			return
-		}
-		node, created, err := s.store.RegisterNode(input)
-		if err != nil {
-			writeError(response, http.StatusBadRequest, err.Error())
-			return
-		}
-		if created {
-			writeJSON(response, http.StatusCreated, node)
-			return
-		}
-		writeJSON(response, http.StatusOK, node)
 	case len(parts) == 4 && parts[1] == "nodes" && parts[3] == "upgrade" && request.Method == http.MethodPost:
 		result, ok, err := s.store.UpgradeNode(parts[2])
 		if err != nil {

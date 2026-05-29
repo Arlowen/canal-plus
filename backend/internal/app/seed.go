@@ -2,6 +2,7 @@ package app
 
 import (
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -54,33 +55,86 @@ func defaultClusterNodes(timestamp string) []ClusterNode {
 }
 
 func defaultLocalClusterNode(timestamp string) ClusterNode {
-	nodeID := strings.TrimSpace(os.Getenv("CANAL_PLUS_NODE_ID"))
-	if nodeID == "" {
-		nodeID = "node-local"
-	}
 	port := strings.TrimSpace(os.Getenv("PORT"))
 	if port == "" {
 		port = "4100"
 	}
+	input := localClusterNodeInput(port)
 	return ClusterNode{
-		ID:              nodeID,
-		Name:            "local",
-		Endpoint:        "127.0.0.1:" + port,
-		SSHPort:         22,
-		SSHUser:         "",
-		AuthMode:        NodeAuthPassword,
-		InstallDir:      "/opt/canal-plus",
-		Version:         "v1.0.0",
-		Zone:            "local",
+		ID:              input.ID,
+		Name:            input.Name,
+		Endpoint:        input.Endpoint,
+		SSHPort:         input.SSHPort,
+		SSHUser:         input.SSHUser,
+		AuthMode:        normalizeNodeAuthMode(input.AuthMode),
+		InstallDir:      input.InstallDir,
+		Version:         input.Version,
+		Zone:            input.Zone,
 		Status:          NodeOnline,
-		Role:            "scheduler+worker",
+		Role:            input.Role,
 		CPUPercent:      0,
 		MemoryPercent:   0,
-		Capacity:        1,
+		Capacity:        input.Capacity,
 		LastHeartbeatAt: timestamp,
 		StartedAt:       timestamp,
 		UpdatedAt:       timestamp,
 	}
+}
+
+func localClusterNodeInput(port string) ClusterNodeInput {
+	port = strings.TrimSpace(port)
+	if port == "" {
+		port = "4100"
+	}
+	nodeID := strings.TrimSpace(os.Getenv("CANAL_PLUS_NODE_ID"))
+	if nodeID == "" {
+		nodeID = "node-local"
+	}
+	name := strings.TrimSpace(os.Getenv("CANAL_PLUS_NODE_NAME"))
+	if name == "" {
+		if nodeID == "node-local" {
+			name = "local"
+		} else {
+			name = nodeID
+		}
+	}
+	endpoint := strings.TrimSpace(os.Getenv("CANAL_PLUS_NODE_ENDPOINT"))
+	if endpoint == "" {
+		endpoint = "127.0.0.1:" + port
+	}
+	return ClusterNodeInput{
+		ID:         nodeID,
+		Name:       name,
+		Endpoint:   endpoint,
+		SSHPort:    envPositiveInt("CANAL_PLUS_NODE_SSH_PORT", 22),
+		SSHUser:    strings.TrimSpace(os.Getenv("CANAL_PLUS_NODE_SSH_USER")),
+		AuthMode:   string(NodeAuthPassword),
+		InstallDir: envString("CANAL_PLUS_NODE_INSTALL_DIR", "/opt/canal-plus"),
+		Version:    envString("CANAL_PLUS_NODE_VERSION", "v1.0.0"),
+		Zone:       envString("CANAL_PLUS_NODE_ZONE", "local"),
+		Role:       envString("CANAL_PLUS_NODE_ROLE", "scheduler+worker"),
+		Capacity:   envPositiveInt("CANAL_PLUS_NODE_CAPACITY", 1),
+	}
+}
+
+func envString(name string, fallback string) string {
+	value := strings.TrimSpace(os.Getenv(name))
+	if value == "" {
+		return fallback
+	}
+	return value
+}
+
+func envPositiveInt(name string, fallback int) int {
+	value := strings.TrimSpace(os.Getenv(name))
+	if value == "" {
+		return fallback
+	}
+	parsed, err := strconv.Atoi(value)
+	if err != nil || parsed <= 0 {
+		return fallback
+	}
+	return parsed
 }
 
 func normalizeLegacyDemoClusterNodes(nodes []ClusterNode, timestamp string) []ClusterNode {

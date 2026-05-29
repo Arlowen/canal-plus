@@ -5,12 +5,10 @@ import type {
   AlertRuleInput,
   ClusterSnapshot,
   ClusterNode,
-  ClusterNodeInput,
   Datasource,
   DatasourceInput,
   DatasourceTestResult,
   LoginResponse,
-  NodeConnectionTestResult,
   NodeOperationResult,
   NodeStatusChangeResult,
   OperationLog,
@@ -230,24 +228,6 @@ export const api = {
   },
   cluster() {
     return request<ClusterSnapshot>("/cluster");
-  },
-  registerNode(input: ClusterNodeInput) {
-    return request<ClusterNode>("/cluster/nodes", {
-      method: "POST",
-      body: JSON.stringify(input)
-    });
-  },
-  testNodeConnection(input: ClusterNodeInput) {
-    return request<NodeConnectionTestResult>("/cluster/nodes/test-connection", {
-      method: "POST",
-      body: JSON.stringify(input)
-    });
-  },
-  deployNode(input: ClusterNodeInput) {
-    return request<NodeOperationResult>("/cluster/nodes/deploy", {
-      method: "POST",
-      body: JSON.stringify(input)
-    });
   },
   upgradeNode(id: string) {
     return request<NodeOperationResult>(`/cluster/nodes/${id}/upgrade`, { method: "POST" });

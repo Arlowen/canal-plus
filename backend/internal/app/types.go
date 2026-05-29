@@ -234,13 +234,6 @@ type ClusterNodeInput struct {
 	MemoryPercent int    `json:"memoryPercent,omitempty"`
 }
 
-type NodeConnectionTestResult struct {
-	Success   bool   `json:"success"`
-	Message   string `json:"message"`
-	CheckedAt string `json:"checkedAt"`
-	LatencyMS int    `json:"latencyMs"`
-}
-
 type NodeOperationStep struct {
 	Key    string `json:"key"`
 	Label  string `json:"label"`

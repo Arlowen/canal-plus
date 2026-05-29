@@ -90,9 +90,9 @@ func TestOperatorCannotMutateConfigurationOrCluster(t *testing.T) {
 		t.Fatalf("operator create datasource status = %d body = %s", createDatasourceResponse.Code, createDatasourceResponse.Body.String())
 	}
 
-	registerNodeResponse := serveTestRequest(server, authRequest(http.MethodPost, "/api/cluster/nodes", operatorToken, `{"name":"blocked","endpoint":"10.0.0.1:4101"}`))
-	if registerNodeResponse.Code != http.StatusForbidden {
-		t.Fatalf("operator register node status = %d body = %s", registerNodeResponse.Code, registerNodeResponse.Body.String())
+	clusterMutationResponse := serveTestRequest(server, authRequest(http.MethodPost, "/api/cluster/nodes/node-local/offline", operatorToken, ""))
+	if clusterMutationResponse.Code != http.StatusForbidden {
+		t.Fatalf("operator cluster mutation status = %d body = %s", clusterMutationResponse.Code, clusterMutationResponse.Body.String())
 	}
 
 	alertResponse := serveTestRequest(server, authRequest(http.MethodPost, "/api/alert-rules", operatorToken, `{}`))
@@ -143,6 +143,22 @@ func TestRemovedLegacyRoutesAreNotFound(t *testing.T) {
 	}
 }
 
+func TestManualNodeCreationRoutesAreNotFound(t *testing.T) {
+	server := newTestServer(t)
+	adminToken := tokenFor("user-admin")
+
+	for _, path := range []string{
+		"/api/cluster/nodes",
+		"/api/cluster/nodes/test-connection",
+		"/api/cluster/nodes/deploy",
+	} {
+		response := serveTestRequest(server, authRequest(http.MethodPost, path, adminToken, `{}`))
+		if response.Code != http.StatusNotFound {
+			t.Fatalf("%s status = %d body = %s", path, response.Code, response.Body.String())
+		}
+	}
+}
+
 func TestAdminCannotOperateLocalControlNodeWithUnsafeActions(t *testing.T) {
 	server := newTestServer(t)
 	localNodeID := server.store.ClusterSnapshot().Nodes[0].ID
@@ -157,6 +173,32 @@ func TestAdminCannotOperateLocalControlNodeWithUnsafeActions(t *testing.T) {
 	uninstallResponse := serveTestRequest(server, authRequest(http.MethodPost, "/api/cluster/nodes/"+localNodeID+"/uninstall", adminToken, ""))
 	if uninstallResponse.Code != http.StatusBadRequest {
 		t.Fatalf("admin uninstall local node status = %d body = %s", uninstallResponse.Code, uninstallResponse.Body.String())
+	}
+}
+
+func TestRegisterLocalControlNodeAddsConfiguredNode(t *testing.T) {
+	store := newTestStore(t)
+	t.Setenv("CANAL_PLUS_NODE_ID", "node-worker-a")
+	t.Setenv("CANAL_PLUS_NODE_NAME", "worker-a")
+	t.Setenv("CANAL_PLUS_NODE_ENDPOINT", "10.0.0.2:4101")
+	t.Setenv("CANAL_PLUS_NODE_ROLE", "worker")
+	t.Setenv("CANAL_PLUS_NODE_ZONE", "zone-a")
+	t.Setenv("CANAL_PLUS_NODE_CAPACITY", "8")
+
+	node, err := registerLocalControlNode(store, "4101")
+	if err != nil {
+		t.Fatalf("registerLocalControlNode() error = %v", err)
+	}
+	if node.ID != "node-worker-a" || node.Name != "worker-a" || node.Endpoint != "10.0.0.2:4101" {
+		t.Fatalf("registered node mismatch: %#v", node)
+	}
+
+	snapshot := store.ClusterSnapshot()
+	if snapshot.TotalNodes != 2 {
+		t.Fatalf("expected configured local node to be added, got %d nodes", snapshot.TotalNodes)
+	}
+	if snapshot.LocalNodeID != "" {
+		t.Fatalf("store snapshot should not set response-only local node id, got %q", snapshot.LocalNodeID)
 	}
 }
 

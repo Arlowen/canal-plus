@@ -22,7 +22,6 @@ import {
   HardDrives,
   MagnifyingGlass,
   Plus,
-  RocketLaunch,
   ShieldCheck,
   SignOut,
   Trash,
@@ -49,14 +48,12 @@ import type {
   AlertRuleEvaluation,
   AlertRuleInput,
   ClusterNode,
-  ClusterNodeInput,
   ClusterSnapshot,
   Datasource,
   DatasourceAuthType,
   DatasourceInput,
   DatasourcePurpose,
   DatasourceTestResult,
-  NodeConnectionTestResult,
   NodeOperationResult,
   NodeStatusChangeResult,
   OperationLog,
@@ -139,21 +136,6 @@ const datasourceAuthOptions: Array<{ value: DatasourceAuthType; label: string }>
   { value: "password", label: "用户名 & 密码" },
   { value: "none", label: "无账号密码" }
 ];
-
-const emptyNodeForm: ClusterNodeInput = {
-  name: "",
-  endpoint: "",
-  sshPort: 22,
-  sshUser: "",
-  authMode: "password",
-  password: "",
-  privateKey: "",
-  installDir: "/opt/canal-plus",
-  version: "v1.0.0",
-  zone: "default",
-  role: "worker",
-  capacity: 4
-};
 
 const emptyNodes: ClusterNode[] = [];
 
@@ -1802,7 +1784,6 @@ function NodesPage({
   const [pageIndex, setPageIndex] = useState(1);
   const pageSize = 20;
   const [querying, setQuerying] = useState(false);
-  const [creatorOpen, setCreatorOpen] = useState(false);
   const [operationResult, setOperationResult] = useState<NodeOperationResult | null>(null);
   const [handoffReport, setHandoffReport] = useState<ClusterHandoffReport | null>(null);
   const [busyKey, setBusyKey] = useState<string | null>(null);
@@ -1957,21 +1938,7 @@ function NodesPage({
             </Button>
           </div>
 
-          <div className="flex flex-wrap gap-2 xl:justify-end">
-            {canManage ? (
-              <Button type="button" onClick={() => setCreatorOpen(true)} className="btn-primary">
-                <Plus size={16} />
-                新增节点
-              </Button>
-            ) : (
-              <div title="权限不足">
-                <Button type="button" disabled className="btn-secondary w-full">
-                  <Plus size={16} />
-                  新增节点
-                </Button>
-              </div>
-            )}
-          </div>
+          <div className="hidden xl:block" />
         </div>
 
         <div className="overflow-x-auto">
@@ -2002,11 +1969,6 @@ function NodesPage({
                       <div className="text-base font-semibold text-coal">
                         {nodes.length === 0 ? "暂无节点" : "无匹配"}
                       </div>
-                      {!canManage && nodes.length === 0 && (
-                        <div className="mt-5">
-                          <PermissionNotice compact description="仅管理员可新增。" />
-                        </div>
-                      )}
                     </div>
                   </td>
                 </tr>
@@ -2080,14 +2042,6 @@ function NodesPage({
           </div>
         </div>
       </section>
-
-      <NodeCreatorModal
-        open={creatorOpen}
-        canManage={canManage}
-        onClose={() => setCreatorOpen(false)}
-        onChanged={onChanged}
-        pushNotice={pushNotice}
-      />
 
       <Modal
         open={Boolean(handoffReport)}
@@ -2545,208 +2499,6 @@ function LoginScreen({ onLogin }: { onLogin: (username: string, password: string
         </form>
       </div>
     </div>
-  );
-}
-
-function NodeCreatorModal({
-  open,
-  canManage,
-  onClose,
-  onChanged,
-  pushNotice
-}: {
-  open: boolean;
-  canManage: boolean;
-  onClose: () => void;
-  onChanged: (quiet?: boolean) => Promise<void>;
-  pushNotice: (notice: Notice) => void;
-}) {
-  const [form, setForm] = useState<ClusterNodeInput>({ ...emptyNodeForm });
-  const [testing, setTesting] = useState(false);
-  const [deploying, setDeploying] = useState(false);
-  const [testResult, setTestResult] = useState<NodeConnectionTestResult | null>(null);
-  const [deployResult, setDeployResult] = useState<NodeOperationResult | null>(null);
-  const [lastSuccessfulTestSignature, setLastSuccessfulTestSignature] = useState<string | null>(null);
-  const currentFormSignature = nodeFormFingerprint(form);
-  const nodeFormError = validateNodeForm(form);
-  const testExpired = Boolean(lastSuccessfulTestSignature && lastSuccessfulTestSignature !== currentFormSignature);
-  const deployBlockedReason = nodeFormError
-    || (!testResult
-      ? "完成连接测试后再部署节点。"
-      : !testResult.success
-        ? "连接测试未通过，请修复后重新测试。"
-      : testExpired
-          ? "连接信息已变更，请重新测试后再部署。"
-          : null);
-  const showDeployGuard = Boolean(
-    testResult
-    || form.name
-    || form.endpoint
-    || form.sshUser
-    || form.password
-    || form.privateKey
-  );
-
-  useEffect(() => {
-    if (!open) return;
-    setForm({ ...emptyNodeForm });
-    setTesting(false);
-    setDeploying(false);
-    setTestResult(null);
-    setDeployResult(null);
-    setLastSuccessfulTestSignature(null);
-  }, [open]);
-
-  const runTest = async () => {
-    if (!canManage) {
-      pushNotice({ tone: "warning", message: "节点部署需要管理员权限" });
-      return;
-    }
-    if (nodeFormError) {
-      pushNotice({ tone: "warning", message: nodeFormError });
-      return;
-    }
-    setTesting(true);
-    try {
-      const result = await api.testNodeConnection(form);
-      setTestResult(result);
-      setLastSuccessfulTestSignature(result.success ? currentFormSignature : null);
-      pushNotice({ tone: result.success ? "success" : "warning", message: result.message });
-    } catch (requestError) {
-      setLastSuccessfulTestSignature(null);
-      pushNotice({ tone: "error", message: requestError instanceof Error ? requestError.message : "测试失败" });
-    } finally {
-      setTesting(false);
-    }
-  };
-
-  const deploy = async () => {
-    if (!canManage) {
-      pushNotice({ tone: "warning", message: "节点部署需要管理员权限" });
-      return;
-    }
-    if (deployBlockedReason) {
-      pushNotice({ tone: "warning", message: deployBlockedReason });
-      return;
-    }
-    setDeploying(true);
-    try {
-      const result = await api.deployNode(form);
-      setDeployResult(result);
-      pushNotice({ tone: result.success ? "success" : "warning", message: result.message });
-      if (result.success) {
-        await onChanged();
-      }
-    } catch (requestError) {
-      pushNotice({ tone: "error", message: requestError instanceof Error ? requestError.message : "部署失败" });
-    } finally {
-      setDeploying(false);
-    }
-  };
-
-  return (
-    <Modal
-      open={open}
-      title="添加节点"
-      onClose={onClose}
-    >
-      <div className="grid gap-4">
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="节点名称">
-            <TextInput className="input" value={form.name || ""} onChange={(event) => setForm({ ...form, name: event.target.value })} />
-          </Field>
-          <Field label="主机地址">
-            <TextInput className="input" value={form.endpoint || ""} onChange={(event) => setForm({ ...form, endpoint: event.target.value })} placeholder="例如：10.18.4.24" />
-          </Field>
-        </div>
-        <div className="grid gap-4 sm:grid-cols-[130px_minmax(0,1fr)]">
-          <Field label="SSH 端口">
-            <TextInput className="input" type="number" value={form.sshPort || 22} onChange={(event) => setForm({ ...form, sshPort: Number(event.target.value) })} />
-          </Field>
-          <Field label="SSH 用户">
-            <TextInput className="input" value={form.sshUser || ""} onChange={(event) => setForm({ ...form, sshUser: event.target.value })} />
-          </Field>
-        </div>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="认证方式">
-            <DropdownSelect
-              value={form.authMode || "password"}
-              ariaLabel="认证方式"
-              options={[
-                { value: "password", label: "密码" },
-                { value: "private_key", label: "私钥" }
-              ]}
-              onChange={(nextValue) => setForm({ ...form, authMode: nextValue as "password" | "private_key" })}
-            />
-          </Field>
-          <Field label="安装目录">
-            <TextInput className="input" value={form.installDir || ""} onChange={(event) => setForm({ ...form, installDir: event.target.value })} />
-          </Field>
-        </div>
-        {form.authMode === "private_key" ? (
-          <Field label="私钥">
-            <TextareaInput className="textarea" value={form.privateKey || ""} onChange={(event) => setForm({ ...form, privateKey: event.target.value })} />
-          </Field>
-        ) : (
-          <Field label="密码">
-            <TextInput className="input" type="password" value={form.password || ""} onChange={(event) => setForm({ ...form, password: event.target.value })} />
-          </Field>
-        )}
-        <div className="grid gap-4 sm:grid-cols-3">
-          <Field label="节点角色">
-            <DropdownSelect
-              value={form.role || "worker"}
-              ariaLabel="节点角色"
-              options={[
-                { value: "worker", label: "worker" },
-                { value: "scheduler+worker", label: "scheduler+worker" }
-              ]}
-              onChange={(nextValue) => setForm({ ...form, role: nextValue })}
-            />
-          </Field>
-          <Field label="容量">
-            <TextInput className="input" type="number" value={form.capacity || 4} onChange={(event) => setForm({ ...form, capacity: Number(event.target.value) })} />
-          </Field>
-          <Field label="版本">
-            <TextInput className="input" value={form.version || "v1.0.0"} onChange={(event) => setForm({ ...form, version: event.target.value })} />
-          </Field>
-        </div>
-
-        {testResult && (
-          <div className={cx("border-l-4 px-4 py-3 text-sm", testResult.success ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-amber-200 bg-amber-50 text-amber-700")}>
-            {testResult.message} · 延迟 {testResult.latencyMs}ms
-          </div>
-        )}
-
-        {showDeployGuard && deployBlockedReason && <NoticeBanner tone="warning">{deployBlockedReason}</NoticeBanner>}
-
-        {deployResult && (
-          <div className="grid gap-3">
-            {deployResult.steps.map((step) => (
-              <div key={step.key} className="border-l border-line bg-slate-50/60 px-4 py-3">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="font-medium text-coal">{step.label}</div>
-                  <Badge tone={step.status === "done" ? "green" : "red"}>{step.status === "done" ? "完成" : "失败"}</Badge>
-                </div>
-                <div className="mt-2 text-sm text-slate-500">{step.detail}</div>
-              </div>
-            ))}
-          </div>
-        )}
-
-        <div className="flex justify-end gap-3 border-t border-line pt-4">
-          <Button type="button" onClick={onClose} className="btn-secondary">关闭</Button>
-          <Button type="button" onClick={() => void runTest()} disabled={testing || Boolean(nodeFormError)} className="btn-secondary">
-            {testing ? <ArrowsClockwise size={16} /> : <ShieldCheck size={16} />}
-            {testing ? "测试中" : "测试连接"}
-          </Button>
-          <Button type="button" onClick={() => void deploy()} disabled={deploying || Boolean(deployBlockedReason)} className="btn-primary">
-            {deploying ? <ArrowsClockwise size={16} /> : <RocketLaunch size={16} />}
-            {deploying ? "部署中" : "部署节点"}
-          </Button>
-        </div>
-      </div>
-    </Modal>
   );
 }
 
@@ -3416,36 +3168,6 @@ function ShellSkeleton() {
   );
 }
 
-function nodeFormFingerprint(form: ClusterNodeInput) {
-  return JSON.stringify({
-    name: form.name?.trim() || "",
-    endpoint: form.endpoint?.trim() || "",
-    sshPort: Number(form.sshPort) || 0,
-    sshUser: form.sshUser?.trim() || "",
-    authMode: form.authMode,
-    password: form.password || "",
-    privateKey: form.privateKey || "",
-    installDir: form.installDir?.trim() || "",
-    version: form.version?.trim() || "",
-    zone: form.zone?.trim() || "",
-    role: form.role?.trim() || "",
-    capacity: Number(form.capacity) || 0
-  });
-}
-
-function validateNodeForm(form: ClusterNodeInput) {
-  if (!form.name?.trim()) return "请填写节点名称。";
-  if (!form.endpoint?.trim()) return "请填写主机地址。";
-  if (!form.sshUser?.trim()) return "请填写 SSH 用户。";
-  if (!Number.isFinite(Number(form.sshPort)) || Number(form.sshPort) <= 0) return "SSH 端口必须大于 0。";
-  if (!form.installDir?.trim()) return "请填写安装目录。";
-  if (!form.version?.trim()) return "请填写节点版本。";
-  if (!Number.isFinite(Number(form.capacity)) || Number(form.capacity) <= 0) return "容量必须大于 0。";
-  if (form.authMode === "private_key" && !form.privateKey?.trim()) return "请填写私钥后再测试连接。";
-  if (form.authMode !== "private_key" && !form.password) return "请填写密码后再测试连接。";
-  return null;
-}
-
 function clampPage(page: number, totalPages: number) {
   if (!Number.isFinite(page)) return 1;
   return Math.min(Math.max(1, Math.trunc(page)), Math.max(1, totalPages));
@@ -3634,7 +3356,6 @@ function nodeTone(status: ClusterNode["status"]) {
 }
 
 function nodeActionTitle(action: NodeOperationResult["action"]) {
-  if (action === "deploy") return "部署结果";
   if (action === "upgrade") return "升级结果";
   return "卸载结果";
 }
