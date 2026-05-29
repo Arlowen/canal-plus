@@ -10,7 +10,6 @@
     "lint": "eslint ."
   },
   "dependencies": {
-    "@fontsource-variable/inter": "^5.2.8",
     "@fontsource-variable/noto-sans-sc": "^5.2.10",
     "@phosphor-icons/react": "^2.1.7",
     "react": "^19.0.0",

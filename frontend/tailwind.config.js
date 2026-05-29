@@ -4,7 +4,7 @@ export default {
   theme: {
     extend: {
       fontFamily: {
-        sans: ["Inter Variable", "Noto Sans SC Variable", "ui-sans-serif", "system-ui"],
+        sans: ["HarmonyOS Sans SC", "MiSans", "PingFang SC", "Noto Sans SC Variable", "ui-sans-serif", "system-ui"],
         mono: ["JetBrains Mono", "SFMono-Regular", "ui-monospace", "monospace"]
       },
       colors: {

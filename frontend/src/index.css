@@ -5,8 +5,8 @@
 :root {
   color: #1d2430;
   background: #f5f8ff;
-  --font-display: "Inter Variable", "Noto Sans SC Variable", "PingFang SC", "Microsoft YaHei UI", sans-serif;
-  --font-body: "Inter Variable", "Noto Sans SC Variable", "PingFang SC", "Microsoft YaHei UI", sans-serif;
+  --font-display: "HarmonyOS Sans SC", "MiSans", "PingFang SC", "Noto Sans SC Variable", "Microsoft YaHei UI", sans-serif;
+  --font-body: "HarmonyOS Sans SC", "MiSans", "PingFang SC", "Noto Sans SC Variable", "Microsoft YaHei UI", sans-serif;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
