@@ -1195,7 +1195,7 @@ function DatasourcePage({
             </Button>
           </div>
 
-          <div className="flex flex-wrap gap-2 xl:justify-end">
+          <div className="flex flex-wrap gap-2 xl:min-w-[260px] xl:justify-end">
             {canManage ? (
               <Button type="button" onClick={onCreate} className="btn-primary">
                 <Plus size={16} />
@@ -1213,19 +1213,19 @@ function DatasourcePage({
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[595px] table-fixed border-collapse text-left">
+          <table className="w-full min-w-[775px] table-fixed border-collapse text-left">
             <colgroup>
               <col className="w-[250px]" />
               <col className="w-[170px]" />
               <col className="w-[95px]" />
-              <col className="w-[170px]" />
+              <col className="w-[260px]" />
             </colgroup>
             <thead className="bg-slate-50/90 text-xs font-semibold text-slate-500">
               <tr className="border-b border-line">
                 <th className="whitespace-nowrap px-5 py-3 md:px-6">数据源名称</th>
                 <th className="whitespace-nowrap px-4 py-3">Host</th>
                 <th className="whitespace-nowrap px-4 py-3">版本号</th>
-                <th className="whitespace-nowrap px-4 py-3">操作</th>
+                <th className="whitespace-nowrap px-5 py-3 text-right md:px-6">操作</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-line bg-white">
@@ -1270,8 +1270,8 @@ function DatasourcePage({
                     </div>
                   </td>
                   <td className="px-4 py-4 align-middle font-mono text-sm text-slate-600">{item.version?.trim() || "-"}</td>
-                  <td className="px-4 py-4 align-middle">
-                    <div className="flex items-center justify-start gap-2">
+                  <td className="px-5 py-4 align-middle md:px-6">
+                    <div className="flex items-center justify-end gap-2">
                       {canTest && (
                         <Button
                           type="button"
