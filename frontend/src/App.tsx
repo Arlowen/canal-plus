@@ -20,7 +20,6 @@ import {
   DotsThree,
   GearSix,
   HardDrives,
-  Info,
   MagnifyingGlass,
   Plus,
   RocketLaunch,
@@ -1048,7 +1047,7 @@ function DatasourcePage({
             </colgroup>
             <thead className="bg-slate-50/90 text-xs font-semibold text-slate-500">
               <tr className="border-b border-line">
-                <th className="whitespace-nowrap px-5 py-3 md:px-6">数据源ID</th>
+                <th className="whitespace-nowrap px-5 py-3 md:px-6">数据源名称</th>
                 <th className="whitespace-nowrap px-4 py-3">Host</th>
                 <th className="whitespace-nowrap px-4 py-3">版本号</th>
                 <th className="whitespace-nowrap px-3 py-3">创建时间</th>
@@ -1079,15 +1078,12 @@ function DatasourcePage({
                       <div className="min-w-0">
                         <div className="flex min-w-0 items-center gap-2">
                           <span className="truncate text-sm font-semibold text-coal">{item.name || item.id}</span>
-                          <Info className="shrink-0 text-slate-400" size={14} />
                         </div>
-                        <div className="mt-1 truncate text-xs text-slate-500">{datasourceDescription(item)}</div>
                       </div>
                     </div>
                   </td>
                   <td className="px-4 py-4 align-top">
                     <div className="flex min-w-0 items-center gap-2">
-                      <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-emerald-200 bg-emerald-50 text-xs font-semibold text-emerald-700">内</span>
                       <span title={`${item.host}:${item.port}`} className="min-w-0 truncate font-mono text-sm text-coal">{item.host}:{item.port}</span>
                     </div>
                   </td>
@@ -1788,8 +1784,8 @@ function DatasourceTestModal({
   return (
     <Modal open={open} title="测试连接" onClose={onClose} size="md">
       <div className="grid gap-5">
-        <div className="grid gap-3 sm:grid-cols-[88px_minmax(0,1fr)] sm:items-center">
-          <div className="text-sm font-medium text-coal sm:text-right">节点</div>
+        <div className="grid gap-3">
+          <div className="text-sm font-medium text-coal">节点</div>
           <DropdownSelect
             value={selectedValue}
             ariaLabel="节点"
@@ -1799,7 +1795,7 @@ function DatasourceTestModal({
           />
         </div>
 
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:pl-[100px]">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
           <Button type="button" onClick={onTest} disabled={testDisabled} className="btn-secondary">
             {testing ? <ArrowsClockwise size={16} className="animate-spin" /> : <ShieldCheck size={16} />}
             {testing ? "测试中" : "测试连接"}
@@ -3422,10 +3418,6 @@ function validateNodeForm(form: ClusterNodeInput) {
 function clampPage(page: number, totalPages: number) {
   if (!Number.isFinite(page)) return 1;
   return Math.min(Math.max(1, Math.trunc(page)), Math.max(1, totalPages));
-}
-
-function datasourceDescription(item: Datasource) {
-  return item.remark?.trim() || `${item.host}:${item.port}` || "No description";
 }
 
 function datasourceGeneratedName(form: DatasourceFormState) {
