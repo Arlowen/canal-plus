@@ -816,6 +816,7 @@ func (s *Store) getDatasourceLocked(id string) (Datasource, bool) {
 
 func (s *Store) ensureClusterLocked() {
 	timestamp := now()
+	s.data.Nodes = normalizeLegacyDemoClusterNodes(s.data.Nodes, timestamp)
 	if len(s.data.Nodes) == 0 {
 		s.data.Nodes = defaultClusterNodes(timestamp)
 	}

@@ -44,14 +44,18 @@ func newTestStore(t *testing.T) *Store {
 	return store
 }
 
-func TestSeedDataExcludesDemoDatasources(t *testing.T) {
+func TestSeedDataExcludesDemoData(t *testing.T) {
 	store := newTestStore(t)
 	snapshot := store.Snapshot()
 	if len(snapshot.Datasources) != 0 {
 		t.Fatal("seed data should not include demo datasources")
 	}
-	if len(snapshot.Nodes) == 0 {
-		t.Fatal("seed data should include nodes")
+	if len(snapshot.Nodes) != 1 {
+		t.Fatalf("seed data should include one local node, got %d", len(snapshot.Nodes))
+	}
+	node := snapshot.Nodes[0]
+	if strings.HasPrefix(node.Name, "shanghai-") || strings.HasPrefix(node.Endpoint, "10.18.4.") {
+		t.Fatalf("seed data should not include demo nodes, got %#v", node)
 	}
 }
 

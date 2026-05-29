@@ -145,15 +145,16 @@ func TestRemovedLegacyRoutesAreNotFound(t *testing.T) {
 
 func TestAdminCannotOperateLocalControlNodeWithUnsafeActions(t *testing.T) {
 	server := newTestServer(t)
-	server.localNodeID = "node-shanghai-a"
+	localNodeID := server.store.ClusterSnapshot().Nodes[0].ID
+	server.localNodeID = localNodeID
 	adminToken := tokenFor("user-admin")
 
-	offlineResponse := serveTestRequest(server, authRequest(http.MethodPost, "/api/cluster/nodes/node-shanghai-a/offline", adminToken, ""))
+	offlineResponse := serveTestRequest(server, authRequest(http.MethodPost, "/api/cluster/nodes/"+localNodeID+"/offline", adminToken, ""))
 	if offlineResponse.Code != http.StatusBadRequest {
 		t.Fatalf("admin offline local node status = %d body = %s", offlineResponse.Code, offlineResponse.Body.String())
 	}
 
-	uninstallResponse := serveTestRequest(server, authRequest(http.MethodPost, "/api/cluster/nodes/node-shanghai-a/uninstall", adminToken, ""))
+	uninstallResponse := serveTestRequest(server, authRequest(http.MethodPost, "/api/cluster/nodes/"+localNodeID+"/uninstall", adminToken, ""))
 	if uninstallResponse.Code != http.StatusBadRequest {
 		t.Fatalf("admin uninstall local node status = %d body = %s", uninstallResponse.Code, uninstallResponse.Body.String())
 	}
