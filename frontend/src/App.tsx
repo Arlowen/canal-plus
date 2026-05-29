@@ -431,25 +431,25 @@ function createBrandTileParticles(width: number, height: number) {
 
   const samples: ParticlePoint[] = [];
   const pixels = context.getImageData(0, 0, width, height).data;
-  const step = Math.max(1, Math.floor(Math.min(width, height) / 40));
+  const step = Math.max(2, Math.floor(Math.min(width, height) / 18));
 
   for (let y = 0; y < height; y += step) {
     for (let x = 0; x < width; x += step) {
       const alpha = pixels[(y * width + x) * 4 + 3];
       if (alpha < 32) continue;
       const seed = particleNoise(x * 0.51, y * 0.47);
-      if (seed < 0.02) continue;
+      if (seed < 0.08) continue;
       samples.push({
         x: x + (seed - 0.5) * 0.9,
         y: y + (0.5 - seed) * 0.9,
-        size: seed > 0.78 ? 1.58 : seed > 0.42 ? 1.32 : 1.08,
-        opacity: seed > 0.68 ? 1 : 0.86,
+        size: seed > 0.78 ? 1.08 : seed > 0.42 ? 0.96 : 0.86,
+        opacity: 1,
         seed
       });
     }
   }
 
-  const limit = 1800;
+  const limit = 520;
   const stride = Math.max(1, Math.ceil(samples.length / limit));
   return samples.filter((_, index) => index % stride === 0).slice(0, limit);
 }
@@ -549,14 +549,8 @@ function BrandParticleTile({ className }: { className?: string }) {
         particle.currentX += particle.velocityX * delta;
         particle.currentY += particle.velocityY * delta;
 
-        context.globalAlpha = particle.opacity * 0.16;
-        context.fillStyle = "#bfdbfe";
-        context.beginPath();
-        context.arc(particle.currentX, particle.currentY, particle.size * 1.85, 0, Math.PI * 2);
-        context.fill();
-
         context.globalAlpha = particle.opacity;
-        context.fillStyle = particle.seed > 0.62 ? "#1d4ed8" : "#2563eb";
+        context.fillStyle = particle.seed > 0.62 ? "#1e40af" : "#2563eb";
         context.beginPath();
         context.arc(particle.currentX, particle.currentY, particle.size, 0, Math.PI * 2);
         context.fill();
