@@ -55,7 +55,6 @@ import type {
   DatasourceAuthType,
   DatasourceInput,
   DatasourcePurpose,
-  DatasourceStatus,
   DatasourceTestResult,
   NodeConnectionTestResult,
   NodeOperationResult,
@@ -838,9 +837,9 @@ function DatasourcePage({
   pushNotice: (notice: Notice) => void;
 }) {
   const [draftTypeFilter, setDraftTypeFilter] = useState<"all" | "mysql">("all");
-  const [draftStatusFilter, setDraftStatusFilter] = useState<"all" | DatasourceStatus>("all");
+  const [draftNameQuery, setDraftNameQuery] = useState("");
   const [appliedTypeFilter, setAppliedTypeFilter] = useState<"all" | "mysql">("all");
-  const [appliedStatusFilter, setAppliedStatusFilter] = useState<"all" | DatasourceStatus>("all");
+  const [appliedNameQuery, setAppliedNameQuery] = useState("");
   const [pageIndex, setPageIndex] = useState(1);
   const pageSize = 20;
   const [jumpPage, setJumpPage] = useState("1");
@@ -859,9 +858,10 @@ function DatasourcePage({
 
   const filteredDatasources = useMemo(() => datasources.filter((item) => {
     const matchesType = appliedTypeFilter === "all" || item.type === appliedTypeFilter;
-    const matchesStatus = appliedStatusFilter === "all" || item.connectionStatus === appliedStatusFilter;
-    return matchesType && matchesStatus;
-  }), [appliedStatusFilter, appliedTypeFilter, datasources]);
+    const query = appliedNameQuery.trim().toLowerCase();
+    const matchesName = query === "" || item.name.toLowerCase().includes(query);
+    return matchesType && matchesName;
+  }), [appliedNameQuery, appliedTypeFilter, datasources]);
 
   const totalItems = filteredDatasources.length;
   const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
@@ -891,7 +891,7 @@ function DatasourcePage({
   const runQuery = async () => {
     setQuerying(true);
     setAppliedTypeFilter(draftTypeFilter);
-    setAppliedStatusFilter(draftStatusFilter);
+    setAppliedNameQuery(draftNameQuery);
     setPageIndex(1);
     try {
       await onChanged(true);
@@ -983,7 +983,7 @@ function DatasourcePage({
     <div className="space-y-5">
       <section className="surface min-w-0 overflow-hidden">
         <div className="flex flex-col gap-3 border-b border-line px-5 py-4 md:px-6 xl:flex-row xl:items-end xl:justify-between">
-          <div className="grid gap-3 sm:grid-cols-[170px_170px_auto] sm:items-end">
+          <div className="grid gap-3 sm:grid-cols-[170px_240px_auto] sm:items-end">
             <label className="block">
               <span className="label mb-2 block">类型</span>
               <DropdownSelect
@@ -998,19 +998,19 @@ function DatasourcePage({
               />
             </label>
             <label className="block">
-              <span className="label mb-2 block">状态</span>
-              <DropdownSelect
-                value={draftStatusFilter}
+              <span className="label mb-2 block">名称</span>
+              <TextInput
+                className="input"
+                value={draftNameQuery}
                 disabled={tableBusy}
-                ariaLabel="状态"
-                options={[
-                  { value: "all", label: "全部" },
-                  { value: "untested", label: "未测" },
-                  { value: "available", label: "可用" },
-                  { value: "failed", label: "失败" },
-                  { value: "stale", label: "过期" }
-                ]}
-                onChange={(nextValue) => setDraftStatusFilter(nextValue as "all" | DatasourceStatus)}
+                placeholder="名称"
+                onChange={(event) => setDraftNameQuery(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    void runQuery();
+                  }
+                }}
               />
             </label>
             <Button type="button" onClick={() => void runQuery()} disabled={tableBusy} className="btn-primary">
