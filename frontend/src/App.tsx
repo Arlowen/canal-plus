@@ -1051,7 +1051,7 @@ function DatasourcePage({
                 <th className="whitespace-nowrap px-4 py-3">Host</th>
                 <th className="whitespace-nowrap px-4 py-3">版本号</th>
                 <th className="whitespace-nowrap px-3 py-3">创建时间</th>
-                <th className="whitespace-nowrap px-4 py-3 text-right">操作</th>
+                <th className="whitespace-nowrap px-4 py-3">操作</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-line bg-white">
@@ -1090,7 +1090,7 @@ function DatasourcePage({
                   <td className="px-4 py-4 align-top font-mono text-sm text-slate-600">{item.version?.trim() || "-"}</td>
                   <td className="whitespace-nowrap px-3 py-4 align-top font-mono text-[13px] text-slate-600">{formatDateTime(item.createdAt)}</td>
                   <td className="px-4 py-4 align-top">
-                    <div className="flex items-center justify-end gap-2">
+                    <div className="flex items-center justify-start gap-2">
                       {canTest && (
                         <Button
                           type="button"
