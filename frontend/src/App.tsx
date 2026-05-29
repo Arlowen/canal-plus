@@ -858,12 +858,12 @@ function App() {
     <div className="min-h-[100dvh] bg-mist text-ink">
       <div className="page-shell">
         <div className="surface grid min-h-[calc(100dvh-1.5rem)] overflow-hidden lg:grid-cols-[260px_minmax(0,1fr)]">
-          <aside className="flex h-fit flex-col border-b border-line/80 p-3 lg:sticky lg:top-0 lg:min-h-[calc(100dvh-1.5rem)] lg:border-b-0 lg:border-r">
-            <div className="-mx-3 flex h-[88px] items-center justify-center border-b border-line/80 px-5">
+          <aside className="flex h-fit flex-col border-b border-line/80 pb-3 lg:sticky lg:top-0 lg:min-h-[calc(100dvh-1.5rem)] lg:border-b-0 lg:border-r">
+            <div className="flex h-[81px] items-center justify-center border-b border-line/80 px-5">
               <BrandParticleTile />
             </div>
 
-            <nav className="mt-4 grid grid-cols-3 gap-2 lg:grid-cols-1">
+            <nav className="mx-3 mt-4 grid grid-cols-3 gap-2 lg:grid-cols-1">
               {navItems.map((item) => {
                 const Icon = item.icon;
                 return (
@@ -3353,7 +3353,7 @@ function UserProfileMenu({
   ];
 
   return (
-    <div ref={rootRef} className="relative mt-4 lg:mt-auto lg:pt-4">
+    <div ref={rootRef} className="relative mx-3 mt-4 lg:mt-auto lg:pt-4">
       {open && (
         <div
           role="menu"
