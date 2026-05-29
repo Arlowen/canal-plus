@@ -708,10 +708,6 @@ function App() {
                   )}
                 </div>
                 <div className="flex flex-wrap gap-2 xl:justify-end">
-                  <Button onClick={() => void refresh()} className="btn-secondary">
-                    <ArrowsClockwise size={16} />
-                    刷新
-                  </Button>
                   {page === "nodes" && canManage && (
                     <Button onClick={openNodeCreator} className="btn-primary">
                       <Plus size={16} />
@@ -1924,16 +1920,8 @@ function NodesPage({
 
   return (
     <div className="space-y-5">
-        <section className="surface min-w-0 p-6">
-          <SectionHeader title="节点池" description="部署、容量与心跳" />
-
-        <div className="mt-5 grid gap-4 md:grid-cols-[1fr_1fr_0.7fr]">
-          <MetricMini label="节点总数" value={`${cluster?.totalNodes ?? 0}`} />
-          <MetricMini label="在线节点" value={`${cluster?.onlineNodes ?? 0}`} />
-          <MetricMini label="离线" value={`${nodes.filter((node) => node.status === "offline").length}`} />
-        </div>
-
-        <div className="mt-5 grid gap-3 rounded-lg border border-line bg-slate-50/70 p-3 lg:grid-cols-[minmax(0,1fr)_220px]">
+      <section className="surface min-w-0 p-6">
+        <div className="grid gap-3 rounded-lg border border-line bg-slate-50/70 p-3 lg:grid-cols-[minmax(0,1fr)_220px]">
           <label className="block">
             <span className="label mb-2 block">搜索</span>
             <span className="relative block">
@@ -1958,10 +1946,6 @@ function NodesPage({
               onChange={(nextValue) => setStatusFilter(nextValue as "all" | ClusterNode["status"])}
             />
           </Field>
-        </div>
-
-        <div className="mt-3 text-sm text-slate-500">
-          {`全部 ${nodes.length} · 在线 ${nodes.filter((node) => node.status === "online").length} · 离线 ${nodes.filter((node) => node.status === "offline").length}`}
         </div>
 
         {nodes.length === 0 ? (
@@ -2737,15 +2721,6 @@ function DetailPageHeader({
         <h2 className="mt-2 text-2xl font-semibold tracking-tight text-coal">{title}</h2>
       </div>
       {actions}
-    </div>
-  );
-}
-
-function MetricMini({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="border-t border-line px-0 py-4">
-      <div className="label">{label}</div>
-      <div className="mt-3 font-mono text-2xl font-semibold tracking-tight text-coal">{value}</div>
     </div>
   );
 }
@@ -3547,7 +3522,7 @@ function pageDescription(page: Page) {
   if (page === "datasources") return "";
   if (page === "datasourceCreate") return "";
   if (page === "datasourceEdit") return "";
-  if (page === "nodes") return "运维区";
+  if (page === "nodes") return "";
   if (page === "settings") return "告警";
   return "";
 }
