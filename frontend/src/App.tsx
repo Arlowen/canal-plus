@@ -598,7 +598,6 @@ function BrandParticleTile({ className }: { className?: string }) {
       ref={canvasRef}
       role="img"
       aria-label="Canal Plus"
-      tabIndex={0}
       onPointerEnter={(event) => {
         activeRef.current = true;
         updatePointer(event.clientX, event.clientY);
@@ -625,16 +624,8 @@ function BrandParticleTile({ className }: { className?: string }) {
         activeRef.current = false;
         requestParticleFrame();
       }}
-      onFocus={() => {
-        activeRef.current = true;
-        requestParticleFrame();
-      }}
-      onBlur={() => {
-        activeRef.current = false;
-        requestParticleFrame();
-      }}
       className={cx(
-        "block h-20 w-60 shrink-0 bg-transparent outline-none transition duration-200 hover:-translate-y-px focus:ring-4 focus:ring-blue-100",
+        "block h-20 w-60 shrink-0 bg-transparent transition duration-200 hover:-translate-y-px",
         className
       )}
     />
