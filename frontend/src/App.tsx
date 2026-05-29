@@ -695,7 +695,7 @@ function App() {
           </aside>
 
           <main className="min-w-0">
-            {page !== "datasourceCreate" && page !== "datasourceEdit" && (
+            {page !== "datasources" && page !== "datasourceCreate" && page !== "datasourceEdit" && (
               <div className="surface mb-4 flex flex-col gap-5 p-5 md:p-6 xl:flex-row xl:items-start xl:justify-between">
                 <div>
                   <h1 className="text-3xl font-semibold tracking-tight text-coal md:text-4xl">
@@ -708,12 +708,10 @@ function App() {
                   )}
                 </div>
                 <div className="flex flex-wrap gap-2 xl:justify-end">
-                  {page !== "datasources" && (
-                    <Button onClick={() => void refresh()} className="btn-secondary">
-                      <ArrowsClockwise size={16} />
-                      刷新
-                    </Button>
-                  )}
+                  <Button onClick={() => void refresh()} className="btn-secondary">
+                    <ArrowsClockwise size={16} />
+                    刷新
+                  </Button>
                   {page === "nodes" && canManage && (
                     <Button onClick={openNodeCreator} className="btn-primary">
                       <Plus size={16} />
@@ -842,7 +840,6 @@ function DatasourcePage({
   const [appliedNameQuery, setAppliedNameQuery] = useState("");
   const [pageIndex, setPageIndex] = useState(1);
   const pageSize = 20;
-  const [jumpPage, setJumpPage] = useState("1");
   const [querying, setQuerying] = useState(false);
   const [testingSavedId, setTestingSavedId] = useState<string | null>(null);
   const [confirmation, setConfirmation] = useState<ConfirmationDialogState | null>(null);
@@ -875,10 +872,6 @@ function DatasourcePage({
   }, [totalPages]);
 
   useEffect(() => {
-    setJumpPage(String(currentPage));
-  }, [currentPage]);
-
-  useEffect(() => {
     if (!testDialog) return;
     if (nodesLoading) return;
     const selectedNodeExists = availableNodes.some((node) => node.id === testDialog.selectedNodeId);
@@ -902,15 +895,6 @@ function DatasourcePage({
 
   const goToPage = (nextPage: number) => {
     setPageIndex(clampPage(nextPage, totalPages));
-  };
-
-  const commitJumpPage = () => {
-    const parsed = Number.parseInt(jumpPage, 10);
-    if (!Number.isFinite(parsed)) {
-      setJumpPage(String(currentPage));
-      return;
-    }
-    goToPage(parsed);
   };
 
   const openTestDialog = (item: Datasource) => {
@@ -980,8 +964,12 @@ function DatasourcePage({
   };
 
   return (
-    <div className="space-y-5">
+    <>
       <section className="surface min-w-0 overflow-hidden">
+        <div className="border-b border-line px-5 py-5 md:px-6">
+          <h1 className="text-3xl font-semibold tracking-tight text-coal md:text-4xl">数据源</h1>
+        </div>
+
         <div className="flex flex-col gap-3 border-b border-line px-5 py-4 md:px-6 xl:flex-row xl:items-end xl:justify-between">
           <div className="grid gap-3 sm:grid-cols-[170px_240px_auto] sm:items-end">
             <label className="block">
@@ -1136,21 +1124,6 @@ function DatasourcePage({
               下一页
               <ArrowRight size={14} />
             </Button>
-            <span className="flex items-center gap-2">
-              <TextInput
-                className="input h-9 w-16 px-2 py-1.5 text-center font-mono text-sm"
-                value={jumpPage}
-                inputMode="numeric"
-                onChange={(event) => setJumpPage(event.target.value.replace(/[^\d]/g, ""))}
-                onBlur={commitJumpPage}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") {
-                    event.currentTarget.blur();
-                  }
-                }}
-              />
-              页
-            </span>
           </div>
         </div>
       </section>
@@ -1184,7 +1157,7 @@ function DatasourcePage({
           action?.();
         }}
       />
-    </div>
+    </>
   );
 }
 
