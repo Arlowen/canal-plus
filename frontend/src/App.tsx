@@ -2916,7 +2916,7 @@ function Modal({
   children,
   onClose,
   size = "xl",
-  closeOnOverlay = true
+  closeOnOverlay = false
 }: {
   open: boolean;
   title: string;
