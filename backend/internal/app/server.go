@@ -100,7 +100,17 @@ func envDurationSeconds(name string, fallback time.Duration) time.Duration {
 }
 
 func registerLocalControlNode(store *Store, port string) (ClusterNode, error) {
-	return store.RegisterLocalNode(localClusterNodeInput(port))
+	input := localClusterNodeInput(port)
+	if strings.TrimSpace(os.Getenv("CANAL_PLUS_NODE_NAME")) == "" {
+		snapshot := store.ClusterSnapshot()
+		for _, node := range snapshot.Nodes {
+			if node.ID == input.ID && strings.TrimSpace(node.Name) != "" {
+				input.Name = node.Name
+				break
+			}
+		}
+	}
+	return store.RegisterLocalNode(input)
 }
 
 func (s *Server) Port() string {
@@ -641,6 +651,22 @@ func (s *Server) handleCluster(response http.ResponseWriter, request *http.Reque
 		writeJSON(response, http.StatusOK, s.clusterResponse())
 	case len(parts) == 2 && parts[1] == "nodes" && request.Method == http.MethodGet:
 		writeJSON(response, http.StatusOK, s.clusterResponse().Nodes)
+	case len(parts) == 3 && parts[1] == "nodes" && request.Method == http.MethodPut:
+		var input ClusterNodeNameInput
+		if err := decodeJSON(request, &input); err != nil {
+			writeError(response, http.StatusBadRequest, "请求体格式错误")
+			return
+		}
+		node, ok, err := s.store.UpdateNodeName(parts[2], input)
+		if err != nil {
+			writeError(response, http.StatusBadRequest, err.Error())
+			return
+		}
+		if !ok {
+			writeError(response, http.StatusNotFound, "节点不存在")
+			return
+		}
+		writeJSON(response, http.StatusOK, node)
 	case len(parts) == 4 && parts[1] == "nodes" && parts[3] == "upgrade" && request.Method == http.MethodPost:
 		result, ok, err := s.store.UpgradeNode(parts[2])
 		if err != nil {

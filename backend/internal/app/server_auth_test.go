@@ -202,6 +202,25 @@ func TestRegisterLocalControlNodeAddsConfiguredNode(t *testing.T) {
 	}
 }
 
+func TestRegisterLocalControlNodePreservesStoredNameWhenNameEnvMissing(t *testing.T) {
+	store := newTestStore(t)
+	snapshot := store.ClusterSnapshot()
+	existingID := snapshot.Nodes[0].ID
+	t.Setenv("CANAL_PLUS_NODE_ID", existingID)
+	t.Setenv("CANAL_PLUS_NODE_NAME", "")
+
+	if _, _, err := store.UpdateNodeName(existingID, ClusterNodeNameInput{Name: "custom-local"}); err != nil {
+		t.Fatalf("update node name: %v", err)
+	}
+	node, err := registerLocalControlNode(store, "4100")
+	if err != nil {
+		t.Fatalf("registerLocalControlNode() error = %v", err)
+	}
+	if node.Name != "custom-local" {
+		t.Fatalf("node name = %q, want custom-local", node.Name)
+	}
+}
+
 func TestAdminCanMutateConfiguration(t *testing.T) {
 	server := newTestServer(t)
 	adminToken := tokenFor("user-admin")

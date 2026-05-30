@@ -235,6 +235,12 @@ export const api = {
       body: JSON.stringify({ masterNodeCount })
     });
   },
+  updateNodeName(id: string, name: string) {
+    return request<ClusterNode>(`/cluster/nodes/${id}`, {
+      method: "PUT",
+      body: JSON.stringify({ name })
+    });
+  },
   upgradeNode(id: string) {
     return request<NodeOperationResult>(`/cluster/nodes/${id}/upgrade`, { method: "POST" });
   },

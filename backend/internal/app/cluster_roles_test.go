@@ -114,6 +114,29 @@ func TestConfiguredMasterCountCannotExceedNodeCount(t *testing.T) {
 	}
 }
 
+func TestUpdateNodeName(t *testing.T) {
+	store := newTestStore(t)
+
+	before := store.ClusterSnapshot()
+	node, ok, err := store.UpdateNodeName(before.Nodes[0].ID, ClusterNodeNameInput{Name: "renamed-node"})
+	if err != nil {
+		t.Fatalf("update node name: %v", err)
+	}
+	if !ok {
+		t.Fatal("expected node to exist")
+	}
+	if node.Name != "renamed-node" {
+		t.Fatalf("node name = %q, want renamed-node", node.Name)
+	}
+	after := store.ClusterSnapshot()
+	if after.Nodes[0].Name != "renamed-node" {
+		t.Fatalf("snapshot node name = %q, want renamed-node", after.Nodes[0].Name)
+	}
+	if after.Nodes[0].Role != NodeRoleMaster {
+		t.Fatalf("node role = %q, want %q", after.Nodes[0].Role, NodeRoleMaster)
+	}
+}
+
 func registerTestNode(t *testing.T, store *Store, id string, name string, endpoint string) {
 	t.Helper()
 	_, _, err := store.registerNode(ClusterNodeInput{

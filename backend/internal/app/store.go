@@ -336,6 +336,30 @@ func (s *Store) RegisterLocalNode(input ClusterNodeInput) (ClusterNode, error) {
 	return node, err
 }
 
+func (s *Store) UpdateNodeName(id string, input ClusterNodeNameInput) (ClusterNode, bool, error) {
+	name := strings.TrimSpace(input.Name)
+	if err := validateClusterNodeName(name); err != nil {
+		return ClusterNode{}, false, err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.ensureClusterLocked()
+	node := s.getNodeLocked(id)
+	if node == nil {
+		return ClusterNode{}, false, nil
+	}
+	if node.Name == name {
+		return cloneJSON(*node), true, nil
+	}
+	node.Name = name
+	node.UpdatedAt = now()
+	s.logLocked("admin", "node_update_name", "cluster_node", id, "Node name updated: "+name)
+	if err := s.saveLocked(); err != nil {
+		return ClusterNode{}, true, err
+	}
+	return cloneJSON(*node), true, nil
+}
+
 func (s *Store) registerNode(input ClusterNodeInput, actor string, action string) (ClusterNode, bool, error) {
 	if err := validateClusterNodeInput(input); err != nil {
 		return ClusterNode{}, false, err
@@ -939,14 +963,25 @@ func (s *Store) clusterSnapshotLocked() ClusterSnapshot {
 }
 
 func validateClusterNodeInput(input ClusterNodeInput) error {
-	if strings.TrimSpace(input.Name) == "" {
-		return errors.New("节点名称必填")
+	if err := validateClusterNodeName(input.Name); err != nil {
+		return err
 	}
 	if strings.TrimSpace(input.Endpoint) == "" {
 		return errors.New("节点 endpoint 必填")
 	}
 	if input.Capacity < 0 {
 		return errors.New("节点容量不能为负数")
+	}
+	return nil
+}
+
+func validateClusterNodeName(name string) error {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return errors.New("节点名称必填")
+	}
+	if len([]rune(name)) > 50 {
+		return errors.New("节点名称最多 50 字符")
 	}
 	return nil
 }

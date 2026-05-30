@@ -239,6 +239,10 @@ type ClusterNodeInput struct {
 	MemoryPercent int    `json:"memoryPercent,omitempty"`
 }
 
+type ClusterNodeNameInput struct {
+	Name string `json:"name"`
+}
+
 type NodeOperationStep struct {
 	Key    string `json:"key"`
 	Label  string `json:"label"`

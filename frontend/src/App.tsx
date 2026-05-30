@@ -2006,6 +2006,9 @@ function NodesPage({
   const [masterCountDialogOpen, setMasterCountDialogOpen] = useState(false);
   const [masterCountDraft, setMasterCountDraft] = useState("");
   const [masterCountSaving, setMasterCountSaving] = useState(false);
+  const [editingNodeId, setEditingNodeId] = useState<string | null>(null);
+  const [editingNodeName, setEditingNodeName] = useState("");
+  const [savingNodeNameId, setSavingNodeNameId] = useState<string | null>(null);
   const maxMasterNodeCount = nodes.length;
   const currentMasterNodeCount = nodes.filter((node) => effectiveNodeRole(node, nodes) === "master").length;
   const rawMasterNodeCount = cluster?.masterNodeCount ?? (currentMasterNodeCount || 1);
@@ -2017,7 +2020,7 @@ function NodesPage({
   const masterCountError = masterCountDialogOpen && (!Number.isInteger(parsedMasterCount) || parsedMasterCount < 1 || parsedMasterCount > maxMasterNodeCount)
     ? `1-${maxMasterNodeCount}`
     : "";
-  const tableBusy = querying || masterCountSaving;
+  const tableBusy = querying || masterCountSaving || Boolean(savingNodeNameId);
 
   const filteredNodes = useMemo(() => nodes.filter((node) => {
     const matchesStatus = appliedStatusFilter === "all" || node.status === appliedStatusFilter;
@@ -2088,6 +2091,51 @@ function NodesPage({
     }
   };
 
+  const startEditNodeName = (node: ClusterNode) => {
+    if (!canManage) {
+      pushNotice({ tone: "warning", message: "需要管理员权限" });
+      return;
+    }
+    setEditingNodeId(node.id);
+    setEditingNodeName(node.name || node.id);
+  };
+
+  const cancelEditNodeName = () => {
+    setEditingNodeId(null);
+    setEditingNodeName("");
+  };
+
+  const saveNodeName = async (node: ClusterNode) => {
+    if (!canManage) {
+      pushNotice({ tone: "warning", message: "需要管理员权限" });
+      return;
+    }
+    const nextName = editingNodeName.trim();
+    if (!nextName) {
+      pushNotice({ tone: "warning", message: "名称必填" });
+      return;
+    }
+    if (Array.from(nextName).length > 50) {
+      pushNotice({ tone: "warning", message: "最多 50 字符" });
+      return;
+    }
+    if (nextName === node.name) {
+      cancelEditNodeName();
+      return;
+    }
+    setSavingNodeNameId(node.id);
+    try {
+      await api.updateNodeName(node.id, nextName);
+      pushNotice({ tone: "success", message: "已保存" });
+      cancelEditNodeName();
+      await onChanged();
+    } catch (requestError) {
+      pushNotice({ tone: "error", message: requestError instanceof Error ? requestError.message : "保存失败" });
+    } finally {
+      setSavingNodeNameId(null);
+    }
+  };
+
   return (
     <>
       <section className="min-w-0">
@@ -2146,14 +2194,14 @@ function NodesPage({
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[845px] table-fixed border-collapse text-left">
+          <table className="w-full min-w-[835px] table-fixed border-collapse text-left">
             <colgroup>
-              <col className="w-[180px]" />
+              <col className="w-[210px]" />
               <col className="w-[75px]" />
               <col className="w-[90px]" />
-              <col className="w-[150px]" />
-              <col className="w-[85px]" />
-              <col className="w-[145px]" />
+              <col className="w-[140px]" />
+              <col className="w-[80px]" />
+              <col className="w-[120px]" />
               <col className="w-[120px]" />
             </colgroup>
             <thead className="bg-slate-50/90 text-xs font-semibold text-slate-500">
@@ -2184,6 +2232,8 @@ function NodesPage({
                 </tr>
               ) : pageItems.map((node, index) => {
                 const nodeRole = effectiveNodeRole(node, nodes);
+                const isEditingNodeName = editingNodeId === node.id;
+                const isSavingNodeName = savingNodeNameId === node.id;
                 return (
                   <tr
                     key={`${queryRevealKey}-${node.id}`}
@@ -2193,9 +2243,64 @@ function NodesPage({
                     <td className="max-w-[340px] px-5 py-4 align-middle md:px-6">
                       <div className="flex min-w-0 items-center gap-3">
                         <NodeTypeIcon status={node.status} />
-                        <Button type="button" onClick={() => onOpenNode(node.id)} className="panel-link min-w-0">
-                          <span className="block truncate text-sm font-semibold text-coal">{node.name || node.id}</span>
-                        </Button>
+                        {isEditingNodeName ? (
+                          <div className="flex min-w-0 flex-1 items-center gap-1.5">
+                            <TextInput
+                              className="input h-9 min-w-0 px-2.5 py-1.5 text-sm font-semibold"
+                              value={editingNodeName}
+                              disabled={isSavingNodeName}
+                              aria-label="节点名称"
+                              autoFocus
+                              onFocus={(event) => event.currentTarget.select()}
+                              onChange={(event) => setEditingNodeName(event.target.value)}
+                              onKeyDown={(event) => {
+                                if (event.key === "Enter") {
+                                  event.preventDefault();
+                                  void saveNodeName(node);
+                                }
+                                if (event.key === "Escape") {
+                                  event.preventDefault();
+                                  cancelEditNodeName();
+                                }
+                              }}
+                            />
+                            <Button
+                              type="button"
+                              aria-label="保存节点名称"
+                              disabled={isSavingNodeName}
+                              onClick={() => void saveNodeName(node)}
+                              className="btn-compact h-9 w-9 shrink-0 px-0"
+                            >
+                              {isSavingNodeName ? <ArrowsClockwise size={14} className="animate-spin" /> : <CheckCircle size={14} />}
+                            </Button>
+                            <Button
+                              type="button"
+                              aria-label="取消编辑"
+                              disabled={isSavingNodeName}
+                              onClick={cancelEditNodeName}
+                              className="btn-compact h-9 w-9 shrink-0 px-0"
+                            >
+                              <XCircle size={14} />
+                            </Button>
+                          </div>
+                        ) : (
+                          <>
+                            <Button type="button" onClick={() => onOpenNode(node.id)} className="panel-link min-w-0">
+                              <span className="block truncate text-sm font-semibold text-coal">{node.name || node.id}</span>
+                            </Button>
+                            {canManage && (
+                              <Button
+                                type="button"
+                                aria-label="编辑节点名称"
+                                disabled={tableBusy}
+                                onClick={() => startEditNodeName(node)}
+                                className="btn-compact h-8 w-8 shrink-0 px-0"
+                              >
+                                <PencilSimple size={14} />
+                              </Button>
+                            )}
+                          </>
+                        )}
                       </div>
                     </td>
                     <td className="px-4 py-4 align-middle">
