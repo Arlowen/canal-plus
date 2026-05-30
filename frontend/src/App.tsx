@@ -2273,9 +2273,6 @@ function NodesPage({
             />
           </Field>
           <div className="flex justify-end gap-3">
-            <Button type="button" onClick={() => setMasterCountDialogOpen(false)} disabled={masterCountSaving} className="btn-secondary">
-              取消
-            </Button>
             <Button type="button" onClick={() => void saveMasterCount()} disabled={masterCountSaving || Boolean(masterCountError)} className="btn-primary">
               {masterCountSaving ? <ArrowsClockwise size={16} className="animate-spin" /> : <CheckCircle size={16} />}
               保存
