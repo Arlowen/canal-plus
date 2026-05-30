@@ -1136,8 +1136,9 @@ function DatasourcePage({
           <h1 className="text-3xl font-semibold tracking-tight text-coal md:text-4xl">数据源</h1>
         </div>
 
-        <div className="flex flex-col gap-3 border-b border-line px-5 py-4 md:px-6 xl:flex-row xl:items-end xl:justify-between">
-          <div className="grid gap-3 sm:grid-cols-[170px_240px_auto] sm:items-end">
+        <div className="overflow-x-auto border-b border-line">
+          <div className="grid w-full min-w-[685px] grid-cols-[250fr_170fr_95fr_170fr] items-end gap-y-3 py-4">
+            <div className="col-span-3 grid gap-3 px-5 md:grid-cols-[minmax(140px,170px)_minmax(180px,240px)_auto] md:items-end md:px-6">
             <label className="block">
               <span className="label mb-2 block">类型</span>
               <DropdownSelect
@@ -1171,9 +1172,9 @@ function DatasourcePage({
               {querying ? <ArrowsClockwise size={16} /> : <MagnifyingGlass size={16} />}
               {querying ? "查询中" : "查询"}
             </Button>
-          </div>
+            </div>
 
-          <div className="flex flex-wrap gap-2 xl:justify-end">
+            <div className="flex flex-wrap gap-2 px-4">
             {canManage ? (
               <Button type="button" onClick={onCreate} className="btn-primary">
                 <Plus size={16} />
@@ -1187,11 +1188,12 @@ function DatasourcePage({
                 </Button>
               </div>
             )}
+            </div>
           </div>
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[595px] table-fixed border-collapse text-left">
+          <table className="w-full min-w-[685px] table-fixed border-collapse text-left">
             <colgroup>
               <col className="w-[250px]" />
               <col className="w-[170px]" />
@@ -2226,7 +2228,7 @@ function NodesPage({
                 <th className="whitespace-nowrap px-4 py-3">Host</th>
                 <th className="whitespace-nowrap px-4 py-3">版本号</th>
                 <th className="whitespace-nowrap px-4 py-3">资源</th>
-                <th className="whitespace-nowrap px-5 py-3 text-right md:px-6">操作</th>
+                <th className="whitespace-nowrap px-5 py-3 md:px-6">操作</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-line bg-white">
