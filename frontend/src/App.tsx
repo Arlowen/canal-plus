@@ -2009,6 +2009,7 @@ function NodesPage({
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null);
   const [editingNodeName, setEditingNodeName] = useState("");
   const [savingNodeNameId, setSavingNodeNameId] = useState<string | null>(null);
+  const nodeNameEditRef = useRef<HTMLDivElement | null>(null);
   const maxMasterNodeCount = nodes.length;
   const currentMasterNodeCount = nodes.filter((node) => effectiveNodeRole(node, nodes) === "master").length;
   const rawMasterNodeCount = cluster?.masterNodeCount ?? (currentMasterNodeCount || 1);
@@ -2100,10 +2101,23 @@ function NodesPage({
     setEditingNodeName(node.name || node.id);
   };
 
-  const cancelEditNodeName = () => {
+  const cancelEditNodeName = useCallback(() => {
     setEditingNodeId(null);
     setEditingNodeName("");
-  };
+  }, []);
+
+  useEffect(() => {
+    if (!editingNodeId || savingNodeNameId) return;
+    const handlePointerDown = (event: MouseEvent) => {
+      const target = event.target;
+      if (target instanceof Node && nodeNameEditRef.current?.contains(target)) {
+        return;
+      }
+      cancelEditNodeName();
+    };
+    document.addEventListener("mousedown", handlePointerDown);
+    return () => document.removeEventListener("mousedown", handlePointerDown);
+  }, [cancelEditNodeName, editingNodeId, savingNodeNameId]);
 
   const saveNodeName = async (node: ClusterNode) => {
     if (!canManage) {
@@ -2244,7 +2258,7 @@ function NodesPage({
                       <div className="flex min-w-0 items-center gap-3">
                         <NodeTypeIcon status={node.status} />
                         {isEditingNodeName ? (
-                          <div className="flex min-w-0 flex-1 items-center gap-1.5">
+                          <div ref={nodeNameEditRef} className="flex min-w-0 flex-1 items-center gap-1.5">
                             <TextInput
                               className="input h-9 min-w-0 px-2.5 py-1.5 text-sm font-semibold"
                               value={editingNodeName}
@@ -2272,15 +2286,6 @@ function NodesPage({
                               className="btn-compact h-9 w-9 shrink-0 px-0"
                             >
                               {isSavingNodeName ? <ArrowsClockwise size={14} className="animate-spin" /> : <CheckCircle size={14} />}
-                            </Button>
-                            <Button
-                              type="button"
-                              aria-label="取消编辑"
-                              disabled={isSavingNodeName}
-                              onClick={cancelEditNodeName}
-                              className="btn-compact h-9 w-9 shrink-0 px-0"
-                            >
-                              <XCircle size={14} />
                             </Button>
                           </div>
                         ) : (
