@@ -1203,7 +1203,7 @@ function DatasourcePage({
                 <th className="whitespace-nowrap px-5 py-3 md:px-6">数据源名称</th>
                 <th className="whitespace-nowrap px-4 py-3">Host</th>
                 <th className="whitespace-nowrap px-4 py-3">版本号</th>
-                <th className="whitespace-nowrap px-4 py-3 text-right">操作</th>
+                <th className="whitespace-nowrap px-4 py-3">操作</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-line bg-white">
