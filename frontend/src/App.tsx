@@ -1136,67 +1136,67 @@ function DatasourcePage({
           <h1 className="text-3xl font-semibold tracking-tight text-coal md:text-4xl">数据源</h1>
         </div>
 
-        <div className="flex flex-col gap-3 border-b border-line px-5 py-4 md:px-6 xl:flex-row xl:items-end xl:justify-between">
-          <div className="grid gap-3 sm:grid-cols-[170px_240px_auto] sm:items-end">
-            <label className="block">
-              <span className="label mb-2 block">类型</span>
-              <DropdownSelect
-                value={draftTypeFilter}
-                disabled={tableBusy}
-                ariaLabel="类型"
-                options={[
-                  { value: "all", label: "全部" },
-                  { value: "mysql", label: "MySQL" }
-                ]}
-                onChange={(nextValue) => setDraftTypeFilter(nextValue as "all" | "mysql")}
-              />
-            </label>
-            <label className="block">
-              <span className="label mb-2 block">名称</span>
-              <TextInput
-                className="input"
-                value={draftNameQuery}
-                disabled={tableBusy}
-                placeholder="名称"
-                onChange={(event) => setDraftNameQuery(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") {
-                    event.preventDefault();
-                    void runQuery();
-                  }
-                }}
-              />
-            </label>
-            <Button type="button" onClick={() => void runQuery()} disabled={tableBusy} className="btn-primary">
-              {querying ? <ArrowsClockwise size={16} /> : <MagnifyingGlass size={16} />}
-              {querying ? "查询中" : "查询"}
-            </Button>
-          </div>
-
-          <div className="flex flex-wrap gap-2 xl:justify-end">
-            {canManage ? (
-              <Button type="button" onClick={onCreate} className="btn-primary">
-                <Plus size={16} />
-                新增数据源
+        <div className="overflow-x-auto">
+          <div className="flex min-w-[735px] flex-col gap-3 border-b border-line px-5 py-4 md:px-6 xl:flex-row xl:items-end xl:justify-between">
+            <div className="grid gap-3 sm:grid-cols-[170px_240px_auto] sm:items-end">
+              <label className="block">
+                <span className="label mb-2 block">类型</span>
+                <DropdownSelect
+                  value={draftTypeFilter}
+                  disabled={tableBusy}
+                  ariaLabel="类型"
+                  options={[
+                    { value: "all", label: "全部" },
+                    { value: "mysql", label: "MySQL" }
+                  ]}
+                  onChange={(nextValue) => setDraftTypeFilter(nextValue as "all" | "mysql")}
+                />
+              </label>
+              <label className="block">
+                <span className="label mb-2 block">名称</span>
+                <TextInput
+                  className="input"
+                  value={draftNameQuery}
+                  disabled={tableBusy}
+                  placeholder="名称"
+                  onChange={(event) => setDraftNameQuery(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      void runQuery();
+                    }
+                  }}
+                />
+              </label>
+              <Button type="button" onClick={() => void runQuery()} disabled={tableBusy} className="btn-primary">
+                {querying ? <ArrowsClockwise size={16} /> : <MagnifyingGlass size={16} />}
+                {querying ? "查询中" : "查询"}
               </Button>
-            ) : (
-              <div title="权限不足">
-                <Button type="button" disabled className="btn-secondary w-full">
+            </div>
+
+            <div className="flex flex-wrap gap-2 xl:w-[180px] xl:justify-start">
+              {canManage ? (
+                <Button type="button" onClick={onCreate} className="btn-primary">
                   <Plus size={16} />
                   新增数据源
                 </Button>
-              </div>
-            )}
+              ) : (
+                <div title="权限不足">
+                  <Button type="button" disabled className="btn-secondary w-full">
+                    <Plus size={16} />
+                    新增数据源
+                  </Button>
+                </div>
+              )}
+            </div>
           </div>
-        </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[595px] table-fixed border-collapse text-left">
+          <table className="w-full min-w-[735px] table-fixed border-collapse text-left">
             <colgroup>
-              <col className="w-[250px]" />
+              <col />
               <col className="w-[170px]" />
               <col className="w-[95px]" />
-              <col className="w-[170px]" />
+              <col className="w-[220px]" />
             </colgroup>
             <thead className="bg-slate-50/90 text-xs font-semibold text-slate-500">
               <tr className="border-b border-line">
