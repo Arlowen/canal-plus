@@ -2272,7 +2272,6 @@ function NodesPage({
               }}
             />
           </Field>
-          <div className="text-sm text-slate-500">最多 {maxMasterNodeCount} 个</div>
           <div className="flex justify-end gap-3">
             <Button type="button" onClick={() => setMasterCountDialogOpen(false)} disabled={masterCountSaving} className="btn-secondary">
               取消
