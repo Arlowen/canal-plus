@@ -2233,7 +2233,8 @@ function NodesPage({
                 </tr>
               ) : pageItems.map((node, index) => {
                 const isCurrentNode = localNodeId === node.id;
-                const isMaster = isNodeMaster(node);
+                const nodeRole = effectiveNodeRole(node, nodes);
+                const isMaster = nodeRole === "master";
                 const hasOnlineReplacement = nodes.some((candidate) => candidate.id !== node.id && candidate.status === "online");
                 const actionBusy = busyKey?.startsWith(`${node.id}:`) ?? false;
                 return (
@@ -2254,7 +2255,7 @@ function NodesPage({
                       <Badge tone={nodeTone(node.status)}>{nodeStatusText(node.status)}</Badge>
                     </td>
                     <td className="px-4 py-4 align-middle">
-                      <Badge tone={nodeRoleTone(node.role)}>{nodeRoleText(node.role)}</Badge>
+                      <Badge tone={nodeRoleTone(nodeRole)}>{nodeRoleText(nodeRole)}</Badge>
                     </td>
                     <td className="px-4 py-4 align-middle">
                       <span title={node.endpoint} className="block truncate font-mono text-sm text-coal">{node.endpoint}</span>
@@ -2435,6 +2436,8 @@ function NodeDetailPage({
     );
   }
 
+  const selectedRole = effectiveNodeRole(selected, nodes);
+
   return (
     <div className="space-y-5">
       <section className="p-6">
@@ -2442,12 +2445,12 @@ function NodeDetailPage({
         <div className="mt-5 space-y-4">
           <div className="flex flex-wrap items-center gap-2">
             <Badge tone={nodeTone(selected.status)}>{nodeStatusText(selected.status)}</Badge>
-            <Badge tone={nodeRoleTone(selected.role)}>{nodeRoleText(selected.role)}</Badge>
+            <Badge tone={nodeRoleTone(selectedRole)}>{nodeRoleText(selectedRole)}</Badge>
             {localNodeId === selected.id && <Badge tone="blue">本机节点</Badge>}
           </div>
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
             <DetailCard label="主机地址" value={selected.endpoint} mono />
-            <DetailCard label="角色" value={nodeRoleText(selected.role)} />
+            <DetailCard label="角色" value={nodeRoleText(selectedRole)} />
             <DetailCard label="SSH" value={`${selected.sshUser}@${selected.sshPort} · ${selected.authMode === "private_key" ? "私钥" : "密码"}`} mono />
             <DetailCard label="安装目录" value={selected.installDir} mono />
             <DetailCard label="版本" value={selected.version} mono />
@@ -3621,16 +3624,18 @@ function datasourceEditIdFromPathname(pathname: string) {
   }
 }
 
-function isNodeMaster(node: ClusterNode) {
-  return node.role === "master";
+function effectiveNodeRole(node: ClusterNode, nodes: ClusterNode[]): "master" | "standby" {
+  if (nodes.length === 1) return "master";
+  if (node.role === "master") return "master";
+  return "standby";
 }
 
-function nodeRoleText(role: ClusterNode["role"]) {
+function nodeRoleText(role: ClusterNode["role"] | "master" | "standby") {
   if (role === "master") return "主节点";
   return "从节点";
 }
 
-function nodeRoleTone(role: ClusterNode["role"]) {
+function nodeRoleTone(role: ClusterNode["role"] | "master" | "standby") {
   if (role === "master") return "blue";
   return "neutral";
 }
