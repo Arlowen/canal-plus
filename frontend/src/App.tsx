@@ -55,12 +55,11 @@ import type {
   DatasourceInput,
   DatasourcePurpose,
   DatasourceTestResult,
-  OperationLog,
   User
 } from "./types/api";
 
 type MainPage = "datasources" | "nodes" | "settings";
-type Page = MainPage | "nodeDetail" | "datasourceCreate" | "datasourceEdit";
+type Page = MainPage | "nodeMonitor" | "datasourceCreate" | "datasourceEdit";
 type NoticeTone = "success" | "error" | "warning";
 
 type Notice = {
@@ -624,7 +623,6 @@ function App() {
   const [user, setUser] = useState<User | null>(null);
   const [page, setPage] = useState<Page>(() => pageFromPathname(window.location.pathname));
   const [datasources, setDatasources] = useState<Datasource[]>([]);
-  const [logs, setLogs] = useState<OperationLog[]>([]);
   const [cluster, setCluster] = useState<ClusterSnapshot | null>(null);
   const [alertRules, setAlertRules] = useState<AlertRule[]>([]);
   const [alertEvents, setAlertEvents] = useState<AlertEvent[]>([]);
@@ -671,21 +669,18 @@ function App() {
     try {
       const [
         nextDatasources,
-        nextLogs,
         nextCluster,
         nextAlertRules,
         nextAlertEvaluations,
         nextAlertEvents
       ] = await Promise.all([
         api.datasources(),
-        api.logs(),
         api.cluster(),
         api.alertRules(),
         api.alertEvaluations(),
         api.alertEvents()
       ]);
       setDatasources(nextDatasources);
-      setLogs(nextLogs);
       setCluster(nextCluster);
       setAlertRules(nextAlertRules);
       setAlertEvaluations(nextAlertEvaluations);
@@ -805,9 +800,9 @@ function App() {
     setNotice(null);
   };
 
-  const openNodeDetail = (nodeID: string) => {
+  const openNodeMonitor = (nodeID: string) => {
     setFocusedNodeId(nodeID);
-    navigateToPage("nodeDetail");
+    navigateToPage("nodeMonitor");
   };
 
   const openDatasourceCreate = () => {
@@ -953,13 +948,12 @@ function App() {
                 canManage={canManage}
                 onChanged={refresh}
                 pushNotice={pushNotice}
-                onOpenNode={openNodeDetail}
+                onOpenNode={openNodeMonitor}
               />
-            ) : page === "nodeDetail" ? (
-              <NodeDetailPage
+            ) : page === "nodeMonitor" ? (
+              <NodeMonitorPage
                 nodeId={focusedNodeId}
                 cluster={cluster}
-                logs={logs}
                 onBack={() => navigateToPage("nodes")}
               />
             ) : (
@@ -2208,14 +2202,13 @@ function NodesPage({
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[835px] table-fixed border-collapse text-left">
+          <table className="w-full min-w-[715px] table-fixed border-collapse text-left">
             <colgroup>
               <col className="w-[210px]" />
               <col className="w-[75px]" />
               <col className="w-[90px]" />
               <col className="w-[140px]" />
               <col className="w-[80px]" />
-              <col className="w-[120px]" />
               <col className="w-[120px]" />
             </colgroup>
             <thead className="bg-slate-50/90 text-xs font-semibold text-slate-500">
@@ -2225,7 +2218,6 @@ function NodesPage({
                 <th className="whitespace-nowrap px-4 py-3">节点类型</th>
                 <th className="whitespace-nowrap px-4 py-3">Host</th>
                 <th className="whitespace-nowrap px-4 py-3">版本号</th>
-                <th className="whitespace-nowrap px-4 py-3">资源</th>
                 <th className="whitespace-nowrap px-5 py-3 md:px-6">操作</th>
               </tr>
             </thead>
@@ -2236,7 +2228,7 @@ function NodesPage({
                   className={cx(queryRevealKey > 0 && !tableBusy && "query-reveal-row")}
                   style={queryRevealKey > 0 && !tableBusy ? { animationDelay: "0ms" } : undefined}
                 >
-                  <td colSpan={7} className="px-6 py-12">
+                  <td colSpan={6} className="px-6 py-12">
                     <div className="mx-auto flex max-w-sm flex-col items-center text-center">
                       <div className="text-base font-semibold text-coal">
                         {nodes.length === 0 ? "暂无节点" : "无匹配"}
@@ -2318,11 +2310,6 @@ function NodesPage({
                       <span title={node.endpoint} className="block truncate font-mono text-sm text-coal">{node.endpoint}</span>
                     </td>
                     <td className="px-4 py-4 align-middle font-mono text-sm text-slate-600">{node.version?.trim() || "-"}</td>
-                    <td className="px-4 py-4 align-middle text-sm text-slate-600">
-                      <span className="block truncate" title={`CPU ${node.cpuPercent}% · 内存 ${node.memoryPercent}%`}>
-                        CPU {node.cpuPercent}% · 内存 {node.memoryPercent}%
-                      </span>
-                    </td>
                     <td className="px-5 py-4 align-middle md:px-6">
                       <div className="flex items-center justify-end gap-2">
                         <Button
@@ -2394,82 +2381,110 @@ function NodesPage({
   );
 }
 
-function NodeDetailPage({
+function NodeMonitorPage({
   nodeId,
   cluster,
-  logs,
   onBack
 }: {
   nodeId: string | null;
   cluster: ClusterSnapshot | null;
-  logs: OperationLog[];
   onBack: () => void;
 }) {
   const nodes = cluster?.nodes ?? emptyNodes;
   const selected = nodes.find((item) => item.id === nodeId) || null;
   const localNodeId = cluster?.localNodeId;
-  const nodeEvents = selected
-    ? logs.filter((log) => {
-      if (log.targetType === "cluster_node" && log.targetId === selected.id) {
-        return true;
-      }
-      return false;
-    }).slice(0, 4)
-    : [];
 
   if (!selected) {
     return (
       <section className="p-6">
-        <DetailPageHeader title="节点详情" onBack={onBack} />
+        <Button type="button" onClick={onBack} className="btn-compact">
+          <ArrowRight size={14} className="rotate-180" />
+          返回
+        </Button>
         <div className="mt-5 text-sm text-slate-500">节点不存在或已删除。</div>
       </section>
     );
   }
 
   const selectedRole = effectiveNodeRole(selected, nodes);
+  const heartbeatAge = secondsSince(selected.lastHeartbeatAt);
 
   return (
-    <div className="space-y-5">
-      <section className="p-6">
-        <DetailPageHeader title={selected.name} subtitle="节点详情" onBack={onBack} />
-        <div className="mt-5 space-y-4">
-          <div className="flex flex-wrap items-center gap-2">
+    <section className="p-6">
+      <div className="flex flex-col gap-4 border-b border-line pb-5 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <Button type="button" onClick={onBack} className="btn-compact">
+            <ArrowRight size={14} className="rotate-180" />
+            返回
+          </Button>
+          <div className="label mt-4">当前节点</div>
+          <h2 className="mt-2 text-2xl font-semibold tracking-tight text-coal">{selected.name || selected.id}</h2>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
             <Badge tone={nodeTone(selected.status)}>{nodeStatusText(selected.status)}</Badge>
             <Badge tone={nodeRoleTone(selectedRole)}>{nodeRoleText(selectedRole)}</Badge>
             {localNodeId === selected.id && <Badge tone="blue">本机节点</Badge>}
+            <span className="mono text-xs text-slate-500">{selected.endpoint}</span>
           </div>
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            <DetailCard label="主机地址" value={selected.endpoint} mono />
-            <DetailCard label="节点类型" value={nodeRoleText(selectedRole)} />
-            <DetailCard label="SSH" value={`${selected.sshUser}@${selected.sshPort} · ${selected.authMode === "private_key" ? "私钥" : "密码"}`} mono />
-            <DetailCard label="安装目录" value={selected.installDir} mono />
-            <DetailCard label="版本" value={selected.version} mono />
-            <DetailCard label="最近心跳" value={`${formatDateTime(selected.lastHeartbeatAt)} · ${secondsSince(selected.lastHeartbeatAt)} 秒前`} />
-          </div>
-          {localNodeId === selected.id && (
-            <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-700">
-              本机节点不支持自卸载或自下线。
-            </div>
-          )}
         </div>
-      </section>
+        <div className="rounded-lg border border-line bg-slate-50 px-3 py-2 text-sm text-slate-600">
+          <span className="label mr-2">心跳</span>
+          {formatDateTime(selected.lastHeartbeatAt)} · {heartbeatAge} 秒前
+        </div>
+      </div>
 
-      {nodeEvents.length > 0 && (
-        <section className="border-t border-line p-6">
-          <SectionHeader title="最近运维事件" />
-          <div className="mt-3 grid gap-3">
-            {nodeEvents.map((log) => (
-              <div key={log.id} className="border-t border-line px-0 py-4">
-                <div className="flex flex-wrap items-center gap-2">
-                  <Badge tone={log.targetType === "cluster_node" ? "blue" : "yellow"}>{log.action}</Badge>
-                  <span className="text-xs text-slate-500">{formatDateTime(log.createdAt)}</span>
-                </div>
-                <div className="mt-2 text-sm text-coal">{log.detail}</div>
-              </div>
-            ))}
-          </div>
-        </section>
-      )}
+      <div className="grid gap-4 pt-5 lg:grid-cols-2">
+        <NodeMetricPanel label="CPU" value={selected.cpuPercent} />
+        <NodeMetricPanel label="内存" value={selected.memoryPercent} />
+      </div>
+    </section>
+  );
+}
+
+function NodeMetricPanel({ label, value }: { label: string; value: number }) {
+  const percent = clampPercent(value);
+  const circumference = 2 * Math.PI * 44;
+  const offset = circumference * (1 - percent / 100);
+  const toneClass = percent >= 85
+    ? "text-red-600"
+    : percent >= 70
+      ? "text-yellow-600"
+      : "text-blue-600";
+  const barClass = percent >= 85
+    ? "bg-red-500"
+    : percent >= 70
+      ? "bg-yellow-500"
+      : "bg-blue-600";
+
+  return (
+    <div className="rounded-lg border border-line bg-white p-5">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <div className="label">{label}</div>
+          <div className={cx("mt-2 font-mono text-4xl font-semibold tracking-tight", toneClass)}>{percent}%</div>
+        </div>
+        <svg className="h-28 w-28 shrink-0 -rotate-90" viewBox="0 0 112 112" aria-label={`${label} ${percent}%`}>
+          <circle cx="56" cy="56" r="44" fill="none" stroke="#e2e8f0" strokeWidth="12" />
+          <circle
+            cx="56"
+            cy="56"
+            r="44"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="12"
+            strokeLinecap="round"
+            strokeDasharray={circumference}
+            strokeDashoffset={offset}
+            className={toneClass}
+          />
+        </svg>
+      </div>
+      <div className="mt-5 h-2 overflow-hidden rounded-full bg-slate-100">
+        <div className={cx("h-full rounded-full", barClass)} style={{ width: `${percent}%` }} />
+      </div>
+      <div className="mt-3 flex justify-between text-xs font-medium text-slate-500">
+        <span>0%</span>
+        <span>100%</span>
+      </div>
     </div>
   );
 }
@@ -2783,41 +2798,6 @@ function SectionHeader({
         {description && <p className="mt-2 text-sm text-slate-500">{description}</p>}
       </div>
       {action}
-    </div>
-  );
-}
-
-function DetailPageHeader({
-  title,
-  subtitle,
-  onBack,
-  actions
-}: {
-  title: string;
-  subtitle?: string;
-  onBack: () => void;
-  actions?: ReactNode;
-}) {
-  return (
-    <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-      <div>
-        <Button type="button" onClick={onBack} className="btn-compact">
-          <ArrowRight size={14} className="rotate-180" />
-          返回
-        </Button>
-        {subtitle && <div className="label mt-4">{subtitle}</div>}
-        <h2 className="mt-2 text-2xl font-semibold tracking-tight text-coal">{title}</h2>
-      </div>
-      {actions}
-    </div>
-  );
-}
-
-function DetailCard({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
-  return (
-    <div className="border-b border-line px-0 py-3">
-      <div className="label">{label}</div>
-      <div className={cx("mt-2 text-sm font-medium text-coal", mono && "mono")}>{value}</div>
     </div>
   );
 }
@@ -3442,6 +3422,11 @@ function clampPage(page: number, totalPages: number) {
   return Math.min(Math.max(1, Math.trunc(page)), Math.max(1, totalPages));
 }
 
+function clampPercent(value: number) {
+  if (!Number.isFinite(value)) return 0;
+  return Math.min(100, Math.max(0, Math.round(value)));
+}
+
 function datasourceGeneratedName(form: DatasourceFormState) {
   const host = form.host.trim();
   const port = Number(form.port);
@@ -3582,7 +3567,7 @@ function pathForPage(page: Page, datasourceId?: string) {
 function navPage(page: Page): MainPage {
   if (page === "datasourceCreate") return "datasources";
   if (page === "datasourceEdit") return "datasources";
-  if (page === "nodeDetail") return "nodes";
+  if (page === "nodeMonitor") return "nodes";
   return page;
 }
 
@@ -3591,7 +3576,7 @@ function pageTitle(page: Page) {
   if (page === "datasourceCreate") return "新增数据源";
   if (page === "datasourceEdit") return "编辑数据源";
   if (page === "nodes") return "节点";
-  if (page === "nodeDetail") return "节点详情";
+  if (page === "nodeMonitor") return "节点监控";
   return "设置";
 }
 
