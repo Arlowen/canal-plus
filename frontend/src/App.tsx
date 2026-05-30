@@ -2209,7 +2209,7 @@ function NodesPage({
               <tr className="border-b border-line">
                 <th className="whitespace-nowrap px-5 py-3 md:px-6">节点名称</th>
                 <th className="whitespace-nowrap px-4 py-3">状态</th>
-                <th className="whitespace-nowrap px-4 py-3">角色</th>
+                <th className="whitespace-nowrap px-4 py-3">节点类型</th>
                 <th className="whitespace-nowrap px-4 py-3">Host</th>
                 <th className="whitespace-nowrap px-4 py-3">版本号</th>
                 <th className="whitespace-nowrap px-4 py-3">资源</th>
@@ -2450,7 +2450,7 @@ function NodeDetailPage({
           </div>
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
             <DetailCard label="主机地址" value={selected.endpoint} mono />
-            <DetailCard label="角色" value={nodeRoleText(selectedRole)} />
+            <DetailCard label="节点类型" value={nodeRoleText(selectedRole)} />
             <DetailCard label="SSH" value={`${selected.sshUser}@${selected.sshPort} · ${selected.authMode === "private_key" ? "私钥" : "密码"}`} mono />
             <DetailCard label="安装目录" value={selected.installDir} mono />
             <DetailCard label="版本" value={selected.version} mono />
