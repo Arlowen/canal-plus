@@ -46,8 +46,17 @@ func createSeedData() (DatabaseShape, error) {
 				UpdatedAt: createdAt,
 			},
 		},
-		Nodes: nodes,
+		Nodes:           nodes,
+		ClusterSettings: defaultClusterSettings(createdAt),
 	}, nil
+}
+
+func defaultClusterSettings(timestamp string) ClusterSettings {
+	return ClusterSettings{
+		ID:              "cluster-settings",
+		MasterNodeCount: 1,
+		UpdatedAt:       timestamp,
+	}
 }
 
 func defaultClusterNodes(timestamp string) []ClusterNode {

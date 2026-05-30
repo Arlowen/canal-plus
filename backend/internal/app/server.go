@@ -628,6 +628,17 @@ func (s *Server) handleCluster(response http.ResponseWriter, request *http.Reque
 	switch {
 	case len(parts) == 1 && request.Method == http.MethodGet:
 		writeJSON(response, http.StatusOK, s.clusterResponse())
+	case len(parts) == 2 && parts[1] == "master-node-count" && request.Method == http.MethodPost:
+		var input ClusterMasterNodeCountInput
+		if err := decodeJSON(request, &input); err != nil {
+			writeError(response, http.StatusBadRequest, "请求体格式错误")
+			return
+		}
+		if _, err := s.store.SetClusterMasterNodeCount(input.MasterNodeCount); err != nil {
+			writeError(response, http.StatusBadRequest, err.Error())
+			return
+		}
+		writeJSON(response, http.StatusOK, s.clusterResponse())
 	case len(parts) == 2 && parts[1] == "nodes" && request.Method == http.MethodGet:
 		writeJSON(response, http.StatusOK, s.clusterResponse().Nodes)
 	case len(parts) == 4 && parts[1] == "nodes" && parts[3] == "upgrade" && request.Method == http.MethodPost:
@@ -690,30 +701,6 @@ func (s *Server) handleCluster(response http.ResponseWriter, request *http.Reque
 			result, ok, err := s.store.TakeNodeOffline(parts[2])
 			if err != nil {
 				writeError(response, http.StatusInternalServerError, err.Error())
-				return
-			}
-			if !ok {
-				writeError(response, http.StatusNotFound, "节点不存在")
-				return
-			}
-			writeJSON(response, http.StatusOK, result)
-			return
-		case "promote":
-			result, ok, err := s.store.SetNodeRole(parts[2], NodeRoleMaster)
-			if err != nil {
-				writeError(response, http.StatusBadRequest, err.Error())
-				return
-			}
-			if !ok {
-				writeError(response, http.StatusNotFound, "节点不存在")
-				return
-			}
-			writeJSON(response, http.StatusOK, result)
-			return
-		case "standby":
-			result, ok, err := s.store.SetNodeRole(parts[2], NodeRoleStandby)
-			if err != nil {
-				writeError(response, http.StatusBadRequest, err.Error())
 				return
 			}
 			if !ok {

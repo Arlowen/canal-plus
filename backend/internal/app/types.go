@@ -275,19 +275,31 @@ type ClusterSnapshot struct {
 	LocalNodeName           string        `json:"localNodeName,omitempty"`
 	MasterNodeID            string        `json:"masterNodeId,omitempty"`
 	MasterNodeName          string        `json:"masterNodeName,omitempty"`
+	MasterNodeCount         int           `json:"masterNodeCount"`
 	OnlineNodes             int           `json:"onlineNodes"`
 	TotalNodes              int           `json:"totalNodes"`
 	DegradedNodes           int           `json:"degradedNodes"`
 	HeartbeatTimeoutSeconds int           `json:"heartbeatTimeoutSeconds"`
 }
 
+type ClusterSettings struct {
+	ID              string `json:"id"`
+	MasterNodeCount int    `json:"masterNodeCount"`
+	UpdatedAt       string `json:"updatedAt"`
+}
+
+type ClusterMasterNodeCountInput struct {
+	MasterNodeCount int `json:"masterNodeCount"`
+}
+
 type DatabaseShape struct {
-	Users         []User         `json:"users"`
-	Datasources   []Datasource   `json:"datasources"`
-	OperationLogs []OperationLog `json:"operationLogs"`
-	AlertRules    []AlertRule    `json:"alertRules"`
-	AlertEvents   []AlertEvent   `json:"alertEvents"`
-	Nodes         []ClusterNode  `json:"nodes"`
+	Users           []User          `json:"users"`
+	Datasources     []Datasource    `json:"datasources"`
+	OperationLogs   []OperationLog  `json:"operationLogs"`
+	AlertRules      []AlertRule     `json:"alertRules"`
+	AlertEvents     []AlertEvent    `json:"alertEvents"`
+	Nodes           []ClusterNode   `json:"nodes"`
+	ClusterSettings ClusterSettings `json:"clusterSettings"`
 }
 
 type RuntimeConfig struct {

@@ -85,30 +85,44 @@ func TestStandbyTakesOverWhenMasterHeartbeatTimesOut(t *testing.T) {
 	}
 }
 
-func TestManualPromoteKeepsSingleMaster(t *testing.T) {
+func TestConfiguredMasterCountElectsMultipleMasters(t *testing.T) {
 	store := newTestStore(t)
 
+	registerTestNode(t, store, "node-master-a", "master-a", "10.0.0.2:4100")
+	registerTestNode(t, store, "node-standby-b", "standby-b", "10.0.0.3:4100")
+
+	snapshot, err := store.SetClusterMasterNodeCount(2)
+	if err != nil {
+		t.Fatalf("set master node count: %v", err)
+	}
+	if snapshot.MasterNodeCount != 2 {
+		t.Fatalf("master node count = %d, want 2", snapshot.MasterNodeCount)
+	}
+	if countNodesWithRole(snapshot.Nodes, NodeRoleMaster) != 2 {
+		t.Fatalf("expected two masters after configuration: %#v", snapshot.Nodes)
+	}
+	if countNodesWithRole(snapshot.Nodes, NodeRoleStandby) != 1 {
+		t.Fatalf("expected one standby after configuration: %#v", snapshot.Nodes)
+	}
+}
+
+func TestConfiguredMasterCountCannotExceedNodeCount(t *testing.T) {
+	store := newTestStore(t)
+
+	if _, err := store.SetClusterMasterNodeCount(2); err == nil {
+		t.Fatal("expected error when master node count exceeds node count")
+	}
+}
+
+func registerTestNode(t *testing.T, store *Store, id string, name string, endpoint string) {
+	t.Helper()
 	_, _, err := store.registerNode(ClusterNodeInput{
-		ID:       "node-standby-a",
-		Name:     "standby-a",
-		Endpoint: "10.0.0.2:4100",
+		ID:       id,
+		Name:     name,
+		Endpoint: endpoint,
 	}, "system", "node_register")
 	if err != nil {
-		t.Fatalf("register standby node: %v", err)
-	}
-
-	result, ok, err := store.SetNodeRole("node-standby-a", NodeRoleMaster)
-	if err != nil {
-		t.Fatalf("promote standby: %v", err)
-	}
-	if !ok {
-		t.Fatal("promote standby returned not found")
-	}
-	if result.After.MasterNodeID != "node-standby-a" {
-		t.Fatalf("master node id = %q, want node-standby-a", result.After.MasterNodeID)
-	}
-	if countNodesWithRole(result.After.Nodes, NodeRoleMaster) != 1 {
-		t.Fatalf("expected one master after promotion: %#v", result.After.Nodes)
+		t.Fatalf("register node %s: %v", id, err)
 	}
 }
 

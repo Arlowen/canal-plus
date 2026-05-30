@@ -590,71 +590,28 @@ func (s *Store) BringNodeOnline(id string) (NodeStatusChangeResult, bool, error)
 	}, true, nil
 }
 
-func (s *Store) SetNodeRole(id string, role string) (NodeStatusChangeResult, bool, error) {
-	normalizedRole := normalizeNodeRole(role)
-	if normalizedRole == "" {
-		return NodeStatusChangeResult{}, false, errors.New("节点角色不合法")
-	}
+func (s *Store) SetClusterMasterNodeCount(count int) (ClusterSnapshot, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.ensureClusterLocked()
-	before := s.clusterSnapshotLocked()
-	node := s.getNodeLocked(id)
-	if node == nil {
-		return NodeStatusChangeResult{}, false, nil
+	if count <= 0 {
+		return ClusterSnapshot{}, errors.New("主节点个数至少为 1")
 	}
-	if normalizedRole == NodeRoleMaster && node.Status != NodeOnline {
-		return NodeStatusChangeResult{}, true, errors.New("离线节点不能设为主节点")
+	if count > len(s.data.Nodes) {
+		return ClusterSnapshot{}, errors.New("主节点个数不能超过节点数量")
 	}
-	replacement := s.onlineRoleReplacementLocked(id)
-	if normalizedRole == NodeRoleStandby && node.Role == NodeRoleMaster && replacement == nil {
-		return NodeStatusChangeResult{}, true, errors.New("没有可接管的在线从节点")
-	}
-
 	timestamp := now()
-	if normalizedRole == NodeRoleStandby && node.Role == NodeRoleMaster && replacement != nil {
-		replacement.Role = NodeRoleMaster
-		replacement.UpdatedAt = timestamp
-		s.logLocked("admin", "node_promote", "cluster_node", replacement.ID, "Node promoted to master: "+replacement.Name)
+	if s.data.ClusterSettings.ID == "" {
+		s.data.ClusterSettings = defaultClusterSettings(timestamp)
 	}
-	if normalizedRole == NodeRoleMaster {
-		for index := range s.data.Nodes {
-			if s.data.Nodes[index].ID == id || s.data.Nodes[index].Role != NodeRoleMaster {
-				continue
-			}
-			s.data.Nodes[index].Role = NodeRoleStandby
-			s.data.Nodes[index].UpdatedAt = timestamp
-			s.logLocked("admin", "node_standby", "cluster_node", s.data.Nodes[index].ID, "Node changed to standby: "+s.data.Nodes[index].Name)
-		}
-	}
-	if node.Role != normalizedRole {
-		node.Role = normalizedRole
-		node.UpdatedAt = timestamp
-	}
-	action := "standby"
-	message := "已设为从节点"
-	if normalizedRole == NodeRoleMaster {
-		action = "promote"
-		message = "已设为主节点"
-		s.logLocked("admin", "node_promote", "cluster_node", id, "Node promoted to master: "+node.Name)
-	} else {
-		s.logLocked("admin", "node_standby", "cluster_node", id, "Node changed to standby: "+node.Name)
-	}
+	s.data.ClusterSettings.MasterNodeCount = count
+	s.data.ClusterSettings.UpdatedAt = timestamp
+	s.logLocked("admin", "update_master_node_count", "cluster", s.data.ClusterSettings.ID, "Master node count updated: "+intToString(count))
 	s.reconcileClusterLocked()
-	after := s.clusterSnapshotLocked()
 	if err := s.saveLocked(); err != nil {
-		return NodeStatusChangeResult{}, true, err
+		return ClusterSnapshot{}, err
 	}
-	return NodeStatusChangeResult{
-		ID:        newID(),
-		Action:    action,
-		Node:      cloneJSON(*node),
-		Success:   true,
-		Message:   message,
-		Before:    before,
-		After:     after,
-		ChangedAt: timestamp,
-	}, true, nil
+	return s.clusterSnapshotLocked(), nil
 }
 
 func (s *Store) HeartbeatNode(id string) (ClusterNode, bool, error) {
@@ -858,6 +815,10 @@ func (s *Store) ensureClusterLocked() {
 	if len(s.data.Nodes) == 0 {
 		s.data.Nodes = defaultClusterNodes(timestamp)
 	}
+	if s.data.ClusterSettings.ID == "" {
+		s.data.ClusterSettings = defaultClusterSettings(timestamp)
+	}
+	s.data.ClusterSettings.MasterNodeCount = normalizeMasterNodeCount(s.data.ClusterSettings.MasterNodeCount, len(s.data.Nodes))
 	for index := range s.data.Nodes {
 		if string(s.data.Nodes[index].Status) == "draining" {
 			s.data.Nodes[index].Status = NodeOnline
@@ -894,40 +855,39 @@ func (s *Store) reconcileNodeRolesLocked() {
 		return
 	}
 	timestamp := now()
-	masterIndex := -1
-	if len(s.data.Nodes) == 1 {
-		masterIndex = 0
-	} else {
+	desiredMasters := normalizeMasterNodeCount(s.data.ClusterSettings.MasterNodeCount, len(s.data.Nodes))
+	masterIndexes := map[int]bool{}
+	for index, node := range s.data.Nodes {
+		if len(masterIndexes) >= desiredMasters {
+			break
+		}
+		if node.Status == NodeOnline && node.Role == NodeRoleMaster {
+			masterIndexes[index] = true
+		}
+	}
+	for index, node := range s.data.Nodes {
+		if len(masterIndexes) >= desiredMasters {
+			break
+		}
+		if node.Status == NodeOnline {
+			masterIndexes[index] = true
+		}
+	}
+	if len(masterIndexes) == 0 {
 		for index, node := range s.data.Nodes {
-			if node.Status == NodeOnline && node.Role == NodeRoleMaster {
-				masterIndex = index
+			if node.Role == NodeRoleMaster {
+				masterIndexes[index] = true
 				break
 			}
 		}
-		if masterIndex == -1 {
-			for index, node := range s.data.Nodes {
-				if node.Status == NodeOnline {
-					masterIndex = index
-					break
-				}
-			}
-		}
-		if masterIndex == -1 {
-			for index, node := range s.data.Nodes {
-				if node.Role == NodeRoleMaster {
-					masterIndex = index
-					break
-				}
-			}
-		}
-		if masterIndex == -1 {
-			masterIndex = 0
-		}
+	}
+	if len(masterIndexes) == 0 {
+		masterIndexes[0] = true
 	}
 
 	for index := range s.data.Nodes {
 		role := NodeRoleStandby
-		if index == masterIndex {
+		if masterIndexes[index] {
 			role = NodeRoleMaster
 		}
 		if s.data.Nodes[index].Role == role {
@@ -941,17 +901,6 @@ func (s *Store) reconcileNodeRolesLocked() {
 			s.logLocked("system", "node_standby", "cluster_node", s.data.Nodes[index].ID, "Node changed to standby: "+s.data.Nodes[index].Name)
 		}
 	}
-}
-
-func (s *Store) onlineRoleReplacementLocked(excludedID string) *ClusterNode {
-	for index := range s.data.Nodes {
-		node := &s.data.Nodes[index]
-		if node.ID == excludedID || node.Status != NodeOnline {
-			continue
-		}
-		return node
-	}
-	return nil
 }
 
 func (s *Store) getNodeLocked(id string) *ClusterNode {
@@ -981,6 +930,7 @@ func (s *Store) clusterSnapshotLocked() ClusterSnapshot {
 		Nodes:                   nodes,
 		MasterNodeID:            masterNodeID,
 		MasterNodeName:          masterNodeName,
+		MasterNodeCount:         normalizeMasterNodeCount(s.data.ClusterSettings.MasterNodeCount, len(nodes)),
 		OnlineNodes:             online,
 		TotalNodes:              len(nodes),
 		DegradedNodes:           len(nodes) - online,
@@ -1006,6 +956,19 @@ func normalizeNodeCapacity(capacity int) int {
 		return 4
 	}
 	return capacity
+}
+
+func normalizeMasterNodeCount(count int, totalNodes int) int {
+	if totalNodes <= 0 {
+		return 1
+	}
+	if count <= 0 {
+		return 1
+	}
+	if count > totalNodes {
+		return totalNodes
+	}
+	return count
 }
 
 func normalizeNodeRole(role string) string {

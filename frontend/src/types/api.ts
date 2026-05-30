@@ -148,7 +148,7 @@ export interface NodeOperationResult {
 
 export interface NodeStatusChangeResult {
   id: string;
-  action: "online" | "offline" | "promote" | "standby";
+  action: "online" | "offline";
   node: ClusterNode;
   success: boolean;
   message: string;
@@ -163,6 +163,7 @@ export interface ClusterSnapshot {
   localNodeName?: string;
   masterNodeId?: string;
   masterNodeName?: string;
+  masterNodeCount: number;
   onlineNodes: number;
   totalNodes: number;
   degradedNodes: number;

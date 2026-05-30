@@ -229,13 +229,19 @@ export const api = {
   cluster() {
     return request<ClusterSnapshot>("/cluster");
   },
+  updateMasterNodeCount(masterNodeCount: number) {
+    return request<ClusterSnapshot>("/cluster/master-node-count", {
+      method: "POST",
+      body: JSON.stringify({ masterNodeCount })
+    });
+  },
   upgradeNode(id: string) {
     return request<NodeOperationResult>(`/cluster/nodes/${id}/upgrade`, { method: "POST" });
   },
   uninstallNode(id: string) {
     return request<NodeOperationResult>(`/cluster/nodes/${id}/uninstall`, { method: "POST" });
   },
-  nodeAction(id: string, action: "online" | "offline" | "heartbeat" | "promote" | "standby") {
+  nodeAction(id: string, action: "online" | "offline" | "heartbeat") {
     return request<NodeStatusChangeResult | ClusterNode>(`/cluster/nodes/${id}/${action}`, { method: "POST" });
   }
 };

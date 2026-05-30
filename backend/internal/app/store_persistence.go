@@ -136,6 +136,7 @@ func (p *mySQLStorePersistence) autoMigrate() error {
 		{suffix: "alert_rules", model: &alertRuleRow{}},
 		{suffix: "alert_events", model: &alertEventRow{}},
 		{suffix: "cluster_nodes", model: &clusterNodeRow{}},
+		{suffix: "cluster_settings", model: &clusterSettingsRow{}},
 	}
 	for _, migration := range migrations {
 		if err := p.db.Table(p.tableName(migration.suffix)).AutoMigrate(migration.model); err != nil {
@@ -219,6 +220,9 @@ func (p *mySQLStorePersistence) loadSnapshotRows() (snapshotRows, error) {
 	if rows.Nodes, err = loadTableRows[clusterNodeRow](p.db, p.tableName("cluster_nodes")); err != nil {
 		return snapshotRows{}, err
 	}
+	if rows.ClusterSettings, err = loadTableRows[clusterSettingsRow](p.db, p.tableName("cluster_settings")); err != nil {
+		return snapshotRows{}, err
+	}
 
 	return rows, nil
 }
@@ -233,6 +237,9 @@ func (p *mySQLStorePersistence) replaceSnapshotRows(tx *gorm.DB, rows snapshotRo
 		func(db *gorm.DB) error { return replaceTableRows(db, p.tableName("alert_rules"), rows.AlertRules) },
 		func(db *gorm.DB) error { return replaceTableRows(db, p.tableName("alert_events"), rows.AlertEvents) },
 		func(db *gorm.DB) error { return replaceTableRows(db, p.tableName("cluster_nodes"), rows.Nodes) },
+		func(db *gorm.DB) error {
+			return replaceTableRows(db, p.tableName("cluster_settings"), rows.ClusterSettings)
+		},
 	}
 	for _, replacement := range replacements {
 		if err := replacement(tx); err != nil {

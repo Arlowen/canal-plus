@@ -55,8 +55,6 @@ import type {
   DatasourceInput,
   DatasourcePurpose,
   DatasourceTestResult,
-  NodeOperationResult,
-  NodeStatusChangeResult,
   OperationLog,
   User
 } from "./types/api";
@@ -83,17 +81,6 @@ type DatasourceTestDialogState = {
   selectedNodeId: string;
   error: string | null;
   result: DatasourceTestResult | null;
-};
-
-type ClusterHandoffReport = {
-  id: string;
-  kind: "offline" | "online" | "promote" | "standby";
-  happenedAt: string;
-  node?: ClusterNode;
-  success: boolean;
-  message: string;
-  before: ClusterSnapshot;
-  after: ClusterSnapshot;
 };
 
 type DatasourceFormState = {
@@ -1994,26 +1981,6 @@ function DatasourceTestInlineResult({ error, result }: { error: string | null; r
   return null;
 }
 
-function handoffTitle(kind: ClusterHandoffReport["kind"]) {
-  if (kind === "offline") return "节点下线结果";
-  if (kind === "promote") return "主节点切换结果";
-  if (kind === "standby") return "从节点切换结果";
-  return "节点上线结果";
-}
-
-function fromNodeStatusChangeResult(report: NodeStatusChangeResult): ClusterHandoffReport {
-  return {
-    id: report.id,
-    kind: report.action,
-    happenedAt: report.changedAt,
-    node: report.node,
-    success: report.success,
-    message: report.message,
-    before: report.before,
-    after: report.after
-  };
-}
-
 function NodesPage({
   cluster,
   canManage,
@@ -2036,12 +2003,21 @@ function NodesPage({
   const pageSize = 20;
   const [querying, setQuerying] = useState(false);
   const [queryRevealKey, setQueryRevealKey] = useState(0);
-  const [operationResult, setOperationResult] = useState<NodeOperationResult | null>(null);
-  const [handoffReport, setHandoffReport] = useState<ClusterHandoffReport | null>(null);
-  const [busyKey, setBusyKey] = useState<string | null>(null);
-  const [confirmation, setConfirmation] = useState<ConfirmationDialogState | null>(null);
-  const localNodeId = cluster?.localNodeId;
-  const tableBusy = querying || Boolean(busyKey);
+  const [masterCountDialogOpen, setMasterCountDialogOpen] = useState(false);
+  const [masterCountDraft, setMasterCountDraft] = useState("");
+  const [masterCountSaving, setMasterCountSaving] = useState(false);
+  const maxMasterNodeCount = nodes.length;
+  const currentMasterNodeCount = nodes.filter((node) => effectiveNodeRole(node, nodes) === "master").length;
+  const rawMasterNodeCount = cluster?.masterNodeCount ?? (currentMasterNodeCount || 1);
+  const configuredMasterNodeCount = Math.min(
+    Math.max(1, rawMasterNodeCount),
+    Math.max(1, maxMasterNodeCount)
+  );
+  const parsedMasterCount = Number.parseInt(masterCountDraft, 10);
+  const masterCountError = masterCountDialogOpen && (!Number.isInteger(parsedMasterCount) || parsedMasterCount < 1 || parsedMasterCount > maxMasterNodeCount)
+    ? `1-${maxMasterNodeCount}`
+    : "";
+  const tableBusy = querying || masterCountSaving;
 
   const filteredNodes = useMemo(() => nodes.filter((node) => {
     const matchesStatus = appliedStatusFilter === "all" || node.status === appliedStatusFilter;
@@ -2077,73 +2053,39 @@ function NodesPage({
     setPageIndex(clampPage(nextPage, totalPages));
   };
 
-  const executeQuickAction = async (node: ClusterNode, action: "upgrade" | "uninstall") => {
+  const openMasterCountDialog = () => {
     if (!canManage) {
-      pushNotice({ tone: "warning", message: "节点运维需要管理员权限" });
+      pushNotice({ tone: "warning", message: "需要管理员权限" });
       return;
     }
-    setBusyKey(`${node.id}:${action}`);
-    try {
-      const result = action === "upgrade" ? await api.upgradeNode(node.id) : await api.uninstallNode(node.id);
-      setOperationResult(result);
-      pushNotice({ tone: result.success ? "success" : "warning", message: result.message });
-      await onChanged();
-    } catch (requestError) {
-      pushNotice({ tone: "error", message: requestError instanceof Error ? requestError.message : "节点操作失败" });
-    } finally {
-      setBusyKey(null);
-    }
-  };
-
-  const requestQuickAction = (node: ClusterNode, action: "upgrade" | "uninstall") => {
-    setConfirmation({
-      title: action === "upgrade" ? `升级节点“${node.name}”` : `卸载节点“${node.name}”`,
-      description: action === "upgrade"
-        ? "确认升级该节点？"
-        : "卸载会移除节点安装，操作不可直接撤销。确认继续吗？",
-      confirmLabel: action === "upgrade" ? "确认升级" : "确认卸载",
-      confirmTone: "danger",
-      onConfirm: () => {
-        void executeQuickAction(node, action);
-      }
-    });
-  };
-
-  const executeMoreAction = async (node: ClusterNode, action: "offline" | "online" | "promote" | "standby") => {
-    if (!canManage) {
-      pushNotice({ tone: "warning", message: "节点运维需要管理员权限" });
+    if (maxMasterNodeCount <= 0) {
+      pushNotice({ tone: "warning", message: "暂无节点" });
       return;
     }
-    setBusyKey(`${node.id}:${action}`);
-    try {
-      const result = await api.nodeAction(node.id, action);
-      if ("changedAt" in result) {
-        setHandoffReport(fromNodeStatusChangeResult(result));
-        pushNotice({ tone: result.success ? "success" : "warning", message: result.message });
-      } else {
-        pushNotice({ tone: "success", message: actionText(action) });
-      }
-      await onChanged();
-    } catch (requestError) {
-      pushNotice({ tone: "error", message: requestError instanceof Error ? requestError.message : "节点操作失败" });
-    } finally {
-      setBusyKey(null);
-    }
+    setMasterCountDraft(String(configuredMasterNodeCount));
+    setMasterCountDialogOpen(true);
   };
 
-  const requestMoreAction = (node: ClusterNode, action: "offline" | "online" | "promote" | "standby") => {
-    const title = nodeActionConfirmTitle(node, action);
-    const description = nodeActionConfirmDescription(action);
-    const confirmLabel = actionText(action);
-    setConfirmation({
-      title,
-      description,
-      confirmLabel,
-      confirmTone: "danger",
-      onConfirm: () => {
-        void executeMoreAction(node, action);
-      }
-    });
+  const saveMasterCount = async () => {
+    if (!canManage) {
+      pushNotice({ tone: "warning", message: "需要管理员权限" });
+      return;
+    }
+    if (!Number.isInteger(parsedMasterCount) || parsedMasterCount < 1 || parsedMasterCount > maxMasterNodeCount) {
+      pushNotice({ tone: "warning", message: `范围 1-${maxMasterNodeCount}` });
+      return;
+    }
+    setMasterCountSaving(true);
+    try {
+      await api.updateMasterNodeCount(parsedMasterCount);
+      pushNotice({ tone: "success", message: "已保存" });
+      setMasterCountDialogOpen(false);
+      await onChanged();
+    } catch (requestError) {
+      pushNotice({ tone: "error", message: requestError instanceof Error ? requestError.message : "保存失败" });
+    } finally {
+      setMasterCountSaving(false);
+    }
   };
 
   return (
@@ -2191,7 +2133,16 @@ function NodesPage({
             </Button>
           </div>
 
-          <div className="hidden xl:block" />
+          {canManage && (
+            <div className="flex justify-end">
+              <ActionMenu
+                label="更多"
+                items={[
+                  { label: "主节点个数", icon: GearSix, onSelect: openMasterCountDialog, disabled: tableBusy || maxMasterNodeCount <= 0 }
+                ]}
+              />
+            </div>
+          )}
         </div>
 
         <div className="overflow-x-auto">
@@ -2232,11 +2183,7 @@ function NodesPage({
                   </td>
                 </tr>
               ) : pageItems.map((node, index) => {
-                const isCurrentNode = localNodeId === node.id;
                 const nodeRole = effectiveNodeRole(node, nodes);
-                const isMaster = nodeRole === "master";
-                const hasOnlineReplacement = nodes.some((candidate) => candidate.id !== node.id && candidate.status === "online");
-                const actionBusy = busyKey?.startsWith(`${node.id}:`) ?? false;
                 return (
                   <tr
                     key={`${queryRevealKey}-${node.id}`}
@@ -2276,19 +2223,6 @@ function NodesPage({
                           <ArrowRight size={14} />
                           详情
                         </Button>
-                        {canManage && (
-                          <ActionMenu
-                            label="更多"
-                            items={[
-                              { label: "设为主节点", icon: ShieldCheck, onSelect: () => requestMoreAction(node, "promote"), disabled: tableBusy || node.status !== "online" || isMaster },
-                              { label: "设为从节点", icon: HardDrives, onSelect: () => requestMoreAction(node, "standby"), disabled: tableBusy || !isMaster || !hasOnlineReplacement },
-                              { label: "升级", icon: ArrowsClockwise, onSelect: () => requestQuickAction(node, "upgrade"), disabled: tableBusy },
-                              { label: "卸载", icon: Trash, onSelect: () => requestQuickAction(node, "uninstall"), danger: true, disabled: tableBusy || isCurrentNode },
-                              { label: node.status === "online" ? "下线" : "上线", icon: node.status === "online" ? XCircle : CheckCircle, onSelect: () => requestMoreAction(node, node.status === "online" ? "offline" : "online"), disabled: tableBusy || (isCurrentNode && node.status === "online") },
-                            ]}
-                          />
-                        )}
-                        {actionBusy && <ArrowsClockwise size={14} className="animate-spin text-slate-400" />}
                       </div>
                     </td>
                   </tr>
@@ -2315,91 +2249,41 @@ function NodesPage({
       </section>
 
       <Modal
-        open={Boolean(handoffReport)}
-        title={handoffReport ? handoffTitle(handoffReport.kind) : ""}
-        description={handoffReport?.message || ""}
-        onClose={() => setHandoffReport(null)}
+        open={masterCountDialogOpen}
+        title="主节点个数"
+        onClose={() => setMasterCountDialogOpen(false)}
+        size="md"
       >
-        {handoffReport && (
-          <div className="grid gap-4">
-            <div className="grid gap-3 sm:grid-cols-4">
-              <DetailCard label="发生时间" value={formatDateTime(handoffReport.happenedAt)} />
-              <DetailCard label="在线节点" value={`${handoffReport.after.onlineNodes}/${handoffReport.after.totalNodes}`} />
-              <DetailCard label="主节点" value={handoffReport.after.masterNodeName || "-"} />
-              <DetailCard label="状态" value={handoffReport.success ? "完成" : "失败"} />
-            </div>
-
-            <div className="border-l border-line bg-slate-50/60 px-4 py-3">
-              <div className="text-sm font-medium text-coal">结果</div>
-              <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                <div className="border-t border-line px-0 py-4">
-                  <div className="text-xs uppercase tracking-[0.18em] text-slate-500">节点</div>
-                  <div className="mt-2 text-sm font-medium text-coal">
-                    {handoffReport.node?.name || "-"}
-                  </div>
-                </div>
-                <div className="border-t border-line px-0 py-4">
-                  <div className="text-xs uppercase tracking-[0.18em] text-slate-500">结果</div>
-                  <div className="mt-2 text-sm font-medium text-coal">
-                    {handoffReport.success ? "已完成" : "未完成"}
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="grid gap-3">
-              <div className="border-y border-dashed border-line bg-slate-50/60 px-4 py-6 text-center text-sm text-slate-500">
-                {handoffReport.message}
-              </div>
-            </div>
+        <div className="grid gap-4">
+          <Field label="个数" error={masterCountError}>
+            <TextInput
+              className="input"
+              type="number"
+              min={1}
+              max={maxMasterNodeCount}
+              value={masterCountDraft}
+              disabled={masterCountSaving}
+              onChange={(event) => setMasterCountDraft(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  void saveMasterCount();
+                }
+              }}
+            />
+          </Field>
+          <div className="text-sm text-slate-500">最多 {maxMasterNodeCount} 个</div>
+          <div className="flex justify-end gap-3">
+            <Button type="button" onClick={() => setMasterCountDialogOpen(false)} disabled={masterCountSaving} className="btn-secondary">
+              取消
+            </Button>
+            <Button type="button" onClick={() => void saveMasterCount()} disabled={masterCountSaving || Boolean(masterCountError)} className="btn-primary">
+              {masterCountSaving ? <ArrowsClockwise size={16} className="animate-spin" /> : <CheckCircle size={16} />}
+              保存
+            </Button>
           </div>
-        )}
+        </div>
       </Modal>
-
-      <Modal
-        open={Boolean(operationResult)}
-        title={operationResult ? nodeActionTitle(operationResult.action) : ""}
-        description={operationResult?.message || ""}
-        onClose={() => setOperationResult(null)}
-      >
-        {operationResult && (
-          <div className="grid gap-4">
-            {operationResult.before && operationResult.after && (
-              <div className="grid gap-3 sm:grid-cols-3">
-                <DetailCard label="发生时间" value={formatDateTime(operationResult.finishedAt)} />
-                <DetailCard label="在线节点" value={`${operationResult.after.onlineNodes}/${operationResult.after.totalNodes}`} />
-                <DetailCard label="状态" value={operationResult.success ? "完成" : "失败"} />
-              </div>
-            )}
-
-            <div className="grid gap-3">
-              {operationResult.steps.map((step) => (
-                <div key={step.key} className="border-l border-line bg-slate-50/60 px-4 py-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="font-medium text-coal">{step.label}</div>
-                    <Badge tone={step.status === "done" ? "green" : "red"}>{step.status === "done" ? "完成" : "失败"}</Badge>
-                  </div>
-                  <div className="mt-2 text-sm text-slate-500">{step.detail}</div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-      </Modal>
-
-      <ConfirmDialog
-        open={Boolean(confirmation)}
-        title={confirmation?.title || ""}
-        description={confirmation?.description || ""}
-        confirmLabel={confirmation?.confirmLabel || "确认"}
-        confirmTone={confirmation?.confirmTone}
-        onCancel={() => setConfirmation(null)}
-        onConfirm={() => {
-          const action = confirmation?.onConfirm;
-          setConfirmation(null);
-          action?.();
-        }}
-      />
     </>
   );
 }
@@ -3648,32 +3532,6 @@ function nodeStatusText(status: ClusterNode["status"]) {
 function nodeTone(status: ClusterNode["status"]) {
   if (status === "online") return "green";
   return "neutral";
-}
-
-function actionText(action: "offline" | "online" | "promote" | "standby") {
-  if (action === "online") return "确认上线";
-  if (action === "offline") return "确认下线";
-  if (action === "promote") return "设为主节点";
-  return "设为从节点";
-}
-
-function nodeActionConfirmTitle(node: ClusterNode, action: "offline" | "online" | "promote" | "standby") {
-  if (action === "offline") return `下线节点“${node.name}”`;
-  if (action === "online") return `恢复节点“${node.name}”`;
-  if (action === "promote") return `设为主节点“${node.name}”`;
-  return `设为从节点“${node.name}”`;
-}
-
-function nodeActionConfirmDescription(action: "offline" | "online" | "promote" | "standby") {
-  if (action === "offline") return "节点会被标记为离线。确认继续吗？";
-  if (action === "online") return "确认上线该节点？";
-  if (action === "promote") return "其他节点会切为从节点。确认继续吗？";
-  return "将由其他在线节点接管主节点。确认继续吗？";
-}
-
-function nodeActionTitle(action: NodeOperationResult["action"]) {
-  if (action === "upgrade") return "升级结果";
-  return "卸载结果";
 }
 
 export default App;

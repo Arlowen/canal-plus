@@ -89,34 +89,54 @@ type clusterNodeRow struct {
 	UpdatedAt       string       `json:"updatedAt" gorm:"size:64;index"`
 }
 
+type clusterSettingsRow struct {
+	SortOrder       int    `json:"-" gorm:"not null;index"`
+	ID              string `json:"id" gorm:"primaryKey;size:64"`
+	MasterNodeCount int    `json:"masterNodeCount" gorm:"not null"`
+	UpdatedAt       string `json:"updatedAt" gorm:"size:64;index"`
+}
+
 type snapshotRows struct {
-	Users         []userRow
-	Datasources   []datasourceRow
-	OperationLogs []operationLogRow
-	AlertRules    []alertRuleRow
-	AlertEvents   []alertEventRow
-	Nodes         []clusterNodeRow
+	Users           []userRow
+	Datasources     []datasourceRow
+	OperationLogs   []operationLogRow
+	AlertRules      []alertRuleRow
+	AlertEvents     []alertEventRow
+	Nodes           []clusterNodeRow
+	ClusterSettings []clusterSettingsRow
 }
 
 func snapshotRowsFromDatabaseShape(data DatabaseShape) snapshotRows {
+	settingsRows := []clusterSettingsRow{}
+	if data.ClusterSettings.ID != "" {
+		settingsRow := convertJSON[clusterSettingsRow](data.ClusterSettings)
+		settingsRow.SortOrder = 0
+		settingsRows = append(settingsRows, settingsRow)
+	}
 	return snapshotRows{
-		Users:         toRows[User, userRow](data.Users, func(row *userRow, order int) { row.SortOrder = order }),
-		Datasources:   toRows[Datasource, datasourceRow](data.Datasources, func(row *datasourceRow, order int) { row.SortOrder = order }),
-		OperationLogs: toRows[OperationLog, operationLogRow](data.OperationLogs, func(row *operationLogRow, order int) { row.SortOrder = order }),
-		AlertRules:    toRows[AlertRule, alertRuleRow](data.AlertRules, func(row *alertRuleRow, order int) { row.SortOrder = order }),
-		AlertEvents:   toRows[AlertEvent, alertEventRow](data.AlertEvents, func(row *alertEventRow, order int) { row.SortOrder = order }),
-		Nodes:         toRows[ClusterNode, clusterNodeRow](data.Nodes, func(row *clusterNodeRow, order int) { row.SortOrder = order }),
+		Users:           toRows[User, userRow](data.Users, func(row *userRow, order int) { row.SortOrder = order }),
+		Datasources:     toRows[Datasource, datasourceRow](data.Datasources, func(row *datasourceRow, order int) { row.SortOrder = order }),
+		OperationLogs:   toRows[OperationLog, operationLogRow](data.OperationLogs, func(row *operationLogRow, order int) { row.SortOrder = order }),
+		AlertRules:      toRows[AlertRule, alertRuleRow](data.AlertRules, func(row *alertRuleRow, order int) { row.SortOrder = order }),
+		AlertEvents:     toRows[AlertEvent, alertEventRow](data.AlertEvents, func(row *alertEventRow, order int) { row.SortOrder = order }),
+		Nodes:           toRows[ClusterNode, clusterNodeRow](data.Nodes, func(row *clusterNodeRow, order int) { row.SortOrder = order }),
+		ClusterSettings: settingsRows,
 	}
 }
 
 func (s snapshotRows) toDatabaseShape() DatabaseShape {
+	settings := ClusterSettings{}
+	if len(s.ClusterSettings) > 0 {
+		settings = convertJSON[ClusterSettings](s.ClusterSettings[0])
+	}
 	return DatabaseShape{
-		Users:         fromRows[User, userRow](s.Users),
-		Datasources:   fromRows[Datasource, datasourceRow](s.Datasources),
-		OperationLogs: fromRows[OperationLog, operationLogRow](s.OperationLogs),
-		AlertRules:    fromRows[AlertRule, alertRuleRow](s.AlertRules),
-		AlertEvents:   fromRows[AlertEvent, alertEventRow](s.AlertEvents),
-		Nodes:         fromRows[ClusterNode, clusterNodeRow](s.Nodes),
+		Users:           fromRows[User, userRow](s.Users),
+		Datasources:     fromRows[Datasource, datasourceRow](s.Datasources),
+		OperationLogs:   fromRows[OperationLog, operationLogRow](s.OperationLogs),
+		AlertRules:      fromRows[AlertRule, alertRuleRow](s.AlertRules),
+		AlertEvents:     fromRows[AlertEvent, alertEventRow](s.AlertEvents),
+		Nodes:           fromRows[ClusterNode, clusterNodeRow](s.Nodes),
+		ClusterSettings: settings,
 	}
 }
 
@@ -126,7 +146,8 @@ func (s snapshotRows) empty() bool {
 		len(s.OperationLogs) == 0 &&
 		len(s.AlertRules) == 0 &&
 		len(s.AlertEvents) == 0 &&
-		len(s.Nodes) == 0
+		len(s.Nodes) == 0 &&
+		len(s.ClusterSettings) == 0
 }
 
 func convertJSON[To any](value any) To {
