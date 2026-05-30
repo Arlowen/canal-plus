@@ -2095,8 +2095,8 @@ function NodesPage({
           <h1 className="text-3xl font-semibold tracking-tight text-coal md:text-4xl">节点</h1>
         </div>
 
-        <div className="flex flex-col gap-3 border-b border-line px-5 py-4 md:px-6 xl:flex-row xl:items-end xl:justify-between">
-          <div className="grid gap-3 sm:grid-cols-[170px_240px_auto] sm:items-end">
+        <div className="flex flex-col gap-3 border-b border-line px-5 py-4 md:px-6 sm:flex-row sm:items-end sm:justify-between">
+          <div className="grid gap-3 sm:grid-cols-[170px_240px_max-content] sm:items-end">
             <label className="block">
               <span className="label mb-2 block">状态</span>
               <DropdownSelect
@@ -2146,15 +2146,15 @@ function NodesPage({
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[940px] table-fixed border-collapse text-left">
+          <table className="w-full min-w-[845px] table-fixed border-collapse text-left">
             <colgroup>
-              <col className="w-[190px]" />
+              <col className="w-[180px]" />
               <col className="w-[75px]" />
               <col className="w-[90px]" />
-              <col className="w-[155px]" />
+              <col className="w-[150px]" />
               <col className="w-[85px]" />
-              <col className="w-[165px]" />
-              <col className="w-[180px]" />
+              <col className="w-[145px]" />
+              <col className="w-[120px]" />
             </colgroup>
             <thead className="bg-slate-50/90 text-xs font-semibold text-slate-500">
               <tr className="border-b border-line">
@@ -2164,7 +2164,7 @@ function NodesPage({
                 <th className="whitespace-nowrap px-4 py-3">Host</th>
                 <th className="whitespace-nowrap px-4 py-3">版本号</th>
                 <th className="whitespace-nowrap px-4 py-3">资源</th>
-                <th className="whitespace-nowrap px-4 py-3">操作</th>
+                <th className="whitespace-nowrap px-5 py-3 text-right md:px-6">操作</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-line bg-white">
@@ -2213,8 +2213,8 @@ function NodesPage({
                         CPU {node.cpuPercent}% · 内存 {node.memoryPercent}%
                       </span>
                     </td>
-                    <td className="px-4 py-4 align-middle">
-                      <div className="flex items-center justify-start gap-2">
+                    <td className="px-5 py-4 align-middle md:px-6">
+                      <div className="flex items-center justify-end gap-2">
                         <Button
                           type="button"
                           onClick={() => onOpenNode(node.id)}
