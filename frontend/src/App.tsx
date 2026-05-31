@@ -2413,10 +2413,10 @@ function NodeMonitorPage({
     <section className="p-6">
       <div className="flex flex-col gap-4 border-b border-line pb-5 lg:flex-row lg:items-start lg:justify-between">
         <div>
-          <Button type="button" onClick={onBack} className="btn-compact">
-            <ArrowRight size={14} className="rotate-180" />
-            返回
-          </Button>
+          <div className="inline-flex rounded-lg border border-line bg-slate-50 px-3 py-2 text-sm text-slate-600">
+            <span className="label mr-2">心跳</span>
+            {formatDateTime(selected.lastHeartbeatAt)} · {heartbeatAge} 秒前
+          </div>
           <div className="label mt-4">当前节点</div>
           <h2 className="mt-2 text-2xl font-semibold tracking-tight text-coal">{selected.name || selected.id}</h2>
           <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -2426,10 +2426,10 @@ function NodeMonitorPage({
             <span className="mono text-xs text-slate-500">{selected.endpoint}</span>
           </div>
         </div>
-        <div className="rounded-lg border border-line bg-slate-50 px-3 py-2 text-sm text-slate-600">
-          <span className="label mr-2">心跳</span>
-          {formatDateTime(selected.lastHeartbeatAt)} · {heartbeatAge} 秒前
-        </div>
+        <Button type="button" onClick={onBack} className="btn-compact lg:order-none">
+          <ArrowRight size={14} className="rotate-180" />
+          返回
+        </Button>
       </div>
 
       <div className="grid gap-4 pt-5 lg:grid-cols-2">
