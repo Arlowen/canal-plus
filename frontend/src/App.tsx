@@ -1989,9 +1989,7 @@ function NodesPage({
   onOpenNode: (nodeID: string) => void;
 }) {
   const nodes = cluster?.nodes ?? emptyNodes;
-  const [draftStatusFilter, setDraftStatusFilter] = useState<"all" | ClusterNode["status"]>("all");
   const [draftNameQuery, setDraftNameQuery] = useState("");
-  const [appliedStatusFilter, setAppliedStatusFilter] = useState<"all" | ClusterNode["status"]>("all");
   const [appliedNameQuery, setAppliedNameQuery] = useState("");
   const [pageIndex, setPageIndex] = useState(1);
   const pageSize = 20;
@@ -2018,11 +2016,10 @@ function NodesPage({
   const tableBusy = querying || masterCountSaving || Boolean(savingNodeNameId);
 
   const filteredNodes = useMemo(() => nodes.filter((node) => {
-    const matchesStatus = appliedStatusFilter === "all" || node.status === appliedStatusFilter;
     const query = appliedNameQuery.trim().toLowerCase();
     const matchesName = query === "" || node.name.toLowerCase().includes(query);
-    return matchesStatus && matchesName;
-  }), [appliedNameQuery, appliedStatusFilter, nodes]);
+    return matchesName;
+  }), [appliedNameQuery, nodes]);
 
   const totalItems = filteredNodes.length;
   const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
@@ -2038,7 +2035,6 @@ function NodesPage({
     setQuerying(true);
     try {
       await onChanged(true);
-      setAppliedStatusFilter(draftStatusFilter);
       setAppliedNameQuery(draftNameQuery);
       setPageIndex(1);
       setQueryRevealKey((current) => current + 1);
@@ -2152,21 +2148,7 @@ function NodesPage({
         </div>
 
         <div className="flex flex-col gap-3 border-b border-line px-5 py-4 md:px-6 sm:flex-row sm:items-end sm:justify-between">
-          <div className="grid gap-3 sm:grid-cols-[170px_240px_max-content] sm:items-end">
-            <label className="block">
-              <span className="label mb-2 block">状态</span>
-              <DropdownSelect
-                value={draftStatusFilter}
-                disabled={tableBusy}
-                ariaLabel="状态"
-                options={[
-                  { value: "all", label: "全部" },
-                  { value: "online", label: "在线" },
-                  { value: "offline", label: "离线" }
-                ]}
-                onChange={(nextValue) => setDraftStatusFilter(nextValue as "all" | ClusterNode["status"])}
-              />
-            </label>
+          <div className="grid gap-3 sm:grid-cols-[240px_max-content] sm:items-end">
             <label className="block">
               <span className="label mb-2 block">名称</span>
               <TextInput
