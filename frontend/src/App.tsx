@@ -2392,7 +2392,6 @@ function NodeMonitorPage({
 }) {
   const nodes = cluster?.nodes ?? emptyNodes;
   const selected = nodes.find((item) => item.id === nodeId) || null;
-  const localNodeId = cluster?.localNodeId;
 
   if (!selected) {
     return (
@@ -2412,17 +2411,17 @@ function NodeMonitorPage({
   return (
     <section className="p-6">
       <div className="flex flex-col gap-4 border-b border-line pb-5 lg:flex-row lg:items-start lg:justify-between">
-        <div>
+        <div className="min-w-0 flex-1">
           <div className="inline-flex rounded-lg border border-line bg-slate-50 px-3 py-2 text-sm text-slate-600">
             <span className="label mr-2">心跳</span>
             {formatDateTime(selected.lastHeartbeatAt)} · {heartbeatAge} 秒前
           </div>
-          <div className="label mt-4">当前节点</div>
-          <h2 className="mt-2 text-2xl font-semibold tracking-tight text-coal">{selected.name || selected.id}</h2>
-          <div className="mt-3 flex flex-wrap items-center gap-2">
+          <div className="mt-4 flex min-w-0 items-center justify-between gap-4">
+            <h2 className="min-w-0 flex-1 truncate text-2xl font-semibold tracking-tight text-coal">{selected.name || selected.id}</h2>
             <Badge tone={nodeTone(selected.status)}>{nodeStatusText(selected.status)}</Badge>
+          </div>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
             <Badge tone={nodeRoleTone(selectedRole)}>{nodeRoleText(selectedRole)}</Badge>
-            {localNodeId === selected.id && <Badge tone="blue">本机节点</Badge>}
             <span className="mono text-xs text-slate-500">{selected.endpoint}</span>
           </div>
         </div>
