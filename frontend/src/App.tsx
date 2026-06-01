@@ -2254,14 +2254,14 @@ function NodesPage({
         pushNotice({ tone: result.success ? "success" : "warning", message: result.message || "已卸载" });
       } else {
         const result = await api.nodeAction(node.id, operation);
-        const message = "message" in result && typeof result.message === "string"
-          ? result.message
-          : operation === "heartbeat"
-            ? "心跳已刷新"
+        if (operation !== "heartbeat") {
+          const message = "message" in result && typeof result.message === "string"
+            ? result.message
             : operation === "online"
               ? "节点已上线"
               : "节点已下线";
-        pushNotice({ tone: "success", message });
+          pushNotice({ tone: "success", message });
+        }
       }
       await onChanged();
     } catch (requestError) {
