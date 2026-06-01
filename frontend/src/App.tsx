@@ -99,6 +99,7 @@ type DatasourceFormState = {
 
 type DatasourceFieldErrors = Partial<Record<"name" | "host" | "port" | "username" | "password" | "remark", string>>;
 type DatasourceTypeFilter = "all" | "mysql";
+type NodeTypeFilter = "all" | "master" | "standby";
 
 const navItems: Array<{ id: MainPage; label: string; icon: typeof Database }> = [
   { id: "datasources", label: "数据源", icon: Database },
@@ -2054,15 +2055,20 @@ function NodesPage({
   onOpenNode: (nodeID: string) => void;
 }) {
   const nodes = cluster?.nodes ?? emptyNodes;
+  const [draftTypeFilter, setDraftTypeFilter] = useState<NodeTypeFilter>("all");
   const [draftNameQuery, setDraftNameQuery] = useState("");
+  const [appliedTypeFilter, setAppliedTypeFilter] = useState<NodeTypeFilter>("all");
   const [appliedNameQuery, setAppliedNameQuery] = useState("");
   const [pageIndex, setPageIndex] = useState(1);
-  const pageSize = 20;
+  const pageSize = 10;
+  const [jumpPageDraft, setJumpPageDraft] = useState("1");
   const [querying, setQuerying] = useState(false);
   const [queryRevealKey, setQueryRevealKey] = useState(0);
   const [masterCountDialogOpen, setMasterCountDialogOpen] = useState(false);
   const [masterCountDraft, setMasterCountDraft] = useState("");
   const [masterCountSaving, setMasterCountSaving] = useState(false);
+  const [nodeActionId, setNodeActionId] = useState<string | null>(null);
+  const [confirmation, setConfirmation] = useState<ConfirmationDialogState | null>(null);
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null);
   const [editingNodeName, setEditingNodeName] = useState("");
   const [savingNodeNameId, setSavingNodeNameId] = useState<string | null>(null);
@@ -2078,28 +2084,45 @@ function NodesPage({
   const masterCountError = masterCountDialogOpen && (!Number.isInteger(parsedMasterCount) || parsedMasterCount < 1 || parsedMasterCount > maxMasterNodeCount)
     ? `1-${maxMasterNodeCount}`
     : "";
-  const tableBusy = querying || masterCountSaving || Boolean(savingNodeNameId);
+  const tableBusy = querying || masterCountSaving || Boolean(savingNodeNameId) || Boolean(nodeActionId);
 
   const filteredNodes = useMemo(() => nodes.filter((node) => {
+    const role = effectiveNodeRole(node, nodes);
+    const matchesType = appliedTypeFilter === "all" || role === appliedTypeFilter;
     const query = appliedNameQuery.trim().toLowerCase();
-    const matchesName = query === "" || node.name.toLowerCase().includes(query);
-    return matchesName;
-  }), [appliedNameQuery, nodes]);
+    const searchableText = [
+      node.name,
+      node.id,
+      node.endpoint,
+      node.zone,
+      node.version,
+      nodeRoleText(role),
+      nodeStatusText(node.status)
+    ].filter(Boolean).join(" ").toLowerCase();
+    const matchesName = query === "" || searchableText.includes(query);
+    return matchesType && matchesName;
+  }), [appliedNameQuery, appliedTypeFilter, nodes]);
 
   const totalItems = filteredNodes.length;
   const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
   const currentPage = clampPage(pageIndex, totalPages);
   const pageStart = (currentPage - 1) * pageSize;
   const pageItems = filteredNodes.slice(pageStart, pageStart + pageSize);
+  const pageNumbers = useMemo(() => paginationRange(currentPage, totalPages), [currentPage, totalPages]);
 
   useEffect(() => {
     setPageIndex((current) => clampPage(current, totalPages));
   }, [totalPages]);
 
+  useEffect(() => {
+    setJumpPageDraft(String(currentPage));
+  }, [currentPage]);
+
   const runQuery = async () => {
     setQuerying(true);
     try {
       await onChanged(true);
+      setAppliedTypeFilter(draftTypeFilter);
       setAppliedNameQuery(draftNameQuery);
       setPageIndex(1);
       setQueryRevealKey((current) => current + 1);
@@ -2110,6 +2133,16 @@ function NodesPage({
 
   const goToPage = (nextPage: number) => {
     setPageIndex(clampPage(nextPage, totalPages));
+  };
+
+  const commitJumpPage = () => {
+    if (!jumpPageDraft.trim()) {
+      setJumpPageDraft(String(currentPage));
+      return;
+    }
+    const nextPage = clampPage(Number(jumpPageDraft), totalPages);
+    setPageIndex(nextPage);
+    setJumpPageDraft(String(nextPage));
   };
 
   const openMasterCountDialog = () => {
@@ -2205,196 +2238,304 @@ function NodesPage({
     }
   };
 
+  const runNodeOperation = async (node: ClusterNode, operation: "online" | "offline" | "heartbeat" | "upgrade" | "uninstall") => {
+    if (!canManage) {
+      pushNotice({ tone: "warning", message: "需要管理员权限" });
+      return;
+    }
+    const actionId = `${node.id}:${operation}`;
+    setNodeActionId(actionId);
+    try {
+      if (operation === "upgrade") {
+        const result = await api.upgradeNode(node.id);
+        pushNotice({ tone: result.success ? "success" : "warning", message: result.message || "已升级" });
+      } else if (operation === "uninstall") {
+        const result = await api.uninstallNode(node.id);
+        pushNotice({ tone: result.success ? "success" : "warning", message: result.message || "已卸载" });
+      } else {
+        const result = await api.nodeAction(node.id, operation);
+        const message = "message" in result && typeof result.message === "string"
+          ? result.message
+          : operation === "heartbeat"
+            ? "心跳已刷新"
+            : operation === "online"
+              ? "节点已上线"
+              : "节点已下线";
+        pushNotice({ tone: "success", message });
+      }
+      await onChanged();
+    } catch (requestError) {
+      pushNotice({ tone: "error", message: requestError instanceof Error ? requestError.message : "操作失败" });
+    } finally {
+      setNodeActionId(null);
+    }
+  };
+
+  const requestNodeOperation = (node: ClusterNode, operation: "online" | "offline" | "heartbeat" | "upgrade" | "uninstall") => {
+    if (operation === "offline" || operation === "uninstall") {
+      setConfirmation({
+        title: `${operation === "offline" ? "下线" : "卸载"} ${node.name || node.id}`,
+        description: "",
+        confirmLabel: operation === "offline" ? "下线" : "卸载",
+        confirmTone: "danger",
+        onConfirm: () => {
+          void runNodeOperation(node, operation);
+        }
+      });
+      return;
+    }
+    void runNodeOperation(node, operation);
+  };
+
   return (
     <>
-      <section className="min-w-0">
-        <div className="flex h-[81px] items-center border-b border-line px-5 md:px-6">
-          <h1 className="text-3xl font-semibold tracking-tight text-coal md:text-4xl">节点</h1>
+      <section className="min-w-0 overflow-hidden">
+        <div className="flex h-[101px] items-center border-b border-line px-5 md:px-8">
+          <h1 className="text-3xl font-semibold tracking-tight text-coal">节点管理</h1>
         </div>
 
-        <div className="flex flex-col gap-3 border-b border-line px-5 py-4 md:px-6 sm:flex-row sm:items-end sm:justify-between">
-          <div className="grid gap-3 sm:grid-cols-[240px_max-content] sm:items-end">
-            <label className="block">
-              <span className="label mb-2 block">名称</span>
-              <TextInput
-                className="input"
-                value={draftNameQuery}
-                disabled={tableBusy}
-                placeholder="名称"
-                onChange={(event) => setDraftNameQuery(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") {
-                    event.preventDefault();
-                    void runQuery();
-                  }
-                }}
-              />
-            </label>
-            <Button type="button" onClick={() => void runQuery()} disabled={tableBusy} className="btn-primary">
-              {querying ? <ArrowsClockwise size={16} /> : <MagnifyingGlass size={16} />}
-              {querying ? "查询中" : "查询"}
-            </Button>
+        <div className="px-5 py-6 md:px-8">
+          <div className="mb-6 flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+              <div className="w-full sm:w-[174px]">
+                <DropdownSelect
+                  value={draftTypeFilter}
+                  disabled={tableBusy}
+                  ariaLabel="节点类型"
+                  options={[
+                    { value: "all", label: "全部类型" },
+                    { value: "master", label: "主节点" },
+                    { value: "standby", label: "备用节点" }
+                  ]}
+                  onChange={(nextValue) => setDraftTypeFilter(nextValue as NodeTypeFilter)}
+                  className="h-12 min-h-12"
+                />
+              </div>
+              <label className="relative block w-full sm:w-[344px]">
+                <MagnifyingGlass aria-hidden="true" className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
+                <TextInput
+                  className="input h-12 pl-11"
+                  value={draftNameQuery}
+                  disabled={tableBusy}
+                  placeholder="搜索节点名称、Host"
+                  onChange={(event) => setDraftNameQuery(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      void runQuery();
+                    }
+                  }}
+                />
+              </label>
+              <Button type="button" onClick={() => void runQuery()} disabled={tableBusy} className="btn-primary h-12 min-w-[108px]">
+                {querying ? <ArrowsClockwise size={16} className="animate-spin" /> : <MagnifyingGlass size={16} />}
+                查询
+              </Button>
+            </div>
+
+            <div title={canManage ? undefined : "权限不足"}>
+              <Button
+                type="button"
+                onClick={openMasterCountDialog}
+                disabled={!canManage || tableBusy || maxMasterNodeCount <= 0}
+                className="btn-secondary h-12 min-w-[146px] px-4"
+              >
+                <GearSix size={18} />
+                主节点配置
+              </Button>
+            </div>
           </div>
 
-          {canManage && (
-            <div className="flex justify-end">
-              <ActionMenu
-                label="更多"
-                items={[
-                  { label: "主节点个数", icon: GearSix, onSelect: openMasterCountDialog, disabled: tableBusy || maxMasterNodeCount <= 0 }
-                ]}
-              />
-            </div>
-          )}
-        </div>
-
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[715px] table-fixed border-collapse text-left">
-            <colgroup>
-              <col className="w-[210px]" />
-              <col className="w-[75px]" />
-              <col className="w-[90px]" />
-              <col className="w-[140px]" />
-              <col className="w-[80px]" />
-              <col className="w-[120px]" />
-            </colgroup>
-            <thead className="bg-slate-50/90 text-xs font-semibold text-slate-500">
-              <tr className="border-b border-line">
-                <th className="whitespace-nowrap px-5 py-3 md:px-6">节点名称</th>
-                <th className="whitespace-nowrap px-4 py-3">状态</th>
-                <th className="whitespace-nowrap px-4 py-3">节点类型</th>
-                <th className="whitespace-nowrap px-4 py-3">Host</th>
-                <th className="whitespace-nowrap px-4 py-3">版本号</th>
-                <th className="whitespace-nowrap px-5 py-3 md:px-6">操作</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-line bg-white">
-              {pageItems.length === 0 ? (
-                <tr
-                  key={`empty-${queryRevealKey}`}
-                  className={cx(queryRevealKey > 0 && !tableBusy && "query-reveal-row")}
-                  style={queryRevealKey > 0 && !tableBusy ? { animationDelay: "0ms" } : undefined}
-                >
-                  <td colSpan={6} className="px-6 py-12">
-                    <div className="mx-auto flex max-w-sm flex-col items-center text-center">
-                      <div className="text-base font-semibold text-coal">
-                        {nodes.length === 0 ? "暂无节点" : "无匹配"}
-                      </div>
-                    </div>
-                  </td>
+          <div className="overflow-x-auto rounded-lg border border-line bg-white">
+            <table className="w-full min-w-[936px] table-fixed border-collapse text-left">
+              <colgroup>
+                <col className="w-[205px]" />
+                <col className="w-[95px]" />
+                <col className="w-[135px]" />
+                <col className="w-[85px]" />
+                <col className="w-[95px]" />
+                <col className="w-[110px]" />
+                <col className="w-[85px]" />
+                <col className="w-[126px]" />
+              </colgroup>
+              <thead className="bg-slate-50/70 text-sm font-semibold text-slate-500">
+                <tr className="border-b border-line">
+                  <th className="whitespace-nowrap px-6 py-4">节点名称</th>
+                  <th className="whitespace-nowrap px-5 py-4">节点类型</th>
+                  <th className="whitespace-nowrap px-5 py-4">Host</th>
+                  <th className="whitespace-nowrap px-5 py-4">状态</th>
+                  <th className="whitespace-nowrap px-5 py-4">运行任务数</th>
+                  <th className="whitespace-nowrap px-5 py-4">最近心跳</th>
+                  <th className="whitespace-nowrap px-5 py-4">版本</th>
+                  <th className="whitespace-nowrap px-3 py-4">操作</th>
                 </tr>
-              ) : pageItems.map((node, index) => {
-                const nodeRole = effectiveNodeRole(node, nodes);
-                const isEditingNodeName = editingNodeId === node.id;
-                const isSavingNodeName = savingNodeNameId === node.id;
-                return (
+              </thead>
+              <tbody className="divide-y divide-line bg-white">
+                {pageItems.length === 0 ? (
                   <tr
-                    key={`${queryRevealKey}-${node.id}`}
-                    className={cx("transition hover:bg-slate-50/70", tableBusy && "opacity-70", queryRevealKey > 0 && !tableBusy && "query-reveal-row")}
-                    style={queryRevealKey > 0 && !tableBusy ? { animationDelay: `${Math.min(index, 14) * 44}ms` } : undefined}
+                    key={`empty-${queryRevealKey}`}
+                    className={cx(queryRevealKey > 0 && !tableBusy && "query-reveal-row")}
+                    style={queryRevealKey > 0 && !tableBusy ? { animationDelay: "0ms" } : undefined}
                   >
-                    <td className="max-w-[340px] px-5 py-4 align-middle md:px-6">
-                      <div className="flex min-w-0 items-center gap-3">
-                        <NodeTypeIcon status={node.status} />
-                        {isEditingNodeName ? (
-                          <div ref={nodeNameEditRef} className="flex min-w-0 flex-1 items-center gap-1.5">
-                            <TextInput
-                              className="input h-9 min-w-0 px-2.5 py-1.5 text-sm font-semibold"
-                              value={editingNodeName}
-                              disabled={isSavingNodeName}
-                              aria-label="节点名称"
-                              autoFocus
-                              onFocus={(event) => event.currentTarget.select()}
-                              onChange={(event) => setEditingNodeName(event.target.value)}
-                              onKeyDown={(event) => {
-                                if (event.key === "Enter") {
-                                  event.preventDefault();
-                                  void saveNodeName(node);
-                                }
-                                if (event.key === "Escape") {
-                                  event.preventDefault();
-                                  cancelEditNodeName();
-                                }
-                              }}
-                            />
-                            <Button
-                              type="button"
-                              aria-label="保存节点名称"
-                              disabled={isSavingNodeName}
-                              onClick={() => void saveNodeName(node)}
-                              className="btn-compact h-9 w-9 shrink-0 px-0"
-                            >
-                              {isSavingNodeName ? <ArrowsClockwise size={14} className="animate-spin" /> : <CheckCircle size={14} />}
-                            </Button>
-                          </div>
-                        ) : (
-                          <>
-                            <Button type="button" onClick={() => onOpenNode(node.id)} className="panel-link min-w-0">
-                              <span className="block truncate text-sm font-semibold text-coal">{node.name || node.id}</span>
-                            </Button>
-                            {canManage && (
-                              <Button
-                                type="button"
-                                aria-label="编辑节点名称"
-                                disabled={tableBusy}
-                                onClick={() => startEditNodeName(node)}
-                                className="btn-compact h-8 w-8 shrink-0 px-0"
-                              >
-                                <PencilSimple size={14} />
-                              </Button>
-                            )}
-                          </>
-                        )}
-                      </div>
-                    </td>
-                    <td className="px-4 py-4 align-middle">
-                      <Badge tone={nodeTone(node.status)}>{nodeStatusText(node.status)}</Badge>
-                    </td>
-                    <td className="px-4 py-4 align-middle">
-                      <Badge tone={nodeRoleTone(nodeRole)}>{nodeRoleText(nodeRole)}</Badge>
-                    </td>
-                    <td className="px-4 py-4 align-middle">
-                      <span title={node.endpoint} className="block truncate font-mono text-sm text-coal">{node.endpoint}</span>
-                    </td>
-                    <td className="px-4 py-4 align-middle font-mono text-sm text-slate-600">{node.version?.trim() || "-"}</td>
-                    <td className="px-5 py-4 align-middle md:px-6">
-                      <div className="flex items-center justify-end gap-2">
-                        <Button
-                          type="button"
-                          onClick={() => onOpenNode(node.id)}
-                          className="btn-compact whitespace-nowrap"
-                        >
-                          <ArrowRight size={14} />
-                          详情
-                        </Button>
+                    <td colSpan={8} className="px-6 py-16">
+                      <div className="mx-auto flex max-w-sm flex-col items-center text-center">
+                        <div className="text-base font-semibold text-coal">
+                          {nodes.length === 0 ? "暂无节点" : "无匹配"}
+                        </div>
                       </div>
                     </td>
                   </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+                ) : pageItems.map((node, index) => {
+                  const nodeRole = effectiveNodeRole(node, nodes);
+                  const isEditingNodeName = editingNodeId === node.id;
+                  const isSavingNodeName = savingNodeNameId === node.id;
+                  return (
+                    <tr
+                      key={`${queryRevealKey}-${node.id}`}
+                      className={cx("transition hover:bg-slate-50/70", tableBusy && "opacity-70", queryRevealKey > 0 && !tableBusy && "query-reveal-row")}
+                      style={queryRevealKey > 0 && !tableBusy ? { animationDelay: `${Math.min(index, 14) * 44}ms` } : undefined}
+                    >
+                      <td className="px-6 py-5 align-middle">
+                        <div className="flex min-w-0 items-center gap-4">
+                          <NodeTypeIcon status={node.status} />
+                          {isEditingNodeName ? (
+                            <div ref={nodeNameEditRef} className="flex min-w-0 flex-1 items-center gap-1.5">
+                              <TextInput
+                                className="input h-9 min-w-0 px-2.5 py-1.5 text-sm font-semibold"
+                                value={editingNodeName}
+                                disabled={isSavingNodeName}
+                                aria-label="节点名称"
+                                autoFocus
+                                onFocus={(event) => event.currentTarget.select()}
+                                onChange={(event) => setEditingNodeName(event.target.value)}
+                                onKeyDown={(event) => {
+                                  if (event.key === "Enter") {
+                                    event.preventDefault();
+                                    void saveNodeName(node);
+                                  }
+                                  if (event.key === "Escape") {
+                                    event.preventDefault();
+                                    cancelEditNodeName();
+                                  }
+                                }}
+                              />
+                              <Button
+                                type="button"
+                                aria-label="保存节点名称"
+                                disabled={isSavingNodeName}
+                                onClick={() => void saveNodeName(node)}
+                                className="btn-compact h-9 w-9 shrink-0 px-0"
+                              >
+                                {isSavingNodeName ? <ArrowsClockwise size={14} className="animate-spin" /> : <CheckCircle size={14} />}
+                              </Button>
+                            </div>
+                          ) : (
+                            <Button type="button" onClick={() => onOpenNode(node.id)} className="panel-link min-w-0">
+                              <span className="block truncate text-base font-semibold text-coal">{node.name || node.id}</span>
+                              <span className="mt-1 block truncate text-sm text-slate-500">{node.zone || node.id}</span>
+                            </Button>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-3 py-5 align-middle">
+                        <Badge tone={nodeRoleTone(nodeRole)}>{nodeRoleText(nodeRole)}</Badge>
+                      </td>
+                      <td className="px-5 py-5 align-middle">
+                        <span title={node.endpoint} className="block truncate font-mono text-sm text-coal">{node.endpoint}</span>
+                      </td>
+                      <td className="px-5 py-5 align-middle">
+                        <NodeStatusBadge status={node.status} />
+                      </td>
+                      <td className="px-5 py-5 align-middle font-mono text-sm text-coal">{node.capacity}</td>
+                      <td className="px-5 py-5 align-middle text-sm text-coal">{formatNodeHeartbeatAge(node.lastHeartbeatAt)}</td>
+                      <td className="px-5 py-5 align-middle">
+                        <span title={node.version?.trim() || "-"} className="block truncate font-mono text-sm text-coal">{node.version?.trim() || "-"}</span>
+                      </td>
+                      <td className="px-5 py-5 align-middle">
+                        <div className="flex items-center justify-start gap-2">
+                          <Button
+                            type="button"
+                            onClick={() => onOpenNode(node.id)}
+                            className="btn-compact h-10 whitespace-nowrap px-3"
+                          >
+                            详情
+                          </Button>
+                          {canManage && (
+                            <ActionMenu
+                              items={[
+                                { label: "编辑名称", icon: PencilSimple, onSelect: () => startEditNodeName(node), disabled: tableBusy },
+                                {
+                                  label: node.status === "online" ? "下线" : "上线",
+                                  icon: node.status === "online" ? XCircle : CheckCircle,
+                                  danger: node.status === "online",
+                                  onSelect: () => requestNodeOperation(node, node.status === "online" ? "offline" : "online"),
+                                  disabled: tableBusy
+                                },
+                                { label: "刷新心跳", icon: ArrowsClockwise, onSelect: () => requestNodeOperation(node, "heartbeat"), disabled: tableBusy },
+                                { label: "升级", icon: ArrowRight, onSelect: () => requestNodeOperation(node, "upgrade"), disabled: tableBusy },
+                                { label: "卸载", icon: Trash, danger: true, onSelect: () => requestNodeOperation(node, "uninstall"), disabled: tableBusy }
+                              ]}
+                            />
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
 
-        <div className="flex flex-col items-center justify-center gap-3 border-t border-line px-5 py-4 text-sm text-slate-600 md:px-6 sm:flex-row sm:items-center">
-          <div>共 {totalItems} 条</div>
-          <div className="flex flex-wrap items-center gap-2">
-            <Button type="button" onClick={() => goToPage(currentPage - 1)} disabled={currentPage <= 1} className="btn-compact">
-              <ArrowRight size={14} className="rotate-180" />
-              上一页
-            </Button>
-            <span className="min-w-16 text-center font-mono text-sm text-coal">{currentPage}/{totalPages}</span>
-            <Button type="button" onClick={() => goToPage(currentPage + 1)} disabled={currentPage >= totalPages} className="btn-compact">
-              下一页
-              <ArrowRight size={14} />
-            </Button>
+          <div className="mt-6 flex flex-col gap-3 text-sm text-slate-600 lg:flex-row lg:items-center lg:justify-between">
+            <div>共 {totalItems} 条</div>
+            <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+              <PaginationButton label="上一页" disabled={currentPage <= 1 || tableBusy} onClick={() => goToPage(currentPage - 1)}>
+                <CaretLeft size={16} />
+              </PaginationButton>
+              {pageNumbers.map((pageNumber) => (
+                <Button
+                  key={pageNumber}
+                  type="button"
+                  onClick={() => goToPage(pageNumber)}
+                  disabled={tableBusy}
+                  className={cx(
+                    "inline-flex h-10 min-w-10 items-center justify-center rounded-lg border px-3 text-sm font-semibold transition active:translate-y-px disabled:cursor-not-allowed disabled:opacity-45",
+                    currentPage === pageNumber
+                      ? "border-accent bg-accent text-white shadow-raised"
+                      : "border-line bg-white text-coal hover:border-blue-200 hover:bg-blue-50 hover:text-accent"
+                  )}
+                >
+                  {pageNumber}
+                </Button>
+              ))}
+              <PaginationButton label="下一页" disabled={currentPage >= totalPages || tableBusy} onClick={() => goToPage(currentPage + 1)}>
+                <CaretRight size={16} />
+              </PaginationButton>
+              <span className="ml-2 text-slate-500">前往</span>
+              <TextInput
+                aria-label="页码"
+                inputMode="numeric"
+                value={jumpPageDraft}
+                disabled={tableBusy}
+                onChange={(event) => setJumpPageDraft(event.target.value.replace(/\D/g, "").slice(0, 4))}
+                onBlur={commitJumpPage}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    commitJumpPage();
+                  }
+                }}
+                className="input h-10 w-16 px-3 py-2 text-center"
+              />
+              <span className="text-slate-500">页</span>
+            </div>
           </div>
         </div>
       </section>
 
       <Modal
         open={masterCountDialogOpen}
-        title="主节点个数"
+        title="主节点配置"
         onClose={() => setMasterCountDialogOpen(false)}
         size="md"
       >
@@ -2424,6 +2565,20 @@ function NodesPage({
           </div>
         </div>
       </Modal>
+
+      <ConfirmDialog
+        open={Boolean(confirmation)}
+        title={confirmation?.title || ""}
+        description={confirmation?.description || ""}
+        confirmLabel={confirmation?.confirmLabel || "确认"}
+        confirmTone={confirmation?.confirmTone}
+        onCancel={() => setConfirmation(null)}
+        onConfirm={() => {
+          const action = confirmation?.onConfirm;
+          setConfirmation(null);
+          action?.();
+        }}
+      />
     </>
   );
 }
@@ -2975,10 +3130,25 @@ function NodeTypeIcon({ status }: { status: ClusterNode["status"] }) {
       aria-hidden="true"
       className={cx(
         "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border",
-        online ? "border-emerald-100 bg-emerald-50 text-emerald-700" : "border-slate-200 bg-slate-50 text-slate-500"
+        online ? "border-blue-100 bg-blue-50 text-accent" : "border-red-100 bg-red-50 text-red-600"
       )}
     >
       <HardDrives size={18} />
+    </span>
+  );
+}
+
+function NodeStatusBadge({ status }: { status: ClusterNode["status"] }) {
+  const online = status === "online";
+  return (
+    <span
+      className={cx(
+        "inline-flex items-center gap-2 whitespace-nowrap rounded-md border px-2.5 py-1 text-sm font-semibold",
+        online ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-red-200 bg-red-50 text-red-600"
+      )}
+    >
+      <span className={cx("h-2 w-2 rounded-full", online ? "bg-emerald-500" : "bg-red-500")} />
+      {nodeStatusText(status)}
     </span>
   );
 }
@@ -3062,7 +3232,7 @@ function BackendUnavailableScreen({
   );
 }
 
-function Badge({ tone, children }: { tone: "blue" | "green" | "yellow" | "red" | "neutral"; children: ReactNode }) {
+function Badge({ tone, children }: { tone: "blue" | "green" | "yellow" | "red" | "purple" | "neutral"; children: ReactNode }) {
   const className = tone === "blue"
     ? "border-blue-200 bg-blue-50 text-blue-700"
     : tone === "green"
@@ -3071,7 +3241,9 @@ function Badge({ tone, children }: { tone: "blue" | "green" | "yellow" | "red" |
         ? "border-amber-200 bg-amber-50 text-amber-700"
         : tone === "red"
           ? "border-red-200 bg-red-50 text-red-700"
-          : "border-slate-200 bg-slate-50 text-slate-600";
+          : tone === "purple"
+            ? "border-violet-200 bg-violet-50 text-violet-700"
+            : "border-slate-200 bg-slate-50 text-slate-600";
   return <span className={cx("chip", className)}>{children}</span>;
 }
 
@@ -3766,12 +3938,12 @@ function effectiveNodeRole(node: ClusterNode, nodes: ClusterNode[]): "master" | 
 
 function nodeRoleText(role: ClusterNode["role"] | "master" | "standby") {
   if (role === "master") return "主节点";
-  return "从节点";
+  return "备用节点";
 }
 
 function nodeRoleTone(role: ClusterNode["role"] | "master" | "standby") {
   if (role === "master") return "blue";
-  return "neutral";
+  return "purple";
 }
 
 function nodeStatusText(status: ClusterNode["status"]) {
@@ -3782,6 +3954,17 @@ function nodeStatusText(status: ClusterNode["status"]) {
 function nodeTone(status: ClusterNode["status"]) {
   if (status === "online") return "green";
   return "neutral";
+}
+
+function formatNodeHeartbeatAge(value?: string) {
+  if (!value) return "-";
+  const seconds = secondsSince(value);
+  if (seconds < 60) return `${seconds} 秒前`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes} 分钟前`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} 小时前`;
+  return `${Math.floor(hours / 24)} 天前`;
 }
 
 export default App;
