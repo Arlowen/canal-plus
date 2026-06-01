@@ -1000,7 +1000,7 @@ function DatasourcePage({
   const [appliedTypeFilter, setAppliedTypeFilter] = useState<DatasourceTypeFilter>("all");
   const [appliedNameQuery, setAppliedNameQuery] = useState("");
   const [pageIndex, setPageIndex] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
+  const pageSize = 10;
   const [jumpPageDraft, setJumpPageDraft] = useState("1");
   const [querying, setQuerying] = useState(false);
   const [queryRevealKey, setQueryRevealKey] = useState(0);
@@ -1075,12 +1075,6 @@ function DatasourcePage({
 
   const goToPage = (nextPage: number) => {
     setPageIndex(clampPage(nextPage, totalPages));
-  };
-
-  const applyPageSize = (nextValue: string) => {
-    const nextPageSize = Number(nextValue);
-    setPageSize(Number.isFinite(nextPageSize) ? nextPageSize : 10);
-    setPageIndex(1);
   };
 
   const commitJumpPage = () => {
@@ -1199,7 +1193,7 @@ function DatasourcePage({
                 />
               </label>
               <Button type="button" onClick={() => void runQuery()} disabled={tableBusy} className="btn-primary h-12 min-w-[108px]">
-                {querying && <ArrowsClockwise size={16} className="animate-spin" />}
+                {querying ? <ArrowsClockwise size={16} className="animate-spin" /> : <MagnifyingGlass size={16} />}
                 查询
               </Button>
             </div>
@@ -1325,20 +1319,6 @@ function DatasourcePage({
           <div className="mt-6 flex flex-col gap-3 text-sm text-slate-600 lg:flex-row lg:items-center lg:justify-between">
             <div>共 {totalItems} 条</div>
             <div className="flex flex-wrap items-center gap-2 lg:justify-end">
-              <div className="w-[126px]">
-                <DropdownSelect
-                  value={String(pageSize)}
-                  ariaLabel="每页条数"
-                  disabled={tableBusy}
-                  options={[
-                    { value: "10", label: "10 条/页" },
-                    { value: "20", label: "20 条/页" },
-                    { value: "50", label: "50 条/页" }
-                  ]}
-                  onChange={applyPageSize}
-                  className="h-10 min-h-10 px-3 py-2"
-                />
-              </div>
               <PaginationButton label="上一页" disabled={currentPage <= 1 || tableBusy} onClick={() => goToPage(currentPage - 1)}>
                 <CaretLeft size={16} />
               </PaginationButton>
