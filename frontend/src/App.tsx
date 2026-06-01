@@ -15,6 +15,8 @@ import {
   ArrowsClockwise,
   ArrowRight,
   CaretDown,
+  CaretLeft,
+  CaretRight,
   CheckCircle,
   Database,
   DotsThree,
@@ -96,6 +98,15 @@ type DatasourceFormState = {
 };
 
 type DatasourceFieldErrors = Partial<Record<"name" | "host" | "port" | "username" | "password" | "remark", string>>;
+type DatasourceTypeFilter = "all" | "mysql";
+type DatasourceTableColumnKey = "type" | "address" | "version" | "status";
+
+const datasourceTableColumnOptions: Array<{ key: DatasourceTableColumnKey; label: string }> = [
+  { key: "type", label: "数据源类型" },
+  { key: "address", label: "地址" },
+  { key: "version", label: "版本" },
+  { key: "status", label: "状态" }
+];
 
 const navItems: Array<{ id: MainPage; label: string; icon: typeof Database }> = [
   { id: "datasources", label: "数据源", icon: Database },
@@ -829,15 +840,15 @@ function App() {
   }
 
   return (
-    <div className="min-h-[100dvh] bg-mist text-ink">
+    <div className="min-h-[100dvh] bg-white text-ink">
       <div className="page-shell">
-        <div className="surface grid min-h-[calc(100dvh-1.5rem)] overflow-hidden lg:grid-cols-[260px_minmax(0,1fr)]">
-          <aside className="flex h-fit flex-col border-b border-line/80 pb-3 lg:sticky lg:top-0 lg:min-h-[calc(100dvh-1.5rem)] lg:border-b-0 lg:border-r">
-            <div className="flex h-[81px] items-center justify-center border-b border-line/80 px-5">
+        <div className="grid min-h-[100dvh] overflow-hidden border-x border-line/70 bg-white lg:grid-cols-[280px_minmax(0,1fr)]">
+          <aside className="flex h-fit flex-col border-b border-line/80 pb-3 lg:sticky lg:top-0 lg:min-h-[100dvh] lg:border-b-0 lg:border-r">
+            <div className="flex h-[101px] items-center justify-center border-b border-line/80 px-5">
               <BrandParticleTile />
             </div>
 
-            <nav className="mx-3 mt-4 grid grid-cols-3 gap-2 lg:grid-cols-1">
+            <nav className="mx-4 mt-5 grid grid-cols-3 gap-2 lg:grid-cols-1">
               {navItems.map((item) => {
                 const Icon = item.icon;
                 return (
@@ -845,9 +856,9 @@ function App() {
                     key={item.id}
                     onClick={() => navigateToPage(item.id)}
                     className={cx(
-                      "flex min-h-12 items-center justify-start gap-3 rounded-lg px-3 py-3 text-left text-sm font-medium transition",
+                      "flex min-h-12 items-center justify-start gap-3 rounded-lg px-4 py-3 text-left text-sm font-medium transition",
                       navPage(page) === item.id
-                        ? "border border-blue-100 bg-blue-50 text-accent shadow-[inset_3px_0_0_#2563eb]"
+                        ? "border border-blue-100 bg-blue-50 text-accent shadow-[inset_4px_0_0_#2563eb]"
                         : "border border-transparent text-slate-600 hover:border-line hover:bg-slate-50 hover:text-coal"
                     )}
                   >
@@ -867,7 +878,7 @@ function App() {
 
           <main className="min-w-0">
             {page !== "datasources" && page !== "nodes" && page !== "datasourceCreate" && page !== "datasourceEdit" && (
-              <div className="flex h-[81px] flex-col justify-center gap-1 border-b border-line px-5 md:px-6 xl:flex-row xl:items-center xl:justify-between">
+              <div className="flex h-[101px] flex-col justify-center gap-1 border-b border-line px-5 md:px-8 xl:flex-row xl:items-center xl:justify-between">
                 <div>
                   <h1 className="text-3xl font-semibold tracking-tight text-coal md:text-4xl">
                     {pageTitle(page)}
@@ -992,12 +1003,19 @@ function DatasourcePage({
   onEdit: (datasourceId: string) => void;
   pushNotice: (notice: Notice) => void;
 }) {
-  const [draftTypeFilter, setDraftTypeFilter] = useState<"all" | "mysql">("all");
+  const [draftTypeFilter, setDraftTypeFilter] = useState<DatasourceTypeFilter>("all");
   const [draftNameQuery, setDraftNameQuery] = useState("");
-  const [appliedTypeFilter, setAppliedTypeFilter] = useState<"all" | "mysql">("all");
+  const [appliedTypeFilter, setAppliedTypeFilter] = useState<DatasourceTypeFilter>("all");
   const [appliedNameQuery, setAppliedNameQuery] = useState("");
   const [pageIndex, setPageIndex] = useState(1);
-  const pageSize = 20;
+  const [pageSize, setPageSize] = useState(10);
+  const [jumpPageDraft, setJumpPageDraft] = useState("1");
+  const [visibleColumns, setVisibleColumns] = useState<Record<DatasourceTableColumnKey, boolean>>({
+    type: true,
+    address: true,
+    version: true,
+    status: true
+  });
   const [querying, setQuerying] = useState(false);
   const [queryRevealKey, setQueryRevealKey] = useState(0);
   const [testingSavedId, setTestingSavedId] = useState<string | null>(null);
@@ -1015,7 +1033,18 @@ function DatasourcePage({
   const filteredDatasources = useMemo(() => datasources.filter((item) => {
     const matchesType = appliedTypeFilter === "all" || item.type === appliedTypeFilter;
     const query = appliedNameQuery.trim().toLowerCase();
-    const matchesName = query === "" || item.name.toLowerCase().includes(query);
+    const searchableText = [
+      item.name,
+      item.id,
+      item.host,
+      String(item.port),
+      item.version,
+      item.defaultSchema,
+      item.remark,
+      datasourceTypeText(item.type),
+      datasourceStatusText(item.connectionStatus)
+    ].filter(Boolean).join(" ").toLowerCase();
+    const matchesName = query === "" || searchableText.includes(query);
     return matchesType && matchesName;
   }), [appliedNameQuery, appliedTypeFilter, datasources]);
 
@@ -1025,10 +1054,16 @@ function DatasourcePage({
   const pageStart = (currentPage - 1) * pageSize;
   const pageItems = filteredDatasources.slice(pageStart, pageStart + pageSize);
   const tableBusy = querying;
+  const pageNumbers = useMemo(() => paginationRange(currentPage, totalPages), [currentPage, totalPages]);
+  const visibleColumnCount = 2 + datasourceTableColumnOptions.filter((column) => visibleColumns[column.key]).length;
 
   useEffect(() => {
     setPageIndex((current) => clampPage(current, totalPages));
   }, [totalPages]);
+
+  useEffect(() => {
+    setJumpPageDraft(String(currentPage));
+  }, [currentPage]);
 
   useEffect(() => {
     if (!testDialog) return;
@@ -1055,6 +1090,22 @@ function DatasourcePage({
 
   const goToPage = (nextPage: number) => {
     setPageIndex(clampPage(nextPage, totalPages));
+  };
+
+  const applyPageSize = (nextValue: string) => {
+    const nextPageSize = Number(nextValue);
+    setPageSize(Number.isFinite(nextPageSize) ? nextPageSize : 10);
+    setPageIndex(1);
+  };
+
+  const commitJumpPage = () => {
+    if (!jumpPageDraft.trim()) {
+      setJumpPageDraft(String(currentPage));
+      return;
+    }
+    const nextPage = clampPage(Number(jumpPageDraft), totalPages);
+    setPageIndex(nextPage);
+    setJumpPageDraft(String(nextPage));
   };
 
   const openTestDialog = (item: Datasource) => {
@@ -1126,33 +1177,46 @@ function DatasourcePage({
   return (
     <>
       <section className="min-w-0 overflow-hidden">
-        <div className="flex h-[81px] items-center border-b border-line px-5 md:px-6">
-          <h1 className="text-3xl font-semibold tracking-tight text-coal md:text-4xl">数据源</h1>
+        <div className="flex h-[101px] items-center justify-between gap-4 border-b border-line px-5 md:px-8">
+          <h1 className="text-3xl font-semibold tracking-tight text-coal">数据源</h1>
+          {canManage ? (
+            <Button type="button" onClick={onCreate} className="btn-primary h-12 shrink-0 px-5">
+              <Plus size={18} />
+              新增数据源
+            </Button>
+          ) : (
+            <div title="权限不足">
+              <Button type="button" disabled className="btn-secondary h-12 shrink-0 px-5">
+                <Plus size={18} />
+                新增数据源
+              </Button>
+            </div>
+          )}
         </div>
 
-        <div className="overflow-x-auto">
-          <div className="flex min-w-[735px] flex-col gap-3 border-b border-line px-5 py-4 md:px-6 xl:flex-row xl:items-end xl:justify-between">
-            <div className="grid gap-3 sm:grid-cols-[170px_240px_auto] sm:items-end">
-              <label className="block">
-                <span className="label mb-2 block">类型</span>
+        <div className="px-5 py-6 md:px-8">
+          <div className="mb-6 flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+              <div className="w-full sm:w-[174px]">
                 <DropdownSelect
                   value={draftTypeFilter}
                   disabled={tableBusy}
                   ariaLabel="类型"
                   options={[
-                    { value: "all", label: "全部" },
+                    { value: "all", label: "全部类型" },
                     { value: "mysql", label: "MySQL" }
                   ]}
-                  onChange={(nextValue) => setDraftTypeFilter(nextValue as "all" | "mysql")}
+                  onChange={(nextValue) => setDraftTypeFilter(nextValue as DatasourceTypeFilter)}
+                  className="h-12 min-h-12"
                 />
-              </label>
-              <label className="block">
-                <span className="label mb-2 block">名称</span>
+              </div>
+              <label className="relative block w-full sm:w-[344px]">
+                <MagnifyingGlass aria-hidden="true" className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
                 <TextInput
-                  className="input"
+                  className="input h-12 pl-11"
                   value={draftNameQuery}
                   disabled={tableBusy}
-                  placeholder="名称"
+                  placeholder="搜索名称、地址、数据源类型"
                   onChange={(event) => setDraftNameQuery(event.target.value)}
                   onKeyDown={(event) => {
                     if (event.key === "Enter") {
@@ -1162,138 +1226,186 @@ function DatasourcePage({
                   }}
                 />
               </label>
-              <Button type="button" onClick={() => void runQuery()} disabled={tableBusy} className="btn-primary">
-                {querying ? <ArrowsClockwise size={16} /> : <MagnifyingGlass size={16} />}
-                {querying ? "查询中" : "查询"}
+              <Button type="button" onClick={() => void runQuery()} disabled={tableBusy} className="btn-primary h-12 min-w-[108px]">
+                {querying && <ArrowsClockwise size={16} className="animate-spin" />}
+                查询
               </Button>
             </div>
 
-            <div className="flex flex-wrap gap-2 xl:w-[180px] xl:justify-start">
-              {canManage ? (
-                <Button type="button" onClick={onCreate} className="btn-primary">
-                  <Plus size={16} />
-                  新增数据源
-                </Button>
-              ) : (
-                <div title="权限不足">
-                  <Button type="button" disabled className="btn-secondary w-full">
-                    <Plus size={16} />
-                    新增数据源
-                  </Button>
-                </div>
-              )}
-            </div>
+            <DatasourceTableSettings
+              visibleColumns={visibleColumns}
+              onChange={setVisibleColumns}
+            />
           </div>
 
-          <table className="w-full min-w-[735px] table-fixed border-collapse text-left">
-            <colgroup>
-              <col />
-              <col className="w-[170px]" />
-              <col className="w-[95px]" />
-              <col className="w-[220px]" />
-            </colgroup>
-            <thead className="bg-slate-50/90 text-xs font-semibold text-slate-500">
-              <tr className="border-b border-line">
-                <th className="whitespace-nowrap px-5 py-3 md:px-6">数据源名称</th>
-                <th className="whitespace-nowrap px-4 py-3">Host</th>
-                <th className="whitespace-nowrap px-4 py-3">版本号</th>
-                <th className="whitespace-nowrap px-4 py-3">操作</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-line bg-white">
-              {pageItems.length === 0 ? (
-                <tr
-                  key={`empty-${queryRevealKey}`}
-                  className={cx(queryRevealKey > 0 && !tableBusy && "query-reveal-row")}
-                  style={queryRevealKey > 0 && !tableBusy ? { animationDelay: "0ms" } : undefined}
-                >
-                  <td colSpan={4} className="px-6 py-12">
-                    <div className="mx-auto flex max-w-sm flex-col items-center text-center">
-                      <div className="text-base font-semibold text-coal">
-                        {datasources.length === 0 ? "暂无数据源" : "无匹配"}
-                      </div>
-                      {!canManage && datasources.length === 0 && (
-                        <div className="mt-5">
-                          <PermissionNotice compact description="仅管理员可新增。" />
-                        </div>
-                      )}
-                    </div>
-                  </td>
+          <div className="overflow-x-auto rounded-lg border border-line bg-white">
+            <table className="w-full min-w-[917px] table-fixed border-collapse text-left">
+              <colgroup>
+                <col className="w-[240px]" />
+                {visibleColumns.type && <col className="w-[110px]" />}
+                {visibleColumns.address && <col className="w-[165px]" />}
+                {visibleColumns.version && <col className="w-[135px]" />}
+                {visibleColumns.status && <col className="w-[115px]" />}
+                <col className="w-[152px]" />
+              </colgroup>
+              <thead className="bg-slate-50/70 text-sm font-semibold text-slate-500">
+                <tr className="border-b border-line">
+                  <th className="whitespace-nowrap px-6 py-4">数据源名称</th>
+                  {visibleColumns.type && <th className="whitespace-nowrap px-5 py-4">数据源类型</th>}
+                  {visibleColumns.address && <th className="whitespace-nowrap px-5 py-4">地址</th>}
+                  {visibleColumns.version && <th className="whitespace-nowrap px-5 py-4">版本</th>}
+                  {visibleColumns.status && <th className="whitespace-nowrap px-5 py-4">状态</th>}
+                  <th className="whitespace-nowrap px-5 py-4">操作</th>
                 </tr>
-              ) : pageItems.map((item, index) => (
-                <tr
-                  key={`${queryRevealKey}-${item.id}`}
-                  className={cx("transition hover:bg-slate-50/70", tableBusy && "opacity-70", queryRevealKey > 0 && !tableBusy && "query-reveal-row")}
-                  style={queryRevealKey > 0 && !tableBusy ? { animationDelay: `${Math.min(index, 14) * 44}ms` } : undefined}
-                >
-                  <td className="max-w-[340px] px-5 py-4 align-middle md:px-6">
-                    <div className="flex min-w-0 items-center gap-3">
-                      <DatasourceTypeIcon type={item.type} />
-                      <div className="min-w-0">
-                        <div className="flex min-w-0 items-center gap-2">
-                          <span className="truncate text-sm font-semibold text-coal">{item.name || item.id}</span>
+              </thead>
+              <tbody className="divide-y divide-line bg-white">
+                {pageItems.length === 0 ? (
+                  <tr
+                    key={`empty-${queryRevealKey}`}
+                    className={cx(queryRevealKey > 0 && !tableBusy && "query-reveal-row")}
+                    style={queryRevealKey > 0 && !tableBusy ? { animationDelay: "0ms" } : undefined}
+                  >
+                    <td colSpan={visibleColumnCount} className="px-6 py-16">
+                      <div className="mx-auto flex max-w-sm flex-col items-center text-center">
+                        <div className="text-base font-semibold text-coal">
+                          {datasources.length === 0 ? "暂无数据源" : "无匹配"}
+                        </div>
+                        {canManage && datasources.length === 0 && (
+                          <Button type="button" onClick={onCreate} className="btn-primary mt-5">
+                            <Plus size={16} />
+                            新增数据源
+                          </Button>
+                        )}
+                        {!canManage && datasources.length === 0 && (
+                          <div className="mt-5">
+                            <PermissionNotice compact description="仅管理员可新增。" />
+                          </div>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ) : pageItems.map((item, index) => (
+                  <tr
+                    key={`${queryRevealKey}-${item.id}`}
+                    className={cx("transition hover:bg-slate-50/70", tableBusy && "opacity-70", queryRevealKey > 0 && !tableBusy && "query-reveal-row")}
+                    style={queryRevealKey > 0 && !tableBusy ? { animationDelay: `${Math.min(index, 14) * 44}ms` } : undefined}
+                  >
+                    <td className="px-6 py-5 align-middle">
+                      <div className="flex min-w-0 items-center gap-4">
+                        <DatasourceTypeIcon type={item.type} />
+                        <div className="min-w-0">
+                          <div className="truncate text-base font-semibold text-coal">{item.name || item.id}</div>
+                          <div className="mt-1 truncate text-sm text-slate-500">{datasourceSubtitle(item)}</div>
                         </div>
                       </div>
-                    </div>
-                  </td>
-                  <td className="px-4 py-4 align-middle">
-                    <div className="flex min-w-0 items-center gap-2">
-                      <span title={`${item.host}:${item.port}`} className="min-w-0 truncate font-mono text-sm text-coal">{item.host}:{item.port}</span>
-                    </div>
-                  </td>
-                  <td className="px-4 py-4 align-middle font-mono text-sm text-slate-600">{item.version?.trim() || "-"}</td>
-                  <td className="px-4 py-4 align-middle">
-                    <div className="flex items-center justify-start gap-2">
-                      {canTest && (
-                        <Button
-                          type="button"
-                          onClick={() => openTestDialog(item)}
-                          disabled={testingSavedId === item.id}
-                          className="btn-compact whitespace-nowrap"
-                        >
-                          {testingSavedId === item.id ? <ArrowsClockwise size={14} className="animate-spin" /> : <ShieldCheck size={14} />}
-                          {testingSavedId === item.id ? "测试中" : "测试连接"}
-                        </Button>
-                      )}
-                      {canManage && (
-                        <ActionMenu
-                          label="更多"
-                          items={[
-                            {
-                              label: "编辑",
-                              icon: PencilSimple,
-                              onSelect: () => onEdit(item.id)
-                            },
-                            {
-                              label: "删除",
-                              icon: Trash,
-                              danger: true,
-                              onSelect: () => requestRemoveDatasource(item)
-                            }
-                          ]}
-                        />
-                      )}
-                      {!canTest && !canManage && <span className="text-sm text-slate-400">-</span>}
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+                    </td>
+                    {visibleColumns.type && (
+                      <td className="px-5 py-5 align-middle">
+                        <span className="text-base text-coal">{datasourceTypeText(item.type)}</span>
+                      </td>
+                    )}
+                    {visibleColumns.address && (
+                      <td className="px-5 py-5 align-middle">
+                        <span title={`${item.host}:${item.port}`} className="block truncate font-mono text-sm text-coal">{item.host}:{item.port}</span>
+                      </td>
+                    )}
+                    {visibleColumns.version && (
+                      <td className="px-5 py-5 align-middle">
+                        <span title={item.version?.trim() || "-"} className="block truncate font-mono text-sm text-coal">{item.version?.trim() || "-"}</span>
+                      </td>
+                    )}
+                    {visibleColumns.status && (
+                      <td className="px-5 py-5 align-middle">
+                        <DatasourceStatusBadge status={item.connectionStatus} />
+                      </td>
+                    )}
+                    <td className="px-5 py-5 align-middle">
+                      <div className="flex items-center justify-start gap-2">
+                        {canManage && (
+                          <IconActionButton label="编辑" onClick={() => onEdit(item.id)}>
+                            <PencilSimple size={18} />
+                          </IconActionButton>
+                        )}
+                        {canTest && (
+                          <IconActionButton
+                            label={testingSavedId === item.id ? "测试中" : "测试连接"}
+                            onClick={() => openTestDialog(item)}
+                            disabled={testingSavedId === item.id}
+                          >
+                            {testingSavedId === item.id ? <ArrowsClockwise size={18} className="animate-spin" /> : <ShieldCheck size={18} />}
+                          </IconActionButton>
+                        )}
+                        {canManage && (
+                          <IconActionButton label="删除" tone="danger" onClick={() => requestRemoveDatasource(item)}>
+                            <Trash size={18} />
+                          </IconActionButton>
+                        )}
+                        {!canTest && !canManage && <span className="text-sm text-slate-400">-</span>}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
 
-        <div className="flex flex-col items-center justify-center gap-3 border-t border-line px-5 py-4 text-sm text-slate-600 md:px-6 sm:flex-row sm:items-center">
-          <div>共 {totalItems} 条</div>
-          <div className="flex flex-wrap items-center gap-2">
-            <Button type="button" onClick={() => goToPage(currentPage - 1)} disabled={currentPage <= 1} className="btn-compact">
-              <ArrowRight size={14} className="rotate-180" />
-              上一页
-            </Button>
-            <span className="min-w-16 text-center font-mono text-sm text-coal">{currentPage}/{totalPages}</span>
-            <Button type="button" onClick={() => goToPage(currentPage + 1)} disabled={currentPage >= totalPages} className="btn-compact">
-              下一页
-              <ArrowRight size={14} />
-            </Button>
+          <div className="mt-6 flex flex-col gap-3 text-sm text-slate-600 lg:flex-row lg:items-center lg:justify-between">
+            <div>共 {totalItems} 条</div>
+            <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+              <div className="w-[126px]">
+                <DropdownSelect
+                  value={String(pageSize)}
+                  ariaLabel="每页条数"
+                  disabled={tableBusy}
+                  options={[
+                    { value: "10", label: "10 条/页" },
+                    { value: "20", label: "20 条/页" },
+                    { value: "50", label: "50 条/页" }
+                  ]}
+                  onChange={applyPageSize}
+                  className="h-10 min-h-10 px-3 py-2"
+                />
+              </div>
+              <PaginationButton label="上一页" disabled={currentPage <= 1 || tableBusy} onClick={() => goToPage(currentPage - 1)}>
+                <CaretLeft size={16} />
+              </PaginationButton>
+              {pageNumbers.map((pageNumber) => (
+                <Button
+                  key={pageNumber}
+                  type="button"
+                  onClick={() => goToPage(pageNumber)}
+                  disabled={tableBusy}
+                  className={cx(
+                    "inline-flex h-10 min-w-10 items-center justify-center rounded-lg border px-3 text-sm font-semibold transition active:translate-y-px disabled:cursor-not-allowed disabled:opacity-45",
+                    currentPage === pageNumber
+                      ? "border-accent bg-accent text-white shadow-raised"
+                      : "border-line bg-white text-coal hover:border-blue-200 hover:bg-blue-50 hover:text-accent"
+                  )}
+                >
+                  {pageNumber}
+                </Button>
+              ))}
+              <PaginationButton label="下一页" disabled={currentPage >= totalPages || tableBusy} onClick={() => goToPage(currentPage + 1)}>
+                <CaretRight size={16} />
+              </PaginationButton>
+              <span className="ml-2 text-slate-500">前往</span>
+              <TextInput
+                aria-label="页码"
+                inputMode="numeric"
+                value={jumpPageDraft}
+                disabled={tableBusy}
+                onChange={(event) => setJumpPageDraft(event.target.value.replace(/\D/g, "").slice(0, 4))}
+                onBlur={commitJumpPage}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    commitJumpPage();
+                  }
+                }}
+                className="input h-10 w-16 px-3 py-2 text-center"
+              />
+              <span className="text-slate-500">页</span>
+            </div>
           </div>
         </div>
       </section>
@@ -2836,6 +2948,180 @@ function DatasourceTypeIcon({ type }: { type?: Datasource["type"] }) {
   );
 }
 
+function DatasourceStatusBadge({ status }: { status?: Datasource["connectionStatus"] }) {
+  const meta = datasourceStatusMeta(status);
+  return (
+    <span className={cx("inline-flex items-center gap-2 rounded-md border px-2.5 py-1 text-sm font-semibold", meta.className)}>
+      <span className={cx("h-2 w-2 rounded-full", meta.dotClassName)} />
+      {meta.label}
+    </span>
+  );
+}
+
+function IconActionButton({
+  label,
+  tone = "default",
+  disabled,
+  onClick,
+  children
+}: {
+  label: string;
+  tone?: "default" | "danger";
+  disabled?: boolean;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <Button
+      type="button"
+      title={label}
+      aria-label={label}
+      disabled={disabled}
+      onClick={onClick}
+      className={cx(
+        "inline-flex h-9 w-9 items-center justify-center rounded-lg border bg-white transition active:translate-y-px disabled:cursor-not-allowed disabled:opacity-45",
+        tone === "danger"
+          ? "border-red-100 text-red-600 hover:border-red-200 hover:bg-red-50"
+          : "border-line text-coal hover:border-blue-200 hover:bg-blue-50 hover:text-accent"
+      )}
+    >
+      {children}
+    </Button>
+  );
+}
+
+function PaginationButton({
+  label,
+  disabled,
+  onClick,
+  children
+}: {
+  label: string;
+  disabled?: boolean;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <Button
+      type="button"
+      title={label}
+      aria-label={label}
+      disabled={disabled}
+      onClick={onClick}
+      className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-line bg-white text-slate-500 transition hover:border-blue-200 hover:bg-blue-50 hover:text-accent active:translate-y-px disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-300"
+    >
+      {children}
+    </Button>
+  );
+}
+
+function DatasourceTableSettings({
+  visibleColumns,
+  onChange
+}: {
+  visibleColumns: Record<DatasourceTableColumnKey, boolean>;
+  onChange: (next: Record<DatasourceTableColumnKey, boolean>) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const buttonRef = useRef<HTMLButtonElement | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+  const [position, setPosition] = useState<{ left: number; top: number; width: number } | null>(null);
+
+  const updatePosition = useCallback(() => {
+    const button = buttonRef.current;
+    if (!button) return;
+    const rect = button.getBoundingClientRect();
+    const width = 184;
+    const menuHeight = 32 + datasourceTableColumnOptions.length * 40;
+    const left = Math.min(Math.max(12, rect.right - width), Math.max(12, window.innerWidth - width - 12));
+    const bottomTop = rect.bottom + 8;
+    const top = bottomTop + menuHeight > window.innerHeight - 12
+      ? Math.max(12, rect.top - menuHeight - 8)
+      : bottomTop;
+    setPosition({ left, top, width });
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!open) return;
+    updatePosition();
+  }, [open, updatePosition]);
+
+  useEffect(() => {
+    if (!open) return;
+    const handlePointerDown = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (rootRef.current?.contains(target) || menuRef.current?.contains(target)) {
+        return;
+      }
+      setOpen(false);
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setOpen(false);
+        buttonRef.current?.focus();
+      }
+    };
+    const handleResize = () => updatePosition();
+    const handleScroll = () => updatePosition();
+    document.addEventListener("mousedown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("resize", handleResize);
+    window.addEventListener("scroll", handleScroll, true);
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("resize", handleResize);
+      window.removeEventListener("scroll", handleScroll, true);
+    };
+  }, [open, updatePosition]);
+
+  const updateColumn = (key: DatasourceTableColumnKey, checked: boolean) => {
+    onChange({
+      ...visibleColumns,
+      [key]: checked
+    });
+  };
+
+  return (
+    <div ref={rootRef} className="relative">
+      <Button
+        ref={buttonRef}
+        type="button"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((current) => !current)}
+        className={cx("btn-secondary h-12 min-w-[146px] px-4", open && "border-blue-200 bg-blue-50 text-accent")}
+      >
+        <GearSix size={18} />
+        表格设置
+      </Button>
+      {open && position && createPortal(
+        <div
+          ref={menuRef}
+          role="menu"
+          style={position}
+          className="fixed z-[90] rounded-lg border border-line bg-white p-2 shadow-raised"
+        >
+          {datasourceTableColumnOptions.map((column) => (
+            <label
+              key={column.key}
+              className="flex cursor-pointer items-center gap-2 rounded-md px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+            >
+              <CheckboxInput
+                checked={visibleColumns[column.key]}
+                onChange={(event) => updateColumn(column.key, event.target.checked)}
+              />
+              <span>{column.label}</span>
+            </label>
+          ))}
+        </div>,
+        document.body
+      )}
+    </div>
+  );
+}
+
 function NodeTypeIcon({ status }: { status: ClusterNode["status"] }) {
   const online = status === "online";
   return (
@@ -3403,6 +3689,15 @@ function clampPage(page: number, totalPages: number) {
   return Math.min(Math.max(1, Math.trunc(page)), Math.max(1, totalPages));
 }
 
+function paginationRange(currentPage: number, totalPages: number) {
+  const visibleCount = 5;
+  const normalizedTotal = Math.max(1, totalPages);
+  const half = Math.floor(visibleCount / 2);
+  const start = Math.max(1, Math.min(currentPage - half, normalizedTotal - visibleCount + 1));
+  const end = Math.min(normalizedTotal, start + visibleCount - 1);
+  return Array.from({ length: end - start + 1 }, (_, index) => start + index);
+}
+
 function clampPercent(value: number) {
   if (!Number.isFinite(value)) return 0;
   return Math.min(100, Math.max(0, Math.round(value)));
@@ -3526,6 +3821,43 @@ function validateDatasourceForm(form: DatasourceFormState, passwordRequired: boo
 function datasourceTypeText(type?: Datasource["type"]) {
   if (type === "mysql") return "MySQL";
   return "MySQL";
+}
+
+function datasourceSubtitle(item: Datasource) {
+  return item.defaultSchema?.trim() || item.remark?.trim() || item.id;
+}
+
+function datasourceStatusText(status?: Datasource["connectionStatus"]) {
+  return datasourceStatusMeta(status).label;
+}
+
+function datasourceStatusMeta(status?: Datasource["connectionStatus"]) {
+  if (status === "available") {
+    return {
+      label: "正常",
+      className: "border-emerald-200 bg-emerald-50 text-emerald-700",
+      dotClassName: "bg-emerald-500"
+    };
+  }
+  if (status === "failed") {
+    return {
+      label: "连接异常",
+      className: "border-red-200 bg-red-50 text-red-600",
+      dotClassName: "bg-red-500"
+    };
+  }
+  if (status === "stale") {
+    return {
+      label: "过期",
+      className: "border-amber-200 bg-amber-50 text-amber-700",
+      dotClassName: "bg-amber-500"
+    };
+  }
+  return {
+    label: "未测",
+    className: "border-slate-200 bg-slate-50 text-slate-600",
+    dotClassName: "bg-slate-400"
+  };
 }
 
 function datasourceAuthTypeFromItem(item: Datasource): DatasourceAuthType {

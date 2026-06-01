@@ -67,7 +67,7 @@ input[type="number"]::-webkit-outer-spin-button {
   }
 
   .page-shell {
-    @apply mx-auto min-h-[100dvh] max-w-[1520px] px-3 py-3 md:px-5 lg:px-6;
+    @apply mx-auto min-h-[100dvh] w-full max-w-[1728px] px-0 py-0;
   }
 
   .input {
