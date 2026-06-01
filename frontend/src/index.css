@@ -142,6 +142,18 @@ input[type="number"]::-webkit-outer-spin-button {
   will-change: opacity, transform;
 }
 
+@keyframes notice-toast-in {
+  0% {
+    opacity: 0;
+    transform: translateY(-14px) scale(0.98);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
 @keyframes shimmer {
   0% {
     background-position: 100% 0;
@@ -165,7 +177,8 @@ input[type="number"]::-webkit-outer-spin-button {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .query-reveal-row {
+  .query-reveal-row,
+  [class*="notice-toast-in"] {
     animation: none;
     will-change: auto;
   }

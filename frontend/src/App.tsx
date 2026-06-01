@@ -31,6 +31,7 @@ import {
   WarningCircle,
   XCircle
 } from "@phosphor-icons/react";
+import { NoticeToast, NoticeToastViewport, type NoticeToastTone } from "./components/NoticeToast";
 import { PermissionNotice } from "./components/PermissionNotice";
 import { Button, CheckboxInput, DropdownSelect, TextareaInput, TextInput } from "./components/ui";
 import mysqlLogoUrl from "./assets/mysql-logo.svg";
@@ -62,7 +63,7 @@ import type {
 
 type MainPage = "datasources" | "nodes" | "settings";
 type Page = MainPage | "nodeMonitor" | "datasourceCreate" | "datasourceEdit";
-type NoticeTone = "success" | "error" | "warning";
+type NoticeTone = NoticeToastTone;
 
 type Notice = {
   tone: NoticeTone;
@@ -633,7 +634,6 @@ function App() {
   const [alertEvaluations, setAlertEvaluations] = useState<AlertRuleEvaluation[]>([]);
   const [loading, setLoading] = useState(false);
   const [notice, setNotice] = useState<Notice | null>(null);
-  const [errorDialog, setErrorDialog] = useState<string | null>(null);
   const [globalError, setGlobalError] = useState<string | null>(null);
   const [serviceUnavailable, setServiceUnavailable] = useState(false);
   const [serviceRecoveryPending, setServiceRecoveryPending] = useState(false);
@@ -659,10 +659,6 @@ function App() {
   }, []);
 
   const pushNotice = useCallback((next: Notice) => {
-    if (next.tone === "error") {
-      setErrorDialog(next.message);
-      return;
-    }
     setNotice(next);
   }, []);
 
@@ -785,7 +781,7 @@ function App() {
 
   useEffect(() => {
     if (!notice) return;
-    const timer = window.setTimeout(() => setNotice(null), 2600);
+    const timer = window.setTimeout(() => setNotice(null), notice.tone === "error" ? 5200 : 3000);
     return () => window.clearTimeout(timer);
   }, [notice]);
 
@@ -834,6 +830,31 @@ function App() {
 
   return (
     <div className="min-h-[100dvh] bg-white text-ink">
+      <NoticeToastViewport>
+        {serviceUnavailable && (
+          <NoticeToast
+            tone="warning"
+            action={(
+              <Button onClick={() => void retryServiceConnection()} disabled={serviceRecoveryPending} className="btn-compact border-white/45 bg-white/90 text-slate-800 hover:bg-white">
+                <ArrowsClockwise size={14} />
+                {serviceRecoveryPending ? "重试中" : "重试"}
+              </Button>
+            )}
+          >
+            后端暂时不可用
+          </NoticeToast>
+        )}
+        {globalError && (
+          <NoticeToast tone="error" onClose={() => setGlobalError(null)}>
+            {globalError}
+          </NoticeToast>
+        )}
+        {notice && (
+          <NoticeToast tone={notice.tone} onClose={() => setNotice(null)}>
+            {notice.message}
+          </NoticeToast>
+        )}
+      </NoticeToastViewport>
       <div className="page-shell">
         <div className="grid min-h-[100dvh] overflow-hidden border-x border-line/70 bg-white lg:grid-cols-[280px_minmax(0,1fr)]">
           <aside className="flex h-fit flex-col border-b border-line/80 pb-3 lg:sticky lg:top-0 lg:min-h-[100dvh] lg:border-b-0 lg:border-r">
@@ -885,35 +906,6 @@ function App() {
                 <div className="flex flex-wrap gap-2 xl:justify-end" />
               </div>
             )}
-
-            {serviceUnavailable && (
-              <NoticeBanner
-                tone="warning"
-                action={(
-                  <Button onClick={() => void retryServiceConnection()} disabled={serviceRecoveryPending} className="btn-compact">
-                    <ArrowsClockwise size={14} />
-                    {serviceRecoveryPending ? "重试中" : "重试连接"}
-                  </Button>
-                )}
-              >
-                后端暂时不可用，当前界面会保留；恢复后再重试。
-              </NoticeBanner>
-            )}
-
-            {notice && (
-              <NoticeBanner tone={notice.tone}>
-                {notice.message}
-              </NoticeBanner>
-            )}
-
-            <ErrorDialog
-              open={Boolean(globalError || errorDialog)}
-              message={globalError || errorDialog || ""}
-              onClose={() => {
-                setGlobalError(null);
-                setErrorDialog(null);
-              }}
-            />
 
             {loading && datasources.length === 0 ? (
               <ShellSkeleton />
@@ -3176,31 +3168,6 @@ function EmptyPanel({
   );
 }
 
-function NoticeBanner({
-  tone,
-  children,
-  action
-}: {
-  tone: NoticeTone;
-  children: ReactNode;
-  action?: ReactNode;
-}) {
-  const className = tone === "success"
-    ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-    : tone === "warning"
-      ? "border-amber-200 bg-amber-50 text-amber-700"
-      : "border-red-200 bg-red-50 text-red-700";
-  return (
-    <div className={cx("mb-5 flex flex-col gap-3 rounded-lg border px-4 py-3 text-sm sm:flex-row sm:items-start sm:justify-between", className)}>
-      <div className="flex items-start gap-2">
-        {tone === "success" ? <CheckCircle size={18} /> : tone === "warning" ? <WarningCircle size={18} /> : <XCircle size={18} />}
-        <div>{children}</div>
-      </div>
-      {action && <div className="sm:pl-4">{action}</div>}
-    </div>
-  );
-}
-
 function BackendUnavailableScreen({
   retrying,
   onRetry
@@ -3383,30 +3350,6 @@ function ConfirmDialog({
         </Button>
         <Button type="button" onClick={onConfirm} className={confirmTone === "danger" ? "btn-danger" : "btn-primary"}>
           {confirmLabel}
-        </Button>
-      </div>
-    </Modal>
-  );
-}
-
-function ErrorDialog({
-  open,
-  message,
-  onClose
-}: {
-  open: boolean;
-  message: string;
-  onClose: () => void;
-}) {
-  return (
-    <Modal open={open} title="错误" onClose={onClose} size="md" closeOnOverlay={false}>
-      <div className="flex items-start gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-        <XCircle className="mt-0.5 shrink-0" size={18} />
-        <div className="min-w-0 break-words">{message || "请求失败"}</div>
-      </div>
-      <div className="mt-5 flex justify-end">
-        <Button type="button" onClick={onClose} className="btn-primary">
-          关闭
         </Button>
       </div>
     </Modal>
