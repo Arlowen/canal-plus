@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { CheckCircle, WarningCircle, X, XCircle } from "@phosphor-icons/react";
 import { cx } from "../lib/format";
@@ -10,24 +10,21 @@ type NoticeToastProps = {
   tone: NoticeToastTone;
   children: ReactNode;
   action?: ReactNode;
+  autoCloseMs?: number;
   onClose?: () => void;
 };
 
-const toneClasses: Record<NoticeToastTone, { gradient: string; icon: typeof CheckCircle; ring: string }> = {
+const NOTICE_TOAST_EXIT_MS = 240;
+
+const toneClasses: Record<NoticeToastTone, { icon: typeof CheckCircle }> = {
   success: {
-    gradient: "from-emerald-600 via-teal-600 to-sky-600",
-    icon: CheckCircle,
-    ring: "bg-white/18"
+    icon: CheckCircle
   },
   warning: {
-    gradient: "from-amber-500 via-orange-500 to-rose-500",
-    icon: WarningCircle,
-    ring: "bg-white/20"
+    icon: WarningCircle
   },
   error: {
-    gradient: "from-rose-600 via-red-600 to-orange-600",
-    icon: XCircle,
-    ring: "bg-white/18"
+    icon: XCircle
   }
 };
 
@@ -48,24 +45,66 @@ export function NoticeToast({
   tone,
   children,
   action,
+  autoCloseMs,
   onClose
 }: NoticeToastProps) {
   const style = toneClasses[tone];
   const Icon = style.icon;
+  const [closing, setClosing] = useState(false);
+  const closingRef = useRef(false);
+  const autoCloseTimerRef = useRef<number | null>(null);
+  const exitTimerRef = useRef<number | null>(null);
+
+  const clearTimers = useCallback(() => {
+    if (autoCloseTimerRef.current !== null) {
+      window.clearTimeout(autoCloseTimerRef.current);
+      autoCloseTimerRef.current = null;
+    }
+    if (exitTimerRef.current !== null) {
+      window.clearTimeout(exitTimerRef.current);
+      exitTimerRef.current = null;
+    }
+  }, []);
+
+  const requestClose = useCallback(() => {
+    if (!onClose || closingRef.current) {
+      return;
+    }
+    if (autoCloseTimerRef.current !== null) {
+      window.clearTimeout(autoCloseTimerRef.current);
+      autoCloseTimerRef.current = null;
+    }
+    closingRef.current = true;
+    setClosing(true);
+    exitTimerRef.current = window.setTimeout(() => {
+      exitTimerRef.current = null;
+      onClose();
+    }, NOTICE_TOAST_EXIT_MS);
+  }, [onClose]);
+
+  useEffect(() => {
+    closingRef.current = false;
+    setClosing(false);
+    clearTimers();
+    if (!onClose || autoCloseMs === undefined) {
+      return clearTimers;
+    }
+    autoCloseTimerRef.current = window.setTimeout(requestClose, autoCloseMs);
+    return clearTimers;
+  }, [autoCloseMs, children, clearTimers, onClose, requestClose, tone]);
 
   return (
     <div
       role={tone === "error" ? "alert" : "status"}
       aria-live={tone === "error" ? "assertive" : "polite"}
+      data-state={closing ? "closing" : "open"}
       className={cx(
-        "pointer-events-auto relative overflow-hidden rounded-lg border border-white/35 bg-gradient-to-r px-4 py-3 text-white",
-        "shadow-[0_24px_70px_-28px_rgba(15,23,42,0.65)]",
-        "animate-[notice-toast-in_220ms_cubic-bezier(0.16,1,0.3,1)_both]",
-        style.gradient
+        "notice-toast pointer-events-auto relative overflow-hidden rounded-lg border border-blue-500/80 bg-accent px-4 py-3 text-white",
+        "shadow-[0_24px_70px_-28px_rgba(37,99,235,0.72)]"
       )}
     >
       <div className="relative flex min-w-0 items-start gap-3">
-        <span className={cx("mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.28)]", style.ring)}>
+        <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-white/16 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.28)]">
           <Icon size={18} weight="fill" />
         </span>
         <div className="min-w-0 flex-1 pt-1 text-sm font-medium leading-5 drop-shadow-[0_1px_1px_rgba(15,23,42,0.18)]">
@@ -76,7 +115,7 @@ export function NoticeToast({
           <Button
             type="button"
             aria-label="关闭提示"
-            onClick={onClose}
+            onClick={requestClose}
             className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-white/14 text-white transition hover:bg-white/22 active:translate-y-px"
           >
             <X size={16} />

@@ -775,12 +775,6 @@ function App() {
     previousServiceUnavailable.current = serviceUnavailable;
   }, [restoreAuthenticatedState, serviceUnavailable, tokenState]);
 
-  useEffect(() => {
-    if (!notice) return;
-    const timer = window.setTimeout(() => setNotice(null), notice.tone === "error" ? 5200 : 3000);
-    return () => window.clearTimeout(timer);
-  }, [notice]);
-
   const handleLogin = async (username: string, password: string) => {
     const response = await api.login({ username, password });
     setToken(response.token);
@@ -846,7 +840,7 @@ function App() {
           </NoticeToast>
         )}
         {notice && (
-          <NoticeToast tone={notice.tone} onClose={() => setNotice(null)}>
+          <NoticeToast tone={notice.tone} autoCloseMs={notice.tone === "error" ? 5200 : 3000} onClose={() => setNotice(null)}>
             {notice.message}
           </NoticeToast>
         )}
