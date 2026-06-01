@@ -99,14 +99,6 @@ type DatasourceFormState = {
 
 type DatasourceFieldErrors = Partial<Record<"name" | "host" | "port" | "username" | "password" | "remark", string>>;
 type DatasourceTypeFilter = "all" | "mysql";
-type DatasourceTableColumnKey = "type" | "address" | "version" | "status";
-
-const datasourceTableColumnOptions: Array<{ key: DatasourceTableColumnKey; label: string }> = [
-  { key: "type", label: "数据源类型" },
-  { key: "address", label: "地址" },
-  { key: "version", label: "版本" },
-  { key: "status", label: "状态" }
-];
 
 const navItems: Array<{ id: MainPage; label: string; icon: typeof Database }> = [
   { id: "datasources", label: "数据源", icon: Database },
@@ -1010,12 +1002,6 @@ function DatasourcePage({
   const [pageIndex, setPageIndex] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [jumpPageDraft, setJumpPageDraft] = useState("1");
-  const [visibleColumns, setVisibleColumns] = useState<Record<DatasourceTableColumnKey, boolean>>({
-    type: true,
-    address: true,
-    version: true,
-    status: true
-  });
   const [querying, setQuerying] = useState(false);
   const [queryRevealKey, setQueryRevealKey] = useState(0);
   const [testingSavedId, setTestingSavedId] = useState<string | null>(null);
@@ -1055,7 +1041,6 @@ function DatasourcePage({
   const pageItems = filteredDatasources.slice(pageStart, pageStart + pageSize);
   const tableBusy = querying;
   const pageNumbers = useMemo(() => paginationRange(currentPage, totalPages), [currentPage, totalPages]);
-  const visibleColumnCount = 2 + datasourceTableColumnOptions.filter((column) => visibleColumns[column.key]).length;
 
   useEffect(() => {
     setPageIndex((current) => clampPage(current, totalPages));
@@ -1177,21 +1162,8 @@ function DatasourcePage({
   return (
     <>
       <section className="min-w-0 overflow-hidden">
-        <div className="flex h-[101px] items-center justify-between gap-4 border-b border-line px-5 md:px-8">
+        <div className="flex h-[101px] items-center border-b border-line px-5 md:px-8">
           <h1 className="text-3xl font-semibold tracking-tight text-coal">数据源</h1>
-          {canManage ? (
-            <Button type="button" onClick={onCreate} className="btn-primary h-12 shrink-0 px-5">
-              <Plus size={18} />
-              新增数据源
-            </Button>
-          ) : (
-            <div title="权限不足">
-              <Button type="button" disabled className="btn-secondary h-12 shrink-0 px-5">
-                <Plus size={18} />
-                新增数据源
-              </Button>
-            </div>
-          )}
         </div>
 
         <div className="px-5 py-6 md:px-8">
@@ -1232,29 +1204,38 @@ function DatasourcePage({
               </Button>
             </div>
 
-            <DatasourceTableSettings
-              visibleColumns={visibleColumns}
-              onChange={setVisibleColumns}
-            />
+            {canManage ? (
+              <Button type="button" onClick={onCreate} className="btn-primary h-12 min-w-[146px] px-4">
+                <Plus size={18} />
+                新增数据源
+              </Button>
+            ) : (
+              <div title="权限不足">
+                <Button type="button" disabled className="btn-secondary h-12 min-w-[146px] px-4">
+                  <Plus size={18} />
+                  新增数据源
+                </Button>
+              </div>
+            )}
           </div>
 
           <div className="overflow-x-auto rounded-lg border border-line bg-white">
             <table className="w-full min-w-[917px] table-fixed border-collapse text-left">
               <colgroup>
                 <col className="w-[240px]" />
-                {visibleColumns.type && <col className="w-[110px]" />}
-                {visibleColumns.address && <col className="w-[165px]" />}
-                {visibleColumns.version && <col className="w-[135px]" />}
-                {visibleColumns.status && <col className="w-[115px]" />}
+                <col className="w-[110px]" />
+                <col className="w-[165px]" />
+                <col className="w-[135px]" />
+                <col className="w-[115px]" />
                 <col className="w-[152px]" />
               </colgroup>
               <thead className="bg-slate-50/70 text-sm font-semibold text-slate-500">
                 <tr className="border-b border-line">
                   <th className="whitespace-nowrap px-6 py-4">数据源名称</th>
-                  {visibleColumns.type && <th className="whitespace-nowrap px-5 py-4">数据源类型</th>}
-                  {visibleColumns.address && <th className="whitespace-nowrap px-5 py-4">地址</th>}
-                  {visibleColumns.version && <th className="whitespace-nowrap px-5 py-4">版本</th>}
-                  {visibleColumns.status && <th className="whitespace-nowrap px-5 py-4">状态</th>}
+                  <th className="whitespace-nowrap px-5 py-4">数据源类型</th>
+                  <th className="whitespace-nowrap px-5 py-4">地址</th>
+                  <th className="whitespace-nowrap px-5 py-4">版本</th>
+                  <th className="whitespace-nowrap px-5 py-4">状态</th>
                   <th className="whitespace-nowrap px-5 py-4">操作</th>
                 </tr>
               </thead>
@@ -1265,7 +1246,7 @@ function DatasourcePage({
                     className={cx(queryRevealKey > 0 && !tableBusy && "query-reveal-row")}
                     style={queryRevealKey > 0 && !tableBusy ? { animationDelay: "0ms" } : undefined}
                   >
-                    <td colSpan={visibleColumnCount} className="px-6 py-16">
+                    <td colSpan={6} className="px-6 py-16">
                       <div className="mx-auto flex max-w-sm flex-col items-center text-center">
                         <div className="text-base font-semibold text-coal">
                           {datasources.length === 0 ? "暂无数据源" : "无匹配"}
@@ -1299,26 +1280,18 @@ function DatasourcePage({
                         </div>
                       </div>
                     </td>
-                    {visibleColumns.type && (
-                      <td className="px-5 py-5 align-middle">
-                        <span className="text-base text-coal">{datasourceTypeText(item.type)}</span>
-                      </td>
-                    )}
-                    {visibleColumns.address && (
-                      <td className="px-5 py-5 align-middle">
-                        <span title={`${item.host}:${item.port}`} className="block truncate font-mono text-sm text-coal">{item.host}:{item.port}</span>
-                      </td>
-                    )}
-                    {visibleColumns.version && (
-                      <td className="px-5 py-5 align-middle">
-                        <span title={item.version?.trim() || "-"} className="block truncate font-mono text-sm text-coal">{item.version?.trim() || "-"}</span>
-                      </td>
-                    )}
-                    {visibleColumns.status && (
-                      <td className="px-5 py-5 align-middle">
-                        <DatasourceStatusBadge status={item.connectionStatus} />
-                      </td>
-                    )}
+                    <td className="px-5 py-5 align-middle">
+                      <span className="text-base text-coal">{datasourceTypeText(item.type)}</span>
+                    </td>
+                    <td className="px-5 py-5 align-middle">
+                      <span title={`${item.host}:${item.port}`} className="block truncate font-mono text-sm text-coal">{item.host}:{item.port}</span>
+                    </td>
+                    <td className="px-5 py-5 align-middle">
+                      <span title={item.version?.trim() || "-"} className="block truncate font-mono text-sm text-coal">{item.version?.trim() || "-"}</span>
+                    </td>
+                    <td className="px-5 py-5 align-middle">
+                      <DatasourceStatusBadge status={item.connectionStatus} />
+                    </td>
                     <td className="px-5 py-5 align-middle">
                       <div className="flex items-center justify-start gap-2">
                         {canManage && (
@@ -3012,113 +2985,6 @@ function PaginationButton({
     >
       {children}
     </Button>
-  );
-}
-
-function DatasourceTableSettings({
-  visibleColumns,
-  onChange
-}: {
-  visibleColumns: Record<DatasourceTableColumnKey, boolean>;
-  onChange: (next: Record<DatasourceTableColumnKey, boolean>) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const rootRef = useRef<HTMLDivElement | null>(null);
-  const buttonRef = useRef<HTMLButtonElement | null>(null);
-  const menuRef = useRef<HTMLDivElement | null>(null);
-  const [position, setPosition] = useState<{ left: number; top: number; width: number } | null>(null);
-
-  const updatePosition = useCallback(() => {
-    const button = buttonRef.current;
-    if (!button) return;
-    const rect = button.getBoundingClientRect();
-    const width = 184;
-    const menuHeight = 32 + datasourceTableColumnOptions.length * 40;
-    const left = Math.min(Math.max(12, rect.right - width), Math.max(12, window.innerWidth - width - 12));
-    const bottomTop = rect.bottom + 8;
-    const top = bottomTop + menuHeight > window.innerHeight - 12
-      ? Math.max(12, rect.top - menuHeight - 8)
-      : bottomTop;
-    setPosition({ left, top, width });
-  }, []);
-
-  useLayoutEffect(() => {
-    if (!open) return;
-    updatePosition();
-  }, [open, updatePosition]);
-
-  useEffect(() => {
-    if (!open) return;
-    const handlePointerDown = (event: MouseEvent) => {
-      const target = event.target as Node;
-      if (rootRef.current?.contains(target) || menuRef.current?.contains(target)) {
-        return;
-      }
-      setOpen(false);
-    };
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        setOpen(false);
-        buttonRef.current?.focus();
-      }
-    };
-    const handleResize = () => updatePosition();
-    const handleScroll = () => updatePosition();
-    document.addEventListener("mousedown", handlePointerDown);
-    document.addEventListener("keydown", handleKeyDown);
-    window.addEventListener("resize", handleResize);
-    window.addEventListener("scroll", handleScroll, true);
-    return () => {
-      document.removeEventListener("mousedown", handlePointerDown);
-      document.removeEventListener("keydown", handleKeyDown);
-      window.removeEventListener("resize", handleResize);
-      window.removeEventListener("scroll", handleScroll, true);
-    };
-  }, [open, updatePosition]);
-
-  const updateColumn = (key: DatasourceTableColumnKey, checked: boolean) => {
-    onChange({
-      ...visibleColumns,
-      [key]: checked
-    });
-  };
-
-  return (
-    <div ref={rootRef} className="relative">
-      <Button
-        ref={buttonRef}
-        type="button"
-        aria-haspopup="menu"
-        aria-expanded={open}
-        onClick={() => setOpen((current) => !current)}
-        className={cx("btn-secondary h-12 min-w-[146px] px-4", open && "border-blue-200 bg-blue-50 text-accent")}
-      >
-        <GearSix size={18} />
-        表格设置
-      </Button>
-      {open && position && createPortal(
-        <div
-          ref={menuRef}
-          role="menu"
-          style={position}
-          className="fixed z-[90] rounded-lg border border-line bg-white p-2 shadow-raised"
-        >
-          {datasourceTableColumnOptions.map((column) => (
-            <label
-              key={column.key}
-              className="flex cursor-pointer items-center gap-2 rounded-md px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
-            >
-              <CheckboxInput
-                checked={visibleColumns[column.key]}
-                onChange={(event) => updateColumn(column.key, event.target.checked)}
-              />
-              <span>{column.label}</span>
-            </label>
-          ))}
-        </div>,
-        document.body
-      )}
-    </div>
   );
 }
 
