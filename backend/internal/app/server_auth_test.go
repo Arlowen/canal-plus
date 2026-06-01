@@ -180,6 +180,9 @@ func TestAdminCanDeleteClusterNode(t *testing.T) {
 	server := newTestServer(t)
 	adminToken := tokenFor("user-admin")
 	nodeID := server.store.ClusterSnapshot().Nodes[0].ID
+	if _, ok, err := server.store.MarkNodeStatus(nodeID, NodeOffline); err != nil || !ok {
+		t.Fatalf("mark node offline ok=%v err=%v", ok, err)
+	}
 
 	deleteResponse := serveTestRequest(server, authRequest(http.MethodDelete, "/api/cluster/nodes/"+nodeID, adminToken, ""))
 	if deleteResponse.Code != http.StatusNoContent {
@@ -189,6 +192,22 @@ func TestAdminCanDeleteClusterNode(t *testing.T) {
 	snapshot := server.store.ClusterSnapshot()
 	if snapshot.TotalNodes != 0 {
 		t.Fatalf("total nodes = %d, want 0", snapshot.TotalNodes)
+	}
+}
+
+func TestAdminCannotDeleteOnlineClusterNode(t *testing.T) {
+	server := newTestServer(t)
+	adminToken := tokenFor("user-admin")
+	nodeID := server.store.ClusterSnapshot().Nodes[0].ID
+
+	deleteResponse := serveTestRequest(server, authRequest(http.MethodDelete, "/api/cluster/nodes/"+nodeID, adminToken, ""))
+	if deleteResponse.Code != http.StatusConflict {
+		t.Fatalf("admin delete online node status = %d body = %s", deleteResponse.Code, deleteResponse.Body.String())
+	}
+
+	snapshot := server.store.ClusterSnapshot()
+	if snapshot.TotalNodes != 1 {
+		t.Fatalf("total nodes = %d, want 1", snapshot.TotalNodes)
 	}
 }
 

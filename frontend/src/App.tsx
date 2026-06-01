@@ -2231,6 +2231,10 @@ function NodesPage({
       pushNotice({ tone: "warning", message: "需要管理员权限" });
       return;
     }
+    if (node.status === "online") {
+      pushNotice({ tone: "warning", message: "在线节点不能删除" });
+      return;
+    }
     setDeletingNodeId(node.id);
     try {
       await api.deleteNode(node.id);
@@ -2246,6 +2250,10 @@ function NodesPage({
   };
 
   const requestDeleteNode = (node: ClusterNode) => {
+    if (node.status === "online") {
+      pushNotice({ tone: "warning", message: "在线节点不能删除" });
+      return;
+    }
     setConfirmation({
       title: `删除 ${node.name || node.id}`,
       description: "",
@@ -2437,10 +2445,10 @@ function NodesPage({
                           )}
                           {canManage && (
                             <IconActionButton
-                              label={deletingNodeId === node.id ? "删除中" : "删除"}
+                              label={node.status === "online" ? "在线节点不能删除" : deletingNodeId === node.id ? "删除中" : "删除"}
                               tone="danger"
                               onClick={() => requestDeleteNode(node)}
-                              disabled={tableBusy}
+                              disabled={tableBusy || node.status === "online"}
                             >
                               {deletingNodeId === node.id ? <ArrowsClockwise size={18} className="animate-spin" /> : <Trash size={18} />}
                             </IconActionButton>

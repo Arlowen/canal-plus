@@ -137,10 +137,30 @@ func TestUpdateNodeName(t *testing.T) {
 	}
 }
 
-func TestDeleteNode(t *testing.T) {
+func TestDeleteNodeRejectsOnlineNode(t *testing.T) {
 	store := newTestStore(t)
 
 	before := store.ClusterSnapshot()
+	deleted, err := store.DeleteNode(before.Nodes[0].ID)
+	if err == nil {
+		t.Fatal("expected error when deleting online node")
+	}
+	if !deleted {
+		t.Fatal("expected online node to exist")
+	}
+	after := store.ClusterSnapshot()
+	if after.TotalNodes != 1 {
+		t.Fatalf("total nodes = %d, want 1", after.TotalNodes)
+	}
+}
+
+func TestDeleteOfflineNode(t *testing.T) {
+	store := newTestStore(t)
+
+	before := store.ClusterSnapshot()
+	if _, ok, err := store.MarkNodeStatus(before.Nodes[0].ID, NodeOffline); err != nil || !ok {
+		t.Fatalf("mark node offline ok=%v err=%v", ok, err)
+	}
 	deleted, err := store.DeleteNode(before.Nodes[0].ID)
 	if err != nil {
 		t.Fatalf("delete node: %v", err)

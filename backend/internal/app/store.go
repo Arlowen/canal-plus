@@ -369,6 +369,9 @@ func (s *Store) DeleteNode(id string) (bool, error) {
 		if node.ID != id {
 			continue
 		}
+		if node.Status == NodeOnline {
+			return true, errors.New("在线节点不能删除")
+		}
 		s.data.Nodes = append(s.data.Nodes[:index], s.data.Nodes[index+1:]...)
 		s.logLocked("admin", "node_delete", "cluster_node", id, "Node deleted: "+node.Name)
 		s.reconcileClusterLocked()
