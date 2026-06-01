@@ -137,6 +137,26 @@ func TestUpdateNodeName(t *testing.T) {
 	}
 }
 
+func TestDeleteNode(t *testing.T) {
+	store := newTestStore(t)
+
+	before := store.ClusterSnapshot()
+	deleted, err := store.DeleteNode(before.Nodes[0].ID)
+	if err != nil {
+		t.Fatalf("delete node: %v", err)
+	}
+	if !deleted {
+		t.Fatal("expected node to be deleted")
+	}
+	after := store.ClusterSnapshot()
+	if after.TotalNodes != 0 {
+		t.Fatalf("total nodes = %d, want 0", after.TotalNodes)
+	}
+	if len(after.Nodes) != 0 {
+		t.Fatalf("nodes = %#v, want empty", after.Nodes)
+	}
+}
+
 func registerTestNode(t *testing.T, store *Store, id string, name string, endpoint string) {
 	t.Helper()
 	_, _, err := store.registerNode(ClusterNodeInput{

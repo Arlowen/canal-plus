@@ -9,8 +9,6 @@ import type {
   DatasourceInput,
   DatasourceTestResult,
   LoginResponse,
-  NodeOperationResult,
-  NodeStatusChangeResult,
   OperationLog,
   User
 } from "../types/api";
@@ -241,13 +239,7 @@ export const api = {
       body: JSON.stringify({ name })
     });
   },
-  upgradeNode(id: string) {
-    return request<NodeOperationResult>(`/cluster/nodes/${id}/upgrade`, { method: "POST" });
-  },
-  uninstallNode(id: string) {
-    return request<NodeOperationResult>(`/cluster/nodes/${id}/uninstall`, { method: "POST" });
-  },
-  nodeAction(id: string, action: "online" | "offline" | "heartbeat") {
-    return request<NodeStatusChangeResult | ClusterNode>(`/cluster/nodes/${id}/${action}`, { method: "POST" });
+  deleteNode(id: string) {
+    return request<void>(`/cluster/nodes/${id}`, { method: "DELETE" });
   }
 };

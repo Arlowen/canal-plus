@@ -667,6 +667,17 @@ func (s *Server) handleCluster(response http.ResponseWriter, request *http.Reque
 			return
 		}
 		writeJSON(response, http.StatusOK, node)
+	case len(parts) == 3 && parts[1] == "nodes" && request.Method == http.MethodDelete:
+		deleted, err := s.store.DeleteNode(parts[2])
+		if err != nil {
+			writeError(response, http.StatusConflict, err.Error())
+			return
+		}
+		if !deleted {
+			writeError(response, http.StatusNotFound, "节点不存在")
+			return
+		}
+		response.WriteHeader(http.StatusNoContent)
 	case len(parts) == 4 && parts[1] == "nodes" && parts[3] == "upgrade" && request.Method == http.MethodPost:
 		result, ok, err := s.store.UpgradeNode(parts[2])
 		if err != nil {

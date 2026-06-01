@@ -360,6 +360,27 @@ func (s *Store) UpdateNodeName(id string, input ClusterNodeNameInput) (ClusterNo
 	return cloneJSON(*node), true, nil
 }
 
+func (s *Store) DeleteNode(id string) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.ensureClusterLocked()
+	backup := cloneJSON(s.data)
+	for index, node := range s.data.Nodes {
+		if node.ID != id {
+			continue
+		}
+		s.data.Nodes = append(s.data.Nodes[:index], s.data.Nodes[index+1:]...)
+		s.logLocked("admin", "node_delete", "cluster_node", id, "Node deleted: "+node.Name)
+		s.reconcileClusterLocked()
+		if err := s.saveLocked(); err != nil {
+			s.data = backup
+			return true, err
+		}
+		return true, nil
+	}
+	return false, nil
+}
+
 func (s *Store) registerNode(input ClusterNodeInput, actor string, action string) (ClusterNode, bool, error) {
 	if err := validateClusterNodeInput(input); err != nil {
 		return ClusterNode{}, false, err
@@ -836,11 +857,11 @@ func (s *Store) getDatasourceLocked(id string) (Datasource, bool) {
 func (s *Store) ensureClusterLocked() {
 	timestamp := now()
 	s.data.Nodes = normalizeLegacyDemoClusterNodes(s.data.Nodes, timestamp)
-	if len(s.data.Nodes) == 0 {
-		s.data.Nodes = defaultClusterNodes(timestamp)
-	}
 	if s.data.ClusterSettings.ID == "" {
 		s.data.ClusterSettings = defaultClusterSettings(timestamp)
+		if len(s.data.Nodes) == 0 {
+			s.data.Nodes = defaultClusterNodes(timestamp)
+		}
 	}
 	s.data.ClusterSettings.MasterNodeCount = normalizeMasterNodeCount(s.data.ClusterSettings.MasterNodeCount, len(s.data.Nodes))
 	for index := range s.data.Nodes {

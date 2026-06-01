@@ -176,6 +176,22 @@ func TestAdminCannotOperateLocalControlNodeWithUnsafeActions(t *testing.T) {
 	}
 }
 
+func TestAdminCanDeleteClusterNode(t *testing.T) {
+	server := newTestServer(t)
+	adminToken := tokenFor("user-admin")
+	nodeID := server.store.ClusterSnapshot().Nodes[0].ID
+
+	deleteResponse := serveTestRequest(server, authRequest(http.MethodDelete, "/api/cluster/nodes/"+nodeID, adminToken, ""))
+	if deleteResponse.Code != http.StatusNoContent {
+		t.Fatalf("admin delete node status = %d body = %s", deleteResponse.Code, deleteResponse.Body.String())
+	}
+
+	snapshot := server.store.ClusterSnapshot()
+	if snapshot.TotalNodes != 0 {
+		t.Fatalf("total nodes = %d, want 0", snapshot.TotalNodes)
+	}
+}
+
 func TestRegisterLocalControlNodeAddsConfiguredNode(t *testing.T) {
 	store := newTestStore(t)
 	t.Setenv("CANAL_PLUS_NODE_ID", "node-worker-a")

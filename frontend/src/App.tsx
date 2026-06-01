@@ -2,7 +2,6 @@ import {
   useCallback,
   useEffect,
   useId,
-  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -10,16 +9,13 @@ import {
   type MouseEvent as ReactMouseEvent,
   type ReactNode
 } from "react";
-import { createPortal } from "react-dom";
 import {
   ArrowsClockwise,
   ArrowRight,
-  CaretDown,
   CaretLeft,
   CaretRight,
   CheckCircle,
   Database,
-  DotsThree,
   GearSix,
   HardDrives,
   MagnifyingGlass,
@@ -2059,11 +2055,11 @@ function NodesPage({
   const [masterCountDialogOpen, setMasterCountDialogOpen] = useState(false);
   const [masterCountDraft, setMasterCountDraft] = useState("");
   const [masterCountSaving, setMasterCountSaving] = useState(false);
-  const [nodeActionId, setNodeActionId] = useState<string | null>(null);
   const [confirmation, setConfirmation] = useState<ConfirmationDialogState | null>(null);
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null);
   const [editingNodeName, setEditingNodeName] = useState("");
   const [savingNodeNameId, setSavingNodeNameId] = useState<string | null>(null);
+  const [deletingNodeId, setDeletingNodeId] = useState<string | null>(null);
   const nodeNameEditRef = useRef<HTMLDivElement | null>(null);
   const maxMasterNodeCount = nodes.length;
   const currentMasterNodeCount = nodes.filter((node) => effectiveNodeRole(node, nodes) === "master").length;
@@ -2076,7 +2072,7 @@ function NodesPage({
   const masterCountError = masterCountDialogOpen && (!Number.isInteger(parsedMasterCount) || parsedMasterCount < 1 || parsedMasterCount > maxMasterNodeCount)
     ? `1-${maxMasterNodeCount}`
     : "";
-  const tableBusy = querying || masterCountSaving || Boolean(savingNodeNameId) || Boolean(nodeActionId);
+  const tableBusy = querying || masterCountSaving || Boolean(savingNodeNameId) || Boolean(deletingNodeId);
 
   const filteredNodes = useMemo(() => nodes.filter((node) => {
     const role = effectiveNodeRole(node, nodes);
@@ -2230,53 +2226,35 @@ function NodesPage({
     }
   };
 
-  const runNodeOperation = async (node: ClusterNode, operation: "online" | "offline" | "heartbeat" | "upgrade" | "uninstall") => {
+  const deleteNode = async (node: ClusterNode) => {
     if (!canManage) {
       pushNotice({ tone: "warning", message: "需要管理员权限" });
       return;
     }
-    const actionId = `${node.id}:${operation}`;
-    setNodeActionId(actionId);
+    setDeletingNodeId(node.id);
     try {
-      if (operation === "upgrade") {
-        const result = await api.upgradeNode(node.id);
-        pushNotice({ tone: result.success ? "success" : "warning", message: result.message || "已升级" });
-      } else if (operation === "uninstall") {
-        const result = await api.uninstallNode(node.id);
-        pushNotice({ tone: result.success ? "success" : "warning", message: result.message || "已卸载" });
-      } else {
-        const result = await api.nodeAction(node.id, operation);
-        if (operation !== "heartbeat") {
-          const message = "message" in result && typeof result.message === "string"
-            ? result.message
-            : operation === "online"
-              ? "节点已上线"
-              : "节点已下线";
-          pushNotice({ tone: "success", message });
-        }
-      }
+      await api.deleteNode(node.id);
+      const nextTotalPages = Math.max(1, Math.ceil(Math.max(0, filteredNodes.length - 1) / pageSize));
+      setPageIndex((current) => clampPage(current, nextTotalPages));
+      pushNotice({ tone: "success", message: "已删除" });
       await onChanged();
     } catch (requestError) {
-      pushNotice({ tone: "error", message: requestError instanceof Error ? requestError.message : "操作失败" });
+      pushNotice({ tone: "error", message: requestError instanceof Error ? requestError.message : "删除失败" });
     } finally {
-      setNodeActionId(null);
+      setDeletingNodeId(null);
     }
   };
 
-  const requestNodeOperation = (node: ClusterNode, operation: "online" | "offline" | "heartbeat" | "upgrade" | "uninstall") => {
-    if (operation === "offline" || operation === "uninstall") {
-      setConfirmation({
-        title: `${operation === "offline" ? "下线" : "卸载"} ${node.name || node.id}`,
-        description: "",
-        confirmLabel: operation === "offline" ? "下线" : "卸载",
-        confirmTone: "danger",
-        onConfirm: () => {
-          void runNodeOperation(node, operation);
-        }
-      });
-      return;
-    }
-    void runNodeOperation(node, operation);
+  const requestDeleteNode = (node: ClusterNode) => {
+    setConfirmation({
+      title: `删除 ${node.name || node.id}`,
+      description: "",
+      confirmLabel: "删除",
+      confirmTone: "danger",
+      onConfirm: () => {
+        void deleteNode(node);
+      }
+    });
   };
 
   return (
@@ -2339,7 +2317,7 @@ function NodesPage({
           </div>
 
           <div className="overflow-x-auto rounded-lg border border-line bg-white">
-            <table className="w-full min-w-[936px] table-fixed border-collapse text-left">
+            <table className="w-full min-w-[976px] table-fixed border-collapse text-left">
               <colgroup>
                 <col className="w-[205px]" />
                 <col className="w-[95px]" />
@@ -2348,7 +2326,7 @@ function NodesPage({
                 <col className="w-[95px]" />
                 <col className="w-[110px]" />
                 <col className="w-[85px]" />
-                <col className="w-[126px]" />
+                <col className="w-[166px]" />
               </colgroup>
               <thead className="bg-slate-50/70 text-sm font-semibold text-slate-500">
                 <tr className="border-b border-line">
@@ -2453,21 +2431,19 @@ function NodesPage({
                             详情
                           </Button>
                           {canManage && (
-                            <ActionMenu
-                              items={[
-                                { label: "编辑名称", icon: PencilSimple, onSelect: () => startEditNodeName(node), disabled: tableBusy },
-                                {
-                                  label: node.status === "online" ? "下线" : "上线",
-                                  icon: node.status === "online" ? XCircle : CheckCircle,
-                                  danger: node.status === "online",
-                                  onSelect: () => requestNodeOperation(node, node.status === "online" ? "offline" : "online"),
-                                  disabled: tableBusy
-                                },
-                                { label: "刷新心跳", icon: ArrowsClockwise, onSelect: () => requestNodeOperation(node, "heartbeat"), disabled: tableBusy },
-                                { label: "升级", icon: ArrowRight, onSelect: () => requestNodeOperation(node, "upgrade"), disabled: tableBusy },
-                                { label: "卸载", icon: Trash, danger: true, onSelect: () => requestNodeOperation(node, "uninstall"), disabled: tableBusy }
-                              ]}
-                            />
+                            <IconActionButton label="编辑" onClick={() => startEditNodeName(node)} disabled={tableBusy}>
+                              <PencilSimple size={18} />
+                            </IconActionButton>
+                          )}
+                          {canManage && (
+                            <IconActionButton
+                              label={deletingNodeId === node.id ? "删除中" : "删除"}
+                              tone="danger"
+                              onClick={() => requestDeleteNode(node)}
+                              disabled={tableBusy}
+                            >
+                              {deletingNodeId === node.id ? <ArrowsClockwise size={18} className="animate-spin" /> : <Trash size={18} />}
+                            </IconActionButton>
                           )}
                         </div>
                       </td>
@@ -3353,171 +3329,6 @@ function ConfirmDialog({
         </Button>
       </div>
     </Modal>
-  );
-}
-
-function ActionMenu({
-  label,
-  items
-}: {
-  label?: string;
-  items: Array<{ label: string; icon?: typeof Database; onSelect: () => void; disabled?: boolean; danger?: boolean }>;
-}) {
-  const [open, setOpen] = useState(false);
-  const rootRef = useRef<HTMLDivElement | null>(null);
-  const buttonRef = useRef<HTMLButtonElement | null>(null);
-  const menuRef = useRef<HTMLDivElement | null>(null);
-  const [position, setPosition] = useState<{ left: number; top: number; width: number } | null>(null);
-
-  const updatePosition = useCallback(() => {
-    const button = buttonRef.current;
-    if (!button) return;
-    const rect = button.getBoundingClientRect();
-    const width = Math.max(160, rect.width);
-    const menuHeight = Math.min(320, 16 + items.length * 40);
-    const left = Math.min(Math.max(12, rect.right - width), Math.max(12, window.innerWidth - width - 12));
-    const bottomTop = rect.bottom + 8;
-    const top = bottomTop + menuHeight > window.innerHeight - 12
-      ? Math.max(12, rect.top - menuHeight - 8)
-      : bottomTop;
-    setPosition({ left, top, width });
-  }, [items.length]);
-
-  const focusMenuItem = (index: number) => {
-    const enabledItems = Array.from(menuRef.current?.querySelectorAll<HTMLButtonElement>("[role='menuitem']:not([disabled])") || []);
-    if (enabledItems.length === 0) return;
-    const normalizedIndex = ((index % enabledItems.length) + enabledItems.length) % enabledItems.length;
-    enabledItems[normalizedIndex].focus();
-  };
-
-  useEffect(() => {
-    if (!open) return;
-    const handlePointerDown = (event: MouseEvent) => {
-      const target = event.target as Node;
-      if (rootRef.current?.contains(target) || menuRef.current?.contains(target)) {
-        return;
-      }
-      setOpen(false);
-    };
-    const handleFocusIn = (event: FocusEvent) => {
-      const target = event.target as Node;
-      if (rootRef.current?.contains(target) || menuRef.current?.contains(target)) {
-        return;
-      }
-      setOpen(false);
-    };
-    const handleResize = () => updatePosition();
-    const handleScroll = () => updatePosition();
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        setOpen(false);
-        buttonRef.current?.focus();
-      }
-    };
-    document.addEventListener("mousedown", handlePointerDown);
-    document.addEventListener("focusin", handleFocusIn);
-    document.addEventListener("keydown", handleKeyDown);
-    window.addEventListener("resize", handleResize);
-    window.addEventListener("scroll", handleScroll, true);
-    return () => {
-      document.removeEventListener("mousedown", handlePointerDown);
-      document.removeEventListener("focusin", handleFocusIn);
-      document.removeEventListener("keydown", handleKeyDown);
-      window.removeEventListener("resize", handleResize);
-      window.removeEventListener("scroll", handleScroll, true);
-    };
-  }, [open, updatePosition]);
-
-  useLayoutEffect(() => {
-    if (!open) return;
-    updatePosition();
-  }, [open, updatePosition]);
-
-  if (items.length === 0) {
-    return null;
-  }
-
-  return (
-    <div ref={rootRef} className="relative">
-      <Button
-        ref={buttonRef}
-        type="button"
-        aria-label="更多操作"
-        aria-haspopup="menu"
-        aria-expanded={open}
-        onClick={() => setOpen((current) => !current)}
-        onKeyDown={(event) => {
-          if (event.key === "ArrowDown") {
-            event.preventDefault();
-            setOpen(true);
-            window.requestAnimationFrame(() => focusMenuItem(0));
-          }
-        }}
-        className={cx("btn-compact whitespace-nowrap", label ? "px-3" : "px-2.5")}
-      >
-        {label ? (
-          <>
-            <span>{label}</span>
-            <CaretDown size={12} />
-          </>
-        ) : (
-          <DotsThree size={14} />
-        )}
-      </Button>
-      {open && position && createPortal(
-        <div
-          ref={menuRef}
-          role="menu"
-          style={position}
-          onKeyDown={(event) => {
-            const enabledItems = Array.from(menuRef.current?.querySelectorAll<HTMLButtonElement>("[role='menuitem']:not([disabled])") || []);
-            const currentIndex = enabledItems.findIndex((item) => item === document.activeElement);
-            if (event.key === "ArrowDown") {
-              event.preventDefault();
-              focusMenuItem(currentIndex < 0 ? 0 : currentIndex + 1);
-            } else if (event.key === "ArrowUp") {
-              event.preventDefault();
-              focusMenuItem(currentIndex < 0 ? enabledItems.length - 1 : currentIndex - 1);
-            } else if (event.key === "Home") {
-              event.preventDefault();
-              focusMenuItem(0);
-            } else if (event.key === "End") {
-              event.preventDefault();
-              focusMenuItem(enabledItems.length - 1);
-            } else if (event.key === "Tab") {
-              setOpen(false);
-            }
-          }}
-          className="fixed z-[90] rounded-lg border border-line bg-white p-2 shadow-raised"
-        >
-          {items.map((item) => {
-            const Icon = item.icon;
-            return (
-              <Button
-                key={item.label}
-                type="button"
-                role="menuitem"
-                onClick={() => {
-                  if (item.disabled) return;
-                  setOpen(false);
-                  item.onSelect();
-                }}
-                disabled={item.disabled}
-                className={cx(
-                  "flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-left text-sm transition",
-                  item.danger ? "text-red-700 hover:bg-red-50" : "text-slate-700 hover:bg-slate-50",
-                  item.disabled && "cursor-not-allowed opacity-45"
-                )}
-              >
-                {Icon && <Icon size={16} className="shrink-0" />}
-                <span>{item.label}</span>
-              </Button>
-            );
-          })}
-        </div>,
-        document.body
-      )}
-    </div>
   );
 }
 

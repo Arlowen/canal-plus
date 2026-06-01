@@ -77,6 +77,7 @@ npm run dev
 节点：
 
 - `GET /api/cluster`
+- `DELETE /api/cluster/nodes/{id}`
 - `POST /api/cluster/nodes/{id}/online|offline`
 - `POST /api/cluster/nodes/{id}/upgrade`
 - `POST /api/cluster/nodes/{id}/uninstall`
