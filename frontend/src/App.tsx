@@ -1528,6 +1528,7 @@ function ChannelCreateWizardPage({
   const [targetTableLoadState, setTargetTableLoadState] = useState<MetadataLoadState>("idle");
   const [sourceMetadataError, setSourceMetadataError] = useState("");
   const [targetMetadataError, setTargetMetadataError] = useState("");
+  const [testFailureDialog, setTestFailureDialog] = useState<{ side: "source" | "target"; message: string } | null>(null);
 
   useEffect(() => {
     setForm((current) => {
@@ -1795,6 +1796,7 @@ function ChannelCreateWizardPage({
       pushNotice({ tone: "warning", message: "先选节点" });
       return;
     }
+    setTestFailureDialog(null);
     setForm((current) => ({
       ...current,
       [side === "source" ? "sourceTestState" : "targetTestState"]: "testing",
@@ -1802,17 +1804,23 @@ function ChannelCreateWizardPage({
     }));
     try {
       const result = await api.testDatasource(datasourceId, { nodeId: form.runNodeId });
+      const message = result.message.trim() || (result.success ? "测试连接成功" : "测试连接失败");
       setForm((current) => ({
         ...current,
         [side === "source" ? "sourceTestState" : "targetTestState"]: result.success ? "success" : "failed",
-        [side === "source" ? "sourceTestMessage" : "targetTestMessage"]: result.message
+        [side === "source" ? "sourceTestMessage" : "targetTestMessage"]: result.success ? "测试连接成功" : message
       }));
+      if (!result.success) {
+        setTestFailureDialog({ side, message });
+      }
     } catch (requestError) {
+      const message = requestError instanceof Error ? requestError.message : "测试连接失败";
       setForm((current) => ({
         ...current,
         [side === "source" ? "sourceTestState" : "targetTestState"]: "failed",
-        [side === "source" ? "sourceTestMessage" : "targetTestMessage"]: requestError instanceof Error ? requestError.message : "测试失败"
+        [side === "source" ? "sourceTestMessage" : "targetTestMessage"]: message
       }));
+      setTestFailureDialog({ side, message });
     }
   };
 
@@ -1955,7 +1963,8 @@ function ChannelCreateWizardPage({
   };
 
   return (
-    <section className="min-w-0 overflow-hidden">
+    <>
+      <section className="min-w-0 overflow-hidden">
       <div className="flex h-[101px] items-center justify-between border-b border-line px-5 md:px-8">
         <div className="min-w-0">
           <h1 className="truncate text-3xl font-semibold tracking-tight text-coal">新增 Channel</h1>
@@ -2018,10 +2027,7 @@ function ChannelCreateWizardPage({
 
                   <div className="grid gap-4 lg:grid-cols-2">
                     <div className="rounded-lg border border-line p-4">
-                      <div className="mb-4 flex items-center justify-between gap-3">
-                        <div className="text-base font-semibold text-coal">源端</div>
-                        <DatasourceTestBadge state={form.sourceTestState} />
-                      </div>
+                      <div className="mb-4 text-base font-semibold text-coal">源端</div>
                       <div className="grid gap-4">
                         <Field label="类型" required>
                           <ChannelWizardDatasourceTypeSelector
@@ -2041,25 +2047,30 @@ function ChannelCreateWizardPage({
                         <Field label="数据源" required>
                           <DropdownSelect value={form.sourceDatasourceId} ariaLabel="源端数据源" options={sourceOptions} onChange={updateSourceDatasource} />
                         </Field>
-                        <Button
-                          type="button"
-                          aria-label={form.sourceTestState === "testing" ? "源端测试中" : "测试源端"}
-                          title={form.sourceTestState === "testing" ? "源端测试中" : "测试源端"}
-                          onClick={() => void testDatasourceConnection("source")}
-                          disabled={!form.sourceDatasourceId || !form.runNodeId || form.sourceTestState === "testing"}
-                          className="btn-secondary btn-icon justify-self-start"
-                        >
-                          {form.sourceTestState === "testing" ? <ArrowsClockwise size={16} className="animate-spin" /> : <ShieldCheck size={16} />}
-                        </Button>
-                        {form.sourceTestMessage && <div className="text-sm text-slate-500">{form.sourceTestMessage}</div>}
+                        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                          <Button
+                            type="button"
+                            aria-label={form.sourceTestState === "testing" ? "源端测试中" : "测试源端"}
+                            title={form.sourceTestState === "testing" ? "源端测试中" : "测试源端"}
+                            onClick={() => void testDatasourceConnection("source")}
+                            disabled={!form.sourceDatasourceId || !form.runNodeId || form.sourceTestState === "testing"}
+                            className="btn-secondary h-10 justify-self-start px-3"
+                          >
+                            {form.sourceTestState === "testing" ? <ArrowsClockwise size={16} className="animate-spin" /> : <ShieldCheck size={16} />}
+                            {form.sourceTestState === "testing" ? "测试中" : "测试连接"}
+                          </Button>
+                          {form.sourceTestState === "success" && (
+                            <span className="inline-flex min-w-0 items-center gap-2 text-sm font-medium text-emerald-700">
+                              <CheckCircle className="shrink-0" size={16} weight="fill" />
+                              <span className="truncate">测试连接成功</span>
+                            </span>
+                          )}
+                        </div>
                       </div>
                     </div>
 
                     <div className="rounded-lg border border-line p-4">
-                      <div className="mb-4 flex items-center justify-between gap-3">
-                        <div className="text-base font-semibold text-coal">目标端</div>
-                        <DatasourceTestBadge state={form.targetTestState} />
-                      </div>
+                      <div className="mb-4 text-base font-semibold text-coal">目标端</div>
                       <div className="grid gap-4">
                         <Field label="类型" required>
                           <ChannelWizardDatasourceTypeSelector
@@ -2079,17 +2090,25 @@ function ChannelCreateWizardPage({
                         <Field label="数据源" required>
                           <DropdownSelect value={form.targetDatasourceId} ariaLabel="目标端数据源" options={targetOptions} onChange={updateTargetDatasource} />
                         </Field>
-                        <Button
-                          type="button"
-                          aria-label={form.targetTestState === "testing" ? "目标端测试中" : "测试目标端"}
-                          title={form.targetTestState === "testing" ? "目标端测试中" : "测试目标端"}
-                          onClick={() => void testDatasourceConnection("target")}
-                          disabled={!form.targetDatasourceId || !form.runNodeId || form.targetTestState === "testing"}
-                          className="btn-secondary btn-icon justify-self-start"
-                        >
-                          {form.targetTestState === "testing" ? <ArrowsClockwise size={16} className="animate-spin" /> : <ShieldCheck size={16} />}
-                        </Button>
-                        {form.targetTestMessage && <div className="text-sm text-slate-500">{form.targetTestMessage}</div>}
+                        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                          <Button
+                            type="button"
+                            aria-label={form.targetTestState === "testing" ? "目标端测试中" : "测试目标端"}
+                            title={form.targetTestState === "testing" ? "目标端测试中" : "测试目标端"}
+                            onClick={() => void testDatasourceConnection("target")}
+                            disabled={!form.targetDatasourceId || !form.runNodeId || form.targetTestState === "testing"}
+                            className="btn-secondary h-10 justify-self-start px-3"
+                          >
+                            {form.targetTestState === "testing" ? <ArrowsClockwise size={16} className="animate-spin" /> : <ShieldCheck size={16} />}
+                            {form.targetTestState === "testing" ? "测试中" : "测试连接"}
+                          </Button>
+                          {form.targetTestState === "success" && (
+                            <span className="inline-flex min-w-0 items-center gap-2 text-sm font-medium text-emerald-700">
+                              <CheckCircle className="shrink-0" size={16} weight="fill" />
+                              <span className="truncate">测试连接成功</span>
+                            </span>
+                          )}
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -2339,7 +2358,38 @@ function ChannelCreateWizardPage({
           </div>
         )}
       </div>
-    </section>
+      </section>
+      <ChannelWizardTestFailureDialog dialog={testFailureDialog} onClose={() => setTestFailureDialog(null)} />
+    </>
+  );
+}
+
+function ChannelWizardTestFailureDialog({
+  dialog,
+  onClose
+}: {
+  dialog: { side: "source" | "target"; message: string } | null;
+  onClose: () => void;
+}) {
+  const sideLabel = dialog?.side === "source" ? "源端" : "目标端";
+  return (
+    <Modal open={Boolean(dialog)} title="测试失败" onClose={onClose} size="md">
+      <div className="grid gap-5">
+        <div className="flex items-start gap-3 rounded-lg border border-red-100 bg-red-50 p-4 text-red-700">
+          <XCircle className="mt-0.5 shrink-0" size={18} weight="fill" />
+          <div className="min-w-0">
+            <div className="text-sm font-semibold">{sideLabel}</div>
+            <div className="mt-2 text-xs font-semibold uppercase tracking-wide text-red-500">失败原因</div>
+            <p className="mt-1 break-words text-sm leading-6">{dialog?.message || "测试连接失败"}</p>
+          </div>
+        </div>
+        <div className="flex justify-end">
+          <Button type="button" onClick={onClose} className="btn-secondary">
+            关闭
+          </Button>
+        </div>
+      </div>
+    </Modal>
   );
 }
 
@@ -6162,16 +6212,6 @@ function ChannelWizardDatasourceTypeSelector({
       })}
     </div>
   );
-}
-
-function DatasourceTestBadge({ state }: { state: DatasourceTestState }) {
-  const meta: Record<DatasourceTestState, { label: string; tone: "blue" | "green" | "red" | "neutral" }> = {
-    idle: { label: "未测", tone: "neutral" },
-    testing: { label: "测试中", tone: "blue" },
-    success: { label: "通过", tone: "green" },
-    failed: { label: "失败", tone: "red" }
-  };
-  return <Badge tone={meta[state].tone}>{meta[state].label}</Badge>;
 }
 
 function TaskToggle({

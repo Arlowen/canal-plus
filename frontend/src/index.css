@@ -98,10 +98,6 @@ input[type="number"]::-webkit-outer-spin-button {
     @apply btn-secondary px-3 py-2 text-xs;
   }
 
-  .btn-icon {
-    @apply h-10 w-10 shrink-0 px-0 py-0;
-  }
-
   .item-button {
     @apply border-b border-line px-0 py-4 text-left transition hover:bg-blue-50/50;
   }
