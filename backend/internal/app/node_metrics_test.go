@@ -22,6 +22,7 @@ func TestRefreshNodeHeartbeatWithMetricsUpdatesSnapshotAndHistory(t *testing.T) 
 		t.Fatalf("node metrics not updated: %#v", node)
 	}
 
+	store.metricHistory = nil
 	history, ok := store.NodeMetricHistory(nodeID, "3h")
 	if !ok {
 		t.Fatal("NodeMetricHistory() returned not found")

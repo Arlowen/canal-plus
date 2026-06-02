@@ -91,6 +91,16 @@ type clusterNodeRow struct {
 	UpdatedAt       string       `json:"updatedAt" gorm:"size:64;index"`
 }
 
+type nodeMetricSampleRow struct {
+	ID                    string  `json:"id" gorm:"primaryKey;size:64"`
+	NodeID                string  `json:"nodeId" gorm:"size:64;not null;index:idx_node_metric_samples_node_time"`
+	CollectedAt           string  `json:"collectedAt" gorm:"size:64;not null;index:idx_node_metric_samples_node_time"`
+	CPUPercent            int     `json:"cpuPercent" gorm:"not null"`
+	MemoryPercent         int     `json:"memoryPercent" gorm:"not null"`
+	DiskPercent           int     `json:"diskPercent" gorm:"not null"`
+	NetworkThroughputMBps float64 `json:"networkThroughputMBps" gorm:"column:network_throughput_mbps;not null"`
+}
+
 type clusterSettingsRow struct {
 	SortOrder       int    `json:"-" gorm:"not null;index"`
 	ID              string `json:"id" gorm:"primaryKey;size:64"`

@@ -30,6 +30,12 @@ type storePersistence interface {
 	Location() string
 }
 
+type nodeMetricSamplePersistence interface {
+	SaveNodeMetricSample(NodeMetricSample) error
+	LoadNodeMetricSamples(nodeID string, since time.Time) ([]NodeMetricSample, error)
+	PruneNodeMetricSamples(before time.Time) error
+}
+
 type mySQLStorePersistence struct {
 	db          *gorm.DB
 	tablePrefix string
@@ -136,6 +142,7 @@ func (p *mySQLStorePersistence) autoMigrate() error {
 		{suffix: "alert_rules", model: &alertRuleRow{}},
 		{suffix: "alert_events", model: &alertEventRow{}},
 		{suffix: "cluster_nodes", model: &clusterNodeRow{}},
+		{suffix: "node_metric_samples", model: &nodeMetricSampleRow{}},
 		{suffix: "cluster_settings", model: &clusterSettingsRow{}},
 	}
 	for _, migration := range migrations {
@@ -251,6 +258,56 @@ func (p *mySQLStorePersistence) replaceSnapshotRows(tx *gorm.DB, rows snapshotRo
 
 func (p *mySQLStorePersistence) tableName(suffix string) string {
 	return p.tablePrefix + "_" + suffix
+}
+
+func (p *mySQLStorePersistence) SaveNodeMetricSample(sample NodeMetricSample) error {
+	if err := p.ensureSchema(); err != nil {
+		return err
+	}
+	row := nodeMetricSampleRow{
+		ID:                    newID(),
+		NodeID:                sample.NodeID,
+		CollectedAt:           sample.CollectedAt,
+		CPUPercent:            sample.CPUPercent,
+		MemoryPercent:         sample.MemoryPercent,
+		DiskPercent:           sample.DiskPercent,
+		NetworkThroughputMBps: sample.NetworkMBps,
+	}
+	return p.db.Table(p.tableName("node_metric_samples")).Create(&row).Error
+}
+
+func (p *mySQLStorePersistence) LoadNodeMetricSamples(nodeID string, since time.Time) ([]NodeMetricSample, error) {
+	if err := p.ensureSchema(); err != nil {
+		return nil, err
+	}
+	rows := []nodeMetricSampleRow{}
+	cutoff := since.UTC().Format(time.RFC3339Nano)
+	if err := p.db.Table(p.tableName("node_metric_samples")).
+		Where("node_id = ? AND collected_at >= ?", nodeID, cutoff).
+		Order("collected_at ASC").
+		Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	samples := make([]NodeMetricSample, 0, len(rows))
+	for _, row := range rows {
+		samples = append(samples, NodeMetricSample{
+			NodeID:        row.NodeID,
+			CollectedAt:   row.CollectedAt,
+			CPUPercent:    row.CPUPercent,
+			MemoryPercent: row.MemoryPercent,
+			DiskPercent:   row.DiskPercent,
+			NetworkMBps:   row.NetworkThroughputMBps,
+		})
+	}
+	return samples, nil
+}
+
+func (p *mySQLStorePersistence) PruneNodeMetricSamples(before time.Time) error {
+	if err := p.ensureSchema(); err != nil {
+		return err
+	}
+	cutoff := before.UTC().Format(time.RFC3339Nano)
+	return p.db.Table(p.tableName("node_metric_samples")).Where("collected_at < ?", cutoff).Delete(&nodeMetricSampleRow{}).Error
 }
 
 func loadTableRows[T any](db *gorm.DB, table string) ([]T, error) {

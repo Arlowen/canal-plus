@@ -725,7 +725,10 @@ func (s *Store) RefreshNodeHeartbeatWithMetrics(nodeID string, sample NodeMetric
 	}
 	s.appendMetricSampleLocked(sample)
 	s.reconcileClusterLocked()
-	return s.saveLocked()
+	if err := s.saveLocked(); err != nil {
+		return err
+	}
+	return s.persistMetricSampleLocked(sample)
 }
 
 func (s *Store) NodeMetricHistory(nodeID string, rangeKey string) (NodeMetricHistoryResponse, bool) {
@@ -739,7 +742,10 @@ func (s *Store) NodeMetricHistory(nodeID string, rangeKey string) (NodeMetricHis
 	normalizedRange, duration := normalizeNodeMetricRange(rangeKey)
 	generatedAt := now()
 	cutoff := time.Now().UTC().Add(-duration)
-	samples := s.filteredMetricSamplesLocked(nodeID, cutoff)
+	samples, err := s.persistedMetricSamplesLocked(nodeID, cutoff)
+	if err != nil || len(samples) == 0 {
+		samples = s.filteredMetricSamplesLocked(nodeID, cutoff)
+	}
 	if len(samples) == 0 {
 		samples = []NodeMetricSample{nodeMetricSampleFromNode(*node)}
 	}
@@ -809,6 +815,25 @@ func (s *Store) appendMetricSampleLocked(sample NodeMetricSample) {
 		writeIndex++
 	}
 	s.metricHistory[sample.NodeID] = history[:writeIndex]
+}
+
+func (s *Store) persistMetricSampleLocked(sample NodeMetricSample) error {
+	persistence, ok := s.persistence.(nodeMetricSamplePersistence)
+	if !ok {
+		return nil
+	}
+	if err := persistence.SaveNodeMetricSample(sample); err != nil {
+		return err
+	}
+	return persistence.PruneNodeMetricSamples(time.Now().UTC().Add(-31 * 24 * time.Hour))
+}
+
+func (s *Store) persistedMetricSamplesLocked(nodeID string, cutoff time.Time) ([]NodeMetricSample, error) {
+	persistence, ok := s.persistence.(nodeMetricSamplePersistence)
+	if !ok {
+		return nil, nil
+	}
+	return persistence.LoadNodeMetricSamples(nodeID, cutoff)
 }
 
 func (s *Store) filteredMetricSamplesLocked(nodeID string, cutoff time.Time) []NodeMetricSample {

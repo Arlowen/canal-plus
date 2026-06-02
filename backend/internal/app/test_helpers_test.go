@@ -3,11 +3,13 @@ package app
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 type testStorePersistence struct {
-	data  DatabaseShape
-	found bool
+	data          DatabaseShape
+	found         bool
+	metricSamples []NodeMetricSample
 }
 
 func (p *testStorePersistence) Load() (DatabaseShape, bool, error) {
@@ -26,6 +28,40 @@ func (p *testStorePersistence) Backend() string {
 
 func (p *testStorePersistence) Location() string {
 	return "memory://unit-test"
+}
+
+func (p *testStorePersistence) SaveNodeMetricSample(sample NodeMetricSample) error {
+	p.metricSamples = append(p.metricSamples, cloneJSON(sample))
+	return nil
+}
+
+func (p *testStorePersistence) LoadNodeMetricSamples(nodeID string, since time.Time) ([]NodeMetricSample, error) {
+	samples := []NodeMetricSample{}
+	for _, sample := range p.metricSamples {
+		if sample.NodeID != nodeID {
+			continue
+		}
+		collectedAt, err := time.Parse(time.RFC3339Nano, sample.CollectedAt)
+		if err != nil || collectedAt.Before(since) {
+			continue
+		}
+		samples = append(samples, cloneJSON(sample))
+	}
+	return samples, nil
+}
+
+func (p *testStorePersistence) PruneNodeMetricSamples(before time.Time) error {
+	writeIndex := 0
+	for _, sample := range p.metricSamples {
+		collectedAt, err := time.Parse(time.RFC3339Nano, sample.CollectedAt)
+		if err != nil || collectedAt.Before(before) {
+			continue
+		}
+		p.metricSamples[writeIndex] = sample
+		writeIndex++
+	}
+	p.metricSamples = p.metricSamples[:writeIndex]
+	return nil
 }
 
 func newTestStore(t *testing.T) *Store {

@@ -2711,10 +2711,12 @@ type NodeMonitorMetric = {
 };
 
 type NodeMonitorData = {
+  range: NodeMetricRange;
   metrics: NodeMonitorMetric[];
   cpuSeries: number[];
   memorySeries: number[];
   diskSeries: number[];
+  sampleTimes: number[];
   labels: string[];
 };
 
@@ -2955,8 +2957,10 @@ function buildNodeMonitorData(
   const memorySeries = samples.map((sample) => clampPercent(sample.memoryPercent));
   const diskSeries = samples.map((sample) => clampPercent(sample.diskPercent));
   const networkSeries = samples.map((sample) => normalizeNetworkValue(sample.networkThroughputMBps));
+  const sampleTimes = samples.map((sample) => metricTime(sample.collectedAt));
 
   return {
+    range,
     metrics: [
       {
         key: "cpu",
@@ -3002,6 +3006,7 @@ function buildNodeMonitorData(
     cpuSeries,
     memorySeries,
     diskSeries,
+    sampleTimes,
     labels: buildTrendLabels(samples, range)
   };
 }
@@ -3072,13 +3077,25 @@ function buildResourceTrendPaths(monitor: NodeMonitorData) {
   const left = 58;
   const top = 22;
   const yFor = (value: number) => top + height - clampPercent(value) / 100 * height;
+  const validTimes = monitor.sampleTimes.filter((time) => Number.isFinite(time));
+  const latestTime = validTimes.length > 0 ? Math.max(...validTimes) : Date.now();
+  const duration = nodeMetricRangeDurations[monitor.range];
+  const startTime = latestTime - duration;
+  const xForTime = (time: number, fallbackIndex: number, total: number) => {
+    if (!Number.isFinite(time)) {
+      return left + (width / Math.max(1, total - 1)) * fallbackIndex;
+    }
+    const ratio = Math.min(1, Math.max(0, (time - startTime) / duration));
+    return left + width * ratio;
+  };
   const pathFor = (values: number[]) => {
     if (values.length === 1) {
       const y = yFor(values[0]);
-      return `M${left.toFixed(2)},${y.toFixed(2)} L${(left + width).toFixed(2)},${y.toFixed(2)}`;
+      const x = xForTime(monitor.sampleTimes[0], 0, 1);
+      return `M${x.toFixed(2)},${y.toFixed(2)}`;
     }
     return values.map((value, index) => {
-      const x = left + (width / Math.max(1, values.length - 1)) * index;
+      const x = xForTime(monitor.sampleTimes[index], index, values.length);
       const y = yFor(value);
       return `${index === 0 ? "M" : "L"}${x.toFixed(2)},${y.toFixed(2)}`;
     }).join(" ");
