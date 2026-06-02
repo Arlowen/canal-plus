@@ -1642,7 +1642,7 @@ function DatasourceCreatePage({
   if (!canManage) {
     return (
       <section>
-        <div className="flex h-[81px] items-center justify-between gap-4 border-b border-line px-5 md:px-6">
+        <div className="flex h-[101px] items-center justify-between gap-4 border-b border-line px-5 md:px-8">
           <h1 className="text-3xl font-semibold tracking-tight text-coal md:text-4xl">新增数据源</h1>
           <Button type="button" onClick={onBack} className="btn-secondary">
             <ArrowRight size={14} className="rotate-180" />
@@ -1659,7 +1659,7 @@ function DatasourceCreatePage({
   return (
     <form onSubmit={saveDatasource}>
       <section className="overflow-hidden">
-        <div className="flex h-[81px] items-center justify-between gap-4 border-b border-line px-5 md:px-6">
+        <div className="flex h-[101px] items-center justify-between gap-4 border-b border-line px-5 md:px-8">
           <h1 className="truncate text-3xl font-semibold tracking-tight text-coal md:text-4xl">新增数据源</h1>
           <Button type="button" onClick={requestBack} className="btn-secondary">
             <ArrowRight size={14} className="rotate-180" />
@@ -1946,7 +1946,7 @@ function DatasourceEditPage({
   if (!canManage) {
     return (
       <section>
-        <div className="flex h-[81px] items-center justify-between gap-4 border-b border-line px-5 md:px-6">
+        <div className="flex h-[101px] items-center justify-between gap-4 border-b border-line px-5 md:px-8">
           <h1 className="text-3xl font-semibold tracking-tight text-coal md:text-4xl">编辑数据源</h1>
           <Button type="button" onClick={onBack} className="btn-secondary">
             <ArrowRight size={14} className="rotate-180" />
@@ -1963,7 +1963,7 @@ function DatasourceEditPage({
   if (!datasource) {
     return (
       <section>
-        <div className="flex h-[81px] items-center justify-between gap-4 border-b border-line px-5 md:px-6">
+        <div className="flex h-[101px] items-center justify-between gap-4 border-b border-line px-5 md:px-8">
           <h1 className="text-3xl font-semibold tracking-tight text-coal md:text-4xl">编辑数据源</h1>
           <Button type="button" onClick={onBack} className="btn-secondary">
             <ArrowRight size={14} className="rotate-180" />
@@ -1980,7 +1980,7 @@ function DatasourceEditPage({
   return (
     <form onSubmit={saveDatasource}>
       <section className="overflow-hidden">
-        <div className="flex h-[81px] items-center justify-between gap-4 border-b border-line px-5 md:px-6">
+        <div className="flex h-[101px] items-center justify-between gap-4 border-b border-line px-5 md:px-8">
           <div className="flex min-w-0 items-center gap-3">
             <h1 className="shrink-0 text-3xl font-semibold tracking-tight text-coal md:text-4xl">编辑数据源</h1>
             <span className="inline-flex min-w-0 items-center gap-2 rounded-lg border border-line bg-slate-50 px-2.5 py-1.5 text-sm font-medium text-coal">
