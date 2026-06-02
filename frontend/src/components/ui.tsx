@@ -25,6 +25,7 @@ type CheckboxInputProps = Omit<InputHTMLAttributes<HTMLInputElement>, "type">;
 type DropdownOption = {
   value: string;
   label: string;
+  description?: string;
   icon?: ReactNode;
   disabled?: boolean;
 };
@@ -74,6 +75,7 @@ export function DropdownSelect({
   const [open, setOpen] = useState(false);
   const [position, setPosition] = useState<DropdownPosition | null>(null);
   const selectedIndex = useMemo(() => Math.max(0, options.findIndex((option) => option.value === value)), [options, value]);
+  const hasOptionDescription = useMemo(() => options.some((option) => option.description), [options]);
   const [highlightedIndex, setHighlightedIndex] = useState(selectedIndex);
   const selectedOption = options[selectedIndex] ?? options[0];
 
@@ -83,13 +85,14 @@ export function DropdownSelect({
     const rect = trigger.getBoundingClientRect();
     const width = Math.max(rect.width, 180);
     const left = Math.min(Math.max(12, rect.left), Math.max(12, window.innerWidth - width - 12));
-    const menuHeight = Math.min(260, 10 + options.length * 48);
+    const optionHeight = hasOptionDescription ? 62 : 48;
+    const menuHeight = Math.min(320, 10 + options.length * optionHeight);
     const bottomTop = rect.bottom + 6;
     const top = bottomTop + menuHeight > window.innerHeight - 12
       ? Math.max(12, rect.top - menuHeight - 6)
       : bottomTop;
     setPosition({ left, top, width });
-  }, [options.length]);
+  }, [hasOptionDescription, options.length]);
 
   useLayoutEffect(() => {
     if (!open) return;
@@ -192,7 +195,12 @@ export function DropdownSelect({
       >
         <span className="flex min-w-0 items-center gap-2">
           {selectedOption?.icon && <span className="shrink-0 text-slate-500">{selectedOption.icon}</span>}
-          <span className="min-w-0 truncate">{selectedOption?.label ?? "-"}</span>
+          <span className="min-w-0">
+            <span className="block truncate">{selectedOption?.label ?? "-"}</span>
+            {selectedOption?.description && (
+              <span className="mt-0.5 block truncate text-xs font-medium text-slate-500">{selectedOption.description}</span>
+            )}
+          </span>
         </span>
         <CaretDown className={cx("shrink-0 text-slate-400 transition", open && "rotate-180 text-accent")} size={16} />
       </button>
@@ -226,7 +234,12 @@ export function DropdownSelect({
               >
                 <Check className={cx("shrink-0", selected ? "opacity-100" : "opacity-0")} size={17} weight="bold" />
                 {option.icon && <span className="shrink-0">{option.icon}</span>}
-                <span className="min-w-0 truncate">{option.label}</span>
+                <span className="min-w-0">
+                  <span className="block truncate">{option.label}</span>
+                  {option.description && (
+                    <span className={cx("mt-0.5 block truncate text-xs font-medium", highlighted ? "text-white/80" : "text-slate-500")}>{option.description}</span>
+                  )}
+                </span>
               </button>
             );
           })}

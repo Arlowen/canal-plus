@@ -1448,14 +1448,19 @@ function useDatasourceTestNodeSelection(cluster: ClusterSnapshot | null) {
   };
 }
 
-function datasourceTestNodeOptions(nodes: ClusterNode[], loading: boolean) {
+function datasourceTestNodeOptions(nodes: ClusterNode[], loading: boolean, showHost = false) {
   if (loading) {
     return [{ value: "", label: "加载中", disabled: true }];
   }
   if (nodes.length === 0) {
     return [{ value: "", label: "无节点", disabled: true }];
   }
-  return nodes.map((node) => ({ value: node.id, label: node.name || node.id, icon: <HardDrives size={18} /> }));
+  return nodes.map((node) => ({
+    value: node.id,
+    label: node.name || node.id,
+    description: showHost ? node.endpoint : undefined,
+    icon: <HardDrives size={18} />
+  }));
 }
 
 function datasourceTestFingerprint(connectionFingerprint: string, nodeId: string) {
@@ -2113,11 +2118,7 @@ function DatasourceTestModal({
 }) {
   const hasNodes = nodes.length > 0;
   const selectedValue = nodes.some((node) => node.id === selectedNodeId) ? selectedNodeId : "";
-  const nodeOptions = loading
-    ? [{ value: "", label: "加载中", disabled: true }]
-    : hasNodes
-      ? nodes.map((node) => ({ value: node.id, label: node.name || node.id }))
-      : [{ value: "", label: "无节点", disabled: true }];
+  const nodeOptions = datasourceTestNodeOptions(nodes, loading, true);
   const testDisabled = testing || loading || !hasNodes || !selectedValue;
 
   return (
