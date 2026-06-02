@@ -1442,7 +1442,7 @@ function useDatasourceTestNodeSelection(cluster: ClusterSnapshot | null) {
   return {
     selectedNodeId: selectedValue,
     setSelectedNodeId,
-    nodeOptions: datasourceTestNodeOptions(availableNodes, nodesLoading),
+    nodeOptions: datasourceTestNodeOptions(availableNodes, nodesLoading, true),
     nodesLoading,
     hasNodes: availableNodes.length > 0
   };
@@ -1758,6 +1758,7 @@ function DatasourceCreatePage({
                 disabled={testing || nodesLoading || !hasNodes}
                 options={testNodeOptions}
                 onChange={updateTestNode}
+                showSelectedDescription={false}
                 className="h-10 min-h-10 w-full sm:w-[220px]"
               />
               <Button type="button" onClick={() => void testConnection()} disabled={testing || nodesLoading || !selectedTestNodeId} className="btn-secondary">
@@ -2053,6 +2054,7 @@ function DatasourceEditPage({
               disabled={testing || nodesLoading || !hasNodes}
               options={testNodeOptions}
               onChange={updateTestNode}
+              showSelectedDescription={false}
               className="h-10 min-h-10 w-full sm:w-[220px]"
             />
             <Button type="button" onClick={() => void testConnection()} disabled={testing || nodesLoading || !selectedTestNodeId} className="btn-secondary">

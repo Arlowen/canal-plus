@@ -37,6 +37,7 @@ type DropdownSelectProps = {
   ariaLabel?: string;
   className?: string;
   disabled?: boolean;
+  showSelectedDescription?: boolean;
 };
 
 type DropdownPosition = {
@@ -67,7 +68,8 @@ export function DropdownSelect({
   onChange,
   ariaLabel,
   className,
-  disabled
+  disabled,
+  showSelectedDescription = true
 }: DropdownSelectProps) {
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
@@ -197,7 +199,7 @@ export function DropdownSelect({
           {selectedOption?.icon && <span className="shrink-0 text-slate-500">{selectedOption.icon}</span>}
           <span className="min-w-0">
             <span className="block truncate">{selectedOption?.label ?? "-"}</span>
-            {selectedOption?.description && (
+            {showSelectedDescription && selectedOption?.description && (
               <span className="mt-0.5 block truncate text-xs font-medium text-slate-500">{selectedOption.description}</span>
             )}
           </span>
