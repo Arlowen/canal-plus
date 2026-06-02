@@ -2725,6 +2725,17 @@ type NodeMonitorData = {
   labels: string[];
 };
 
+type ResourceTrendPoint = {
+  x: number;
+  time: number;
+  cpu: number;
+  memory: number;
+  disk: number;
+  cpuY: number;
+  memoryY: number;
+  diskY: number;
+};
+
 function NodeMetricPanel({ metric }: { metric: NodeMonitorMetric }) {
   return (
     <div className="min-h-[168px] rounded-lg border border-line bg-white p-5 shadow-[0_18px_48px_-42px_rgba(37,99,235,0.28)]">
@@ -2787,17 +2798,33 @@ function ResourceTrendPanel({
   onRangeChange: (range: NodeMetricRange) => void;
 }) {
   const chart = buildResourceTrendPaths(monitor);
+  const latestSampleTime = monitor.sampleTimes[monitor.sampleTimes.length - 1] ?? Number.NaN;
+  const [hoverPoint, setHoverPoint] = useState<ResourceTrendPoint | null>(null);
+
+  useEffect(() => {
+    setHoverPoint(null);
+  }, [latestSampleTime, range]);
+
+  const handleTrendPointerMove = useCallback((event: ReactMouseEvent<HTMLDivElement>) => {
+    if (chart.points.length === 0) {
+      setHoverPoint(null);
+      return;
+    }
+    const rect = event.currentTarget.getBoundingClientRect();
+    const cursorX = (event.clientX - rect.left) / Math.max(1, rect.width) * resourceTrendViewBox.width;
+    setHoverPoint(findClosestResourceTrendPoint(chart.points, cursorX));
+  }, [chart.points]);
 
   return (
     <div className="rounded-lg border border-line bg-white p-5 shadow-[0_18px_48px_-42px_rgba(37,99,235,0.25)]">
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div className="flex items-center gap-3">
-          <h3 className="text-lg font-semibold tracking-tight text-coal">资源趋势</h3>
+          <h3 className="text-lg font-semibold tracking-tight text-coal">资源监控</h3>
           {loading && <ArrowsClockwise size={16} className="animate-spin text-accent" />}
           {error && <span className="text-sm font-medium text-red-600">{error}</span>}
         </div>
         <DropdownSelect
-          ariaLabel="趋势时间范围"
+          ariaLabel="监控时间范围"
           value={range}
           options={nodeMetricRangeOptions}
           onChange={(value) => onRangeChange(value as NodeMetricRange)}
@@ -2809,8 +2836,12 @@ function ResourceTrendPanel({
         <TrendLegend color="#10b981" label="内存使用率 (%)" />
         <TrendLegend color="#f97316" label="磁盘使用率 (%)" />
       </div>
-      <div className="relative mt-4 h-[330px] overflow-hidden">
-        <svg className="absolute inset-0 h-full w-full" viewBox={`0 0 ${resourceTrendViewBox.width} ${resourceTrendViewBox.height}`} preserveAspectRatio="none" role="img" aria-label="资源趋势图">
+      <div
+        className="relative mt-4 h-[330px] cursor-crosshair overflow-hidden"
+        onMouseLeave={() => setHoverPoint(null)}
+        onMouseMove={handleTrendPointerMove}
+      >
+        <svg className="absolute inset-0 h-full w-full" viewBox={`0 0 ${resourceTrendViewBox.width} ${resourceTrendViewBox.height}`} preserveAspectRatio="none" role="img" aria-label="资源监控图">
           {resourceTrendYAxisTicks.map((tick) => {
             const y = chart.yFor(tick);
             return (
@@ -2824,6 +2855,14 @@ function ResourceTrendPanel({
           <path d={chart.cpuPath} fill="none" stroke="#2563eb" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.6" />
           <path d={chart.memoryPath} fill="none" stroke="#10b981" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.6" />
           <path d={chart.diskPath} fill="none" stroke="#f97316" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.6" />
+          {hoverPoint && (
+            <g pointerEvents="none">
+              <line x1={hoverPoint.x} x2={hoverPoint.x} y1="22" y2={chart.yFor(0)} stroke="#94a3b8" strokeDasharray="3 4" />
+              <circle cx={hoverPoint.x} cy={hoverPoint.cpuY} r="4" fill="#2563eb" stroke="#ffffff" strokeWidth="2" />
+              <circle cx={hoverPoint.x} cy={hoverPoint.memoryY} r="4" fill="#10b981" stroke="#ffffff" strokeWidth="2" />
+              <circle cx={hoverPoint.x} cy={hoverPoint.diskY} r="4" fill="#f97316" stroke="#ffffff" strokeWidth="2" />
+            </g>
+          )}
         </svg>
         {resourceTrendYAxisTicks.map((tick) => (
           <span
@@ -2854,7 +2893,34 @@ function ResourceTrendPanel({
             </span>
           );
         })}
+        {hoverPoint && (
+          <div
+            className="pointer-events-none absolute z-10 w-48 rounded-lg border border-line bg-white/95 px-3 py-2 text-xs text-slate-600 shadow-[0_20px_56px_-28px_rgba(37,99,235,0.46)]"
+            style={{
+              left: `${resourceTrendPercent(hoverPoint.x, resourceTrendViewBox.width)}%`,
+              top: `${resourceTrendPercent(Math.max(48, Math.min(hoverPoint.cpuY, hoverPoint.memoryY, hoverPoint.diskY) - 18), resourceTrendViewBox.height)}%`,
+              transform: hoverPoint.x > 600 ? "translate(calc(-100% - 12px), -50%)" : "translate(12px, -50%)"
+            }}
+          >
+            <div className="mb-2 font-mono text-[11px] font-semibold text-coal">{formatTrendTooltipTime(hoverPoint.time)}</div>
+            <TrendTooltipRow color="#2563eb" label="CPU" value={`${formatMetricValue(hoverPoint.cpu)}%`} />
+            <TrendTooltipRow color="#10b981" label="内存" value={`${formatMetricValue(hoverPoint.memory)}%`} />
+            <TrendTooltipRow color="#f97316" label="磁盘" value={`${formatMetricValue(hoverPoint.disk)}%`} />
+          </div>
+        )}
       </div>
+    </div>
+  );
+}
+
+function TrendTooltipRow({ color, label, value }: { color: string; label: string; value: string }) {
+  return (
+    <div className="mt-1 flex items-center justify-between gap-3">
+      <span className="inline-flex items-center gap-2">
+        <span className="h-2 w-2 rounded-full" style={{ backgroundColor: color }} />
+        {label}
+      </span>
+      <span className="font-mono font-semibold text-coal">{value}</span>
     </div>
   );
 }
@@ -2870,6 +2936,21 @@ function TrendLegend({ color, label }: { color: string; label: string }) {
 
 function resourceTrendPercent(value: number, total: number) {
   return total === 0 ? 0 : value / total * 100;
+}
+
+function findClosestResourceTrendPoint(points: ResourceTrendPoint[], cursorX: number) {
+  return points.reduce((closest, point) => {
+    const closestDistance = Math.abs(closest.x - cursorX);
+    const pointDistance = Math.abs(point.x - cursorX);
+    return pointDistance < closestDistance ? point : closest;
+  }, points[0]);
+}
+
+function formatTrendTooltipTime(time: number) {
+  if (!Number.isFinite(time)) {
+    return "-";
+  }
+  return formatDateTime(new Date(time).toISOString());
 }
 
 function buildNodeMonitorData(
@@ -2996,12 +3077,29 @@ function buildResourceTrendPaths(monitor: NodeMonitorData) {
       return `${index === 0 ? "M" : "L"}${x.toFixed(2)},${y.toFixed(2)}`;
     }).join(" ");
   };
+  const points = monitor.cpuSeries.map((cpu, index) => {
+    const memory = monitor.memorySeries[index] ?? 0;
+    const disk = monitor.diskSeries[index] ?? 0;
+    const time = monitor.sampleTimes[index];
+    const x = xForTime(time, index, monitor.cpuSeries.length);
+    return {
+      x,
+      time,
+      cpu,
+      memory,
+      disk,
+      cpuY: yFor(cpu),
+      memoryY: yFor(memory),
+      diskY: yFor(disk)
+    };
+  });
 
   return {
     yFor,
     cpuPath: pathFor(monitor.cpuSeries),
     memoryPath: pathFor(monitor.memorySeries),
-    diskPath: pathFor(monitor.diskSeries)
+    diskPath: pathFor(monitor.diskSeries),
+    points
   };
 }
 
