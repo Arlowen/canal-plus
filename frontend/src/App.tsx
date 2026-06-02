@@ -2617,18 +2617,18 @@ function NodeMonitorPage({
         </div>
       </div>
 
-      <div className="mt-5 grid gap-5 md:grid-cols-2 2xl:grid-cols-4">
+      <div className="mt-5 grid gap-5 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5">
+        <RuntimeOverviewPanel
+          runningTasks={selected.capacity}
+          recentExceptions={recentExceptions}
+        />
         {monitor.metrics.map((metric) => (
           <NodeMetricPanel key={metric.key} metric={metric} />
         ))}
       </div>
 
-      <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1.55fr)_minmax(360px,0.95fr)]">
+      <div className="mt-5">
         <ResourceTrendPanel monitor={monitor} />
-        <RuntimeOverviewPanel
-          runningTasks={selected.capacity}
-          recentExceptions={recentExceptions}
-        />
       </div>
     </section>
   );
@@ -2808,9 +2808,9 @@ function RuntimeOverviewPanel({
   recentExceptions: number;
 }) {
   return (
-    <div className="rounded-lg border border-line bg-white p-5 shadow-[0_18px_48px_-42px_rgba(37,99,235,0.25)]">
+    <div className="min-h-[240px] rounded-lg border border-line bg-white p-5 shadow-[0_18px_48px_-42px_rgba(37,99,235,0.25)]">
       <h3 className="text-lg font-semibold tracking-tight text-coal">运行概览</h3>
-      <div className="mt-7 grid min-h-[252px] grid-cols-1 divide-y divide-line md:grid-cols-2 md:divide-x md:divide-y-0">
+      <div className="mt-5 grid divide-y divide-line">
         <OverviewCell icon={HardDrives} tone="blue" label="运行任务数" value={Math.max(0, runningTasks)} />
         <OverviewCell icon={WarningCircle} tone="red" label="最近异常" value={recentExceptions} />
       </div>
@@ -2840,13 +2840,13 @@ function OverviewCell({
         : "border-amber-100 bg-amber-50 text-amber-600";
 
   return (
-    <div className="flex items-center gap-5 px-3 py-7 md:px-7">
-      <span className={cx("flex h-12 w-12 shrink-0 items-center justify-center rounded-lg border", toneClass)}>
-        <Icon size={24} />
+    <div className="flex items-center gap-4 py-5">
+      <span className={cx("flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border", toneClass)}>
+        <Icon size={21} />
       </span>
       <div className="min-w-0">
         <div className="text-sm font-semibold text-slate-600">{label}</div>
-        <div className={cx("mt-2 truncate text-3xl font-semibold leading-none tracking-tight text-coal", valueMono && "font-mono")}>{value}</div>
+        <div className={cx("mt-1.5 truncate text-2xl font-semibold leading-none tracking-tight text-coal", valueMono && "font-mono")}>{value}</div>
       </div>
     </div>
   );
