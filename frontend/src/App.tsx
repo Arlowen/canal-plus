@@ -669,20 +669,21 @@ function App() {
   const [globalError, setGlobalError] = useState<string | null>(null);
   const [serviceUnavailable, setServiceUnavailable] = useState(false);
   const [serviceRecoveryPending, setServiceRecoveryPending] = useState(false);
-  const [focusedNodeId, setFocusedNodeId] = useState<string | null>(null);
+  const [focusedNodeId, setFocusedNodeId] = useState<string | null>(() => nodeMonitorIdFromPathname(window.location.pathname));
   const [focusedDatasourceId, setFocusedDatasourceId] = useState<string | null>(() => datasourceEditIdFromPathname(window.location.pathname));
   const previousServiceUnavailable = useRef(false);
   const canManage = canManageConfig(user);
   const canTestDatasources = canTestDatasource(user);
 
-  const navigateToPage = useCallback((nextPage: Page, mode: "push" | "replace" = "push", datasourceId?: string) => {
+  const navigateToPage = useCallback((nextPage: Page, mode: "push" | "replace" = "push", resourceId?: string) => {
     setPage(nextPage);
-    setFocusedDatasourceId(nextPage === "datasourceEdit" ? datasourceId ?? null : null);
-    const nextPath = pathForPage(nextPage, datasourceId);
+    setFocusedDatasourceId(nextPage === "datasourceEdit" ? resourceId ?? null : null);
+    setFocusedNodeId(nextPage === "nodeMonitor" ? resourceId ?? null : null);
+    const nextPath = pathForPage(nextPage, resourceId);
     if (window.location.pathname === nextPath) {
       return;
     }
-    const state = { page: nextPage, datasourceId };
+    const state = { page: nextPage, resourceId };
     if (mode === "replace") {
       window.history.replaceState(state, "", nextPath);
     } else {
@@ -797,8 +798,10 @@ function App() {
 
   useEffect(() => {
     const handlePopState = () => {
-      setPage(pageFromPathname(window.location.pathname));
-      setFocusedDatasourceId(datasourceEditIdFromPathname(window.location.pathname));
+      const pathname = window.location.pathname;
+      setPage(pageFromPathname(pathname));
+      setFocusedDatasourceId(datasourceEditIdFromPathname(pathname));
+      setFocusedNodeId(nodeMonitorIdFromPathname(pathname));
     };
     window.addEventListener("popstate", handlePopState);
     return () => window.removeEventListener("popstate", handlePopState);
@@ -827,8 +830,7 @@ function App() {
   };
 
   const openNodeMonitor = (nodeID: string) => {
-    setFocusedNodeId(nodeID);
-    navigateToPage("nodeMonitor");
+    navigateToPage("nodeMonitor", "push", nodeID);
   };
 
   const openDatasourceCreate = () => {
@@ -4223,16 +4225,20 @@ function datasourceAuthTypeFromItem(item: Datasource): DatasourceAuthType {
 }
 
 function pageFromPathname(pathname: string): Page {
+  if (pathname === "/" || pathname === "/datasources") return "datasources";
   if (pathname === "/datasource/create") return "datasourceCreate";
   if (datasourceEditIdFromPathname(pathname)) return "datasourceEdit";
+  if (nodeMonitorIdFromPathname(pathname)) return "nodeMonitor";
   if (pathname === "/nodes") return "nodes";
   return "datasources";
 }
 
-function pathForPage(page: Page, datasourceId?: string) {
+function pathForPage(page: Page, resourceId?: string) {
+  if (page === "datasources") return "/datasources";
   if (page === "datasourceCreate") return "/datasource/create";
-  if (page === "datasourceEdit" && datasourceId) return `/datasource/${encodeURIComponent(datasourceId)}/edit`;
+  if (page === "datasourceEdit" && resourceId) return `/datasource/${encodeURIComponent(resourceId)}/edit`;
   if (page === "nodes") return "/nodes";
+  if (page === "nodeMonitor" && resourceId) return `/nodes/${encodeURIComponent(resourceId)}/monitor`;
   return "/";
 }
 
@@ -4263,6 +4269,16 @@ function pageDescription(page: Page) {
 
 function datasourceEditIdFromPathname(pathname: string) {
   const match = pathname.match(/^\/datasource\/([^/]+)\/edit$/);
+  if (!match) return null;
+  try {
+    return decodeURIComponent(match[1]);
+  } catch {
+    return match[1];
+  }
+}
+
+function nodeMonitorIdFromPathname(pathname: string) {
+  const match = pathname.match(/^\/nodes\/([^/]+)\/monitor$/);
   if (!match) return null;
   try {
     return decodeURIComponent(match[1]);
