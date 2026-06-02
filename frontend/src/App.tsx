@@ -6433,19 +6433,19 @@ function effectiveChannelSchema(database: string, schema: string) {
 
 function channelWizardStepLabel(step: ChannelWizardStep) {
   const labels: Record<ChannelWizardStep, string> = {
-    connections: "连接",
-    tasks: "任务",
-    tables: "表",
-    columns: "列"
+    connections: "选择数据源",
+    tasks: "选择任务类型",
+    tables: "选择表",
+    columns: "选择列"
   };
   return labels[step];
 }
 
 function channelWizardStepError(step: ChannelWizardStep, needsPrimaryKeys: boolean) {
-  if (step === "connections") return "连接未完成";
-  if (step === "tasks") return "任务未完成";
-  if (step === "tables") return needsPrimaryKeys ? "主键必填" : "表未完成";
-  return "列未完成";
+  if (step === "connections") return "选择数据源未完成";
+  if (step === "tasks") return "选择任务类型未完成";
+  if (step === "tables") return needsPrimaryKeys ? "主键必填" : "选择表未完成";
+  return "选择列未完成";
 }
 
 function channelFormFromChannel(channel: Channel | null, datasources: Datasource[]): ChannelFormState {
