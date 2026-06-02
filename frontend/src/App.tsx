@@ -2024,12 +2024,11 @@ function ChannelCreateWizardPage({
                       </div>
                       <div className="grid gap-4">
                         <Field label="类型" required>
-                          <DropdownSelect
+                          <ChannelWizardDatasourceTypeSelector
                             value={form.sourceDatasourceType}
                             ariaLabel="源端类型"
-                            options={channelWizardDatasourceTypeOptions()}
                             onChange={(value) => patchForm({
-                              sourceDatasourceType: value as DatasourceType,
+                              sourceDatasourceType: value,
                               sourceDatasourceId: "",
                               sourceDatabase: "",
                               sourceSchema: "",
@@ -2057,12 +2056,11 @@ function ChannelCreateWizardPage({
                       </div>
                       <div className="grid gap-4">
                         <Field label="类型" required>
-                          <DropdownSelect
+                          <ChannelWizardDatasourceTypeSelector
                             value={form.targetDatasourceType}
                             ariaLabel="目标端类型"
-                            options={channelWizardDatasourceTypeOptions()}
                             onChange={(value) => patchForm({
-                              targetDatasourceType: value as DatasourceType,
+                              targetDatasourceType: value,
                               targetDatasourceId: "",
                               targetDatabase: "",
                               targetSchema: "",
@@ -6120,6 +6118,42 @@ function ChannelTaskStatusBadge({ status }: { status: ChannelTask["status"] }) {
           ? "purple"
           : "neutral";
   return <Badge tone={tone}>{channelTaskStatusText(status)}</Badge>;
+}
+
+function ChannelWizardDatasourceTypeSelector({
+  value,
+  ariaLabel,
+  onChange
+}: {
+  value: DatasourceType;
+  ariaLabel: string;
+  onChange: (value: DatasourceType) => void;
+}) {
+  return (
+    <div role="radiogroup" aria-label={ariaLabel} className="grid grid-cols-[repeat(auto-fit,minmax(140px,1fr))] gap-2">
+      {channelWizardDatasourceTypeOptions().map((option) => {
+        const selected = value === option.value;
+        return (
+          <Button
+            key={option.value}
+            type="button"
+            role="radio"
+            aria-checked={selected}
+            onClick={() => onChange(option.value as DatasourceType)}
+            className={cx(
+              "flex min-h-12 items-center justify-start gap-3 rounded-lg border px-3 text-sm font-semibold transition",
+              selected
+                ? "border-blue-200 bg-blue-50 text-accent"
+                : "border-line bg-white text-slate-600 hover:border-blue-200 hover:bg-blue-50"
+            )}
+          >
+            {option.icon}
+            <span>{option.label}</span>
+          </Button>
+        );
+      })}
+    </div>
+  );
 }
 
 function DatasourceTestBadge({ state }: { state: DatasourceTestState }) {
