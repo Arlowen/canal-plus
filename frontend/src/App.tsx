@@ -2713,7 +2713,7 @@ function NodeMonitorPage({
         </div>
       </div>
 
-      <div className="mt-5 grid gap-5 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5">
+      <div className="mt-5 grid items-start gap-5 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5">
         <RuntimeOverviewPanel
           runningTasks={selected.capacity}
           recentExceptions={recentExceptions}
@@ -2744,7 +2744,6 @@ type NodeMonitorMetric = {
   value: number;
   unit: string;
   color: string;
-  series: number[];
   ringValue?: number;
   precision?: number;
 };
@@ -2761,7 +2760,7 @@ type NodeMonitorData = {
 
 function NodeMetricPanel({ metric }: { metric: NodeMonitorMetric }) {
   return (
-    <div className="min-h-[240px] rounded-lg border border-line bg-white p-5 shadow-[0_18px_48px_-42px_rgba(37,99,235,0.28)]">
+    <div className="min-h-[168px] rounded-lg border border-line bg-white p-5 shadow-[0_18px_48px_-42px_rgba(37,99,235,0.28)]">
       <div className="flex items-start justify-between gap-4">
         <div>
           <div className="flex items-center gap-2 text-sm font-semibold text-coal">
@@ -2776,9 +2775,6 @@ function NodeMetricPanel({ metric }: { metric: NodeMonitorMetric }) {
         {metric.ringValue !== undefined && (
           <MetricProgressRing value={metric.ringValue} color={metric.color} />
         )}
-      </div>
-      <div className="mt-8">
-        <Sparkline values={metric.series} color={metric.color} minValue={metric.key === "network" ? undefined : 0} maxValue={metric.key === "network" ? undefined : 100} />
       </div>
     </div>
   );
@@ -2806,35 +2802,6 @@ function MetricProgressRing({ value, color }: { value: number; color: string }) 
       <text x="48" y="53" textAnchor="middle" className="rotate-90 fill-coal font-mono text-[16px] font-semibold">
         {percent}%
       </text>
-    </svg>
-  );
-}
-
-function Sparkline({
-  values,
-  color,
-  minValue,
-  maxValue
-}: {
-  values: number[];
-  color: string;
-  minValue?: number;
-  maxValue?: number;
-}) {
-  const gradientId = useId();
-  const linePath = buildLinePath(values, 252, 66, 4, minValue, maxValue);
-  const areaPath = buildAreaPath(values, 252, 66, 4, minValue, maxValue);
-
-  return (
-    <svg className="h-[68px] w-full" viewBox="0 0 252 68" preserveAspectRatio="none" aria-hidden="true">
-      <defs>
-        <linearGradient id={gradientId} x1="0" x2="0" y1="0" y2="1">
-          <stop offset="0%" stopColor={color} stopOpacity="0.22" />
-          <stop offset="100%" stopColor={color} stopOpacity="0" />
-        </linearGradient>
-      </defs>
-      <path d={areaPath} fill={`url(#${gradientId})`} />
-      <path d={linePath} fill="none" stroke={color} strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.4" />
     </svg>
   );
 }
@@ -3029,7 +2996,6 @@ function buildNodeMonitorData(
   const cpuSeries = samples.map((sample) => clampPercent(sample.cpuPercent));
   const memorySeries = samples.map((sample) => clampPercent(sample.memoryPercent));
   const diskSeries = samples.map((sample) => clampPercent(sample.diskPercent));
-  const networkSeries = samples.map((sample) => normalizeNetworkValue(sample.networkThroughputMBps));
   const sampleTimes = samples.map((sample) => metricTime(sample.collectedAt));
 
   return {
@@ -3041,7 +3007,6 @@ function buildNodeMonitorData(
         value: cpuValue,
         unit: "%",
         color: "#2563eb",
-        series: cpuSeries,
         ringValue: cpuValue
       },
       {
@@ -3050,7 +3015,6 @@ function buildNodeMonitorData(
         value: memoryValue,
         unit: "%",
         color: "#2563eb",
-        series: memorySeries,
         ringValue: memoryValue
       },
       {
@@ -3059,7 +3023,6 @@ function buildNodeMonitorData(
         value: diskValue,
         unit: "%",
         color: "#2563eb",
-        series: diskSeries,
         ringValue: diskValue
       },
       {
@@ -3068,7 +3031,6 @@ function buildNodeMonitorData(
         value: networkValue,
         unit: "MB/s",
         color: "#10b981",
-        series: networkSeries,
         precision: 1
       }
     ],
@@ -3151,42 +3113,6 @@ function buildResourceTrendPaths(monitor: NodeMonitorData) {
     memoryPath: pathFor(monitor.memorySeries),
     diskPath: pathFor(monitor.diskSeries)
   };
-}
-
-function buildLinePath(values: number[], width: number, height: number, padding: number, minValue?: number, maxValue?: number) {
-  const points = buildChartPoints(values, width, height, padding, minValue, maxValue);
-  return points.map((point, index) => `${index === 0 ? "M" : "L"}${point.x.toFixed(2)},${point.y.toFixed(2)}`).join(" ");
-}
-
-function buildAreaPath(values: number[], width: number, height: number, padding: number, minValue?: number, maxValue?: number) {
-  const points = buildChartPoints(values, width, height, padding, minValue, maxValue);
-  if (points.length === 0) return "";
-  const baseline = height - padding;
-  const line = points.map((point, index) => `${index === 0 ? "M" : "L"}${point.x.toFixed(2)},${point.y.toFixed(2)}`).join(" ");
-  const last = points[points.length - 1];
-  const first = points[0];
-  return `${line} L${last.x.toFixed(2)},${baseline} L${first.x.toFixed(2)},${baseline} Z`;
-}
-
-function buildChartPoints(values: number[], width: number, height: number, padding: number, minValue?: number, maxValue?: number) {
-  if (values.length === 0) return [];
-  const fallbackMin = Math.min(...values);
-  const fallbackMax = Math.max(...values);
-  const min = minValue ?? fallbackMin;
-  const max = maxValue ?? fallbackMax;
-  const range = Math.max(1, max - min);
-  const yFor = (value: number) => padding + (1 - (value - min) / range) * (height - padding * 2);
-  if (values.length === 1) {
-    const y = yFor(values[0]);
-    return [
-      { x: padding, y },
-      { x: width - padding, y }
-    ];
-  }
-  return values.map((value, index) => ({
-    x: padding + ((width - padding * 2) / Math.max(1, values.length - 1)) * index,
-    y: yFor(value)
-  }));
 }
 
 function buildTrendLabels(samples: NodeMetricSample[], range: NodeMetricRange) {
