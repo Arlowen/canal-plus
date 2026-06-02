@@ -920,7 +920,7 @@ function App() {
             {page !== "datasources" && page !== "nodes" && page !== "datasourceCreate" && page !== "datasourceEdit" && (
               <div className="flex h-[101px] flex-col justify-center gap-1 border-b border-line px-5 md:px-8 xl:flex-row xl:items-center xl:justify-between">
                 <div>
-                  <h1 className="text-3xl font-semibold tracking-tight text-coal md:text-4xl">
+                  <h1 className="text-3xl font-semibold tracking-tight text-coal">
                     {pageTitle(page)}
                   </h1>
                   {pageDescription(page) && (
