@@ -2,6 +2,7 @@ package app
 
 import (
 	"errors"
+	"fmt"
 	"sort"
 	"strings"
 )
@@ -39,24 +40,35 @@ func (s *Store) CreateChannel(input ChannelInput, actor string) (Channel, error)
 	if _, ok := s.getDatasourceLocked(normalized.SourceDatasourceID); !ok {
 		return Channel{}, errors.New("源端数据源不存在")
 	}
+	source, _ := s.getDatasourceLocked(normalized.SourceDatasourceID)
 	if _, ok := s.getDatasourceLocked(normalized.TargetDatasourceID); !ok {
 		return Channel{}, errors.New("目标端数据源不存在")
 	}
+	target, _ := s.getDatasourceLocked(normalized.TargetDatasourceID)
+	normalized, err = s.enrichChannelRuntimeLocked(normalized, source, target, true)
+	if err != nil {
+		return Channel{}, err
+	}
 	timestamp := now()
 	channel := Channel{
-		ID:                 newID(),
-		Name:               normalized.Name,
-		Description:        normalized.Description,
-		SourceDatasourceID: normalized.SourceDatasourceID,
-		TargetDatasourceID: normalized.TargetDatasourceID,
-		Status:             ChannelStatusDraft,
-		Owner:              strings.TrimSpace(actor),
-		Tags:               normalized.Tags,
-		MappingVersion:     0,
-		TaskCount:          0,
-		RunningTaskCount:   0,
-		CreatedAt:          timestamp,
-		UpdatedAt:          timestamp,
+		ID:                   newID(),
+		Name:                 normalized.Name,
+		Description:          normalized.Description,
+		SourceDatasourceID:   normalized.SourceDatasourceID,
+		TargetDatasourceID:   normalized.TargetDatasourceID,
+		SourceDatasourceType: normalized.SourceDatasourceType,
+		TargetDatasourceType: normalized.TargetDatasourceType,
+		RunNodeID:            normalized.RunNodeID,
+		ResourceSpec:         normalized.ResourceSpec,
+		Kind:                 normalized.Kind,
+		Status:               ChannelStatusDraft,
+		Owner:                strings.TrimSpace(actor),
+		Tags:                 normalized.Tags,
+		MappingVersion:       0,
+		TaskCount:            0,
+		RunningTaskCount:     0,
+		CreatedAt:            timestamp,
+		UpdatedAt:            timestamp,
 	}
 	s.data.Channels = append([]Channel{channel}, s.data.Channels...)
 	s.logLocked(actor, "create", "channel", channel.ID, "Channel created: "+channel.Name)
@@ -80,17 +92,39 @@ func (s *Store) UpdateChannel(id string, input ChannelInput, actor string) (Chan
 	if _, ok := s.getDatasourceLocked(normalized.SourceDatasourceID); !ok {
 		return Channel{}, true, errors.New("源端数据源不存在")
 	}
+	source, _ := s.getDatasourceLocked(normalized.SourceDatasourceID)
 	if _, ok := s.getDatasourceLocked(normalized.TargetDatasourceID); !ok {
 		return Channel{}, true, errors.New("目标端数据源不存在")
 	}
+	target, _ := s.getDatasourceLocked(normalized.TargetDatasourceID)
 	channel := &s.data.Channels[index]
 	if channel.Status == ChannelStatusArchived {
 		return Channel{}, true, errors.New("Channel 已归档")
+	}
+	validateRuntime := normalized.RunNodeID != "" && normalized.RunNodeID != channel.RunNodeID ||
+		normalized.ResourceSpec != "" && normalized.ResourceSpec != channel.ResourceSpec
+	if normalized.RunNodeID == "" {
+		normalized.RunNodeID = channel.RunNodeID
+	}
+	if normalized.ResourceSpec == "" {
+		normalized.ResourceSpec = channel.ResourceSpec
+	}
+	if normalized.Kind == "" {
+		normalized.Kind = channel.Kind
+	}
+	normalized, err = s.enrichChannelRuntimeLocked(normalized, source, target, validateRuntime)
+	if err != nil {
+		return Channel{}, true, err
 	}
 	channel.Name = normalized.Name
 	channel.Description = normalized.Description
 	channel.SourceDatasourceID = normalized.SourceDatasourceID
 	channel.TargetDatasourceID = normalized.TargetDatasourceID
+	channel.SourceDatasourceType = normalized.SourceDatasourceType
+	channel.TargetDatasourceType = normalized.TargetDatasourceType
+	channel.RunNodeID = normalized.RunNodeID
+	channel.ResourceSpec = normalized.ResourceSpec
+	channel.Kind = normalized.Kind
 	channel.Tags = normalized.Tags
 	channel.UpdatedAt = now()
 	s.refreshChannelDerivedLocked(index)
@@ -570,6 +604,11 @@ func (s *Store) normalizeChannelInput(input ChannelInput) (ChannelInput, error) 
 	input.Description = strings.TrimSpace(input.Description)
 	input.SourceDatasourceID = strings.TrimSpace(input.SourceDatasourceID)
 	input.TargetDatasourceID = strings.TrimSpace(input.TargetDatasourceID)
+	input.SourceDatasourceType = DatasourceType(strings.TrimSpace(strings.ToLower(string(input.SourceDatasourceType))))
+	input.TargetDatasourceType = DatasourceType(strings.TrimSpace(strings.ToLower(string(input.TargetDatasourceType))))
+	input.RunNodeID = strings.TrimSpace(input.RunNodeID)
+	input.ResourceSpec = normalizeChannelResourceSpec(input.ResourceSpec)
+	input.Kind = ChannelKind(strings.TrimSpace(strings.ToLower(string(input.Kind))))
 	input.Tags = normalizeTags(input.Tags)
 	if input.Name == "" {
 		return ChannelInput{}, errors.New("Channel 名称必填")
@@ -586,7 +625,84 @@ func (s *Store) normalizeChannelInput(input ChannelInput) (ChannelInput, error) 
 	if input.TargetDatasourceID == "" {
 		return ChannelInput{}, errors.New("目标端必填")
 	}
+	if input.SourceDatasourceType != "" && input.SourceDatasourceType != DatasourceTypeMySQL {
+		return ChannelInput{}, errors.New("源端类型不支持")
+	}
+	if input.TargetDatasourceType != "" && input.TargetDatasourceType != DatasourceTypeMySQL {
+		return ChannelInput{}, errors.New("目标端类型不支持")
+	}
+	if input.Kind != "" && input.Kind != ChannelKindSync && input.Kind != ChannelKindCheck {
+		return ChannelInput{}, errors.New("Channel 类型不支持")
+	}
+	if input.ResourceSpec != "" {
+		if _, err := channelResourceSpecGB(input.ResourceSpec); err != nil {
+			return ChannelInput{}, err
+		}
+	}
 	return input, nil
+}
+
+func (s *Store) enrichChannelRuntimeLocked(input ChannelInput, source Datasource, target Datasource, validateRuntime bool) (ChannelInput, error) {
+	if input.Kind == "" {
+		input.Kind = ChannelKindSync
+	}
+	if input.SourceDatasourceType == "" {
+		input.SourceDatasourceType = source.Type
+	} else if input.SourceDatasourceType != source.Type {
+		return ChannelInput{}, errors.New("源端类型与数据源不匹配")
+	}
+	if input.TargetDatasourceType == "" {
+		input.TargetDatasourceType = target.Type
+	} else if input.TargetDatasourceType != target.Type {
+		return ChannelInput{}, errors.New("目标端类型与数据源不匹配")
+	}
+	if validateRuntime && input.ResourceSpec != "" && input.RunNodeID == "" {
+		return ChannelInput{}, errors.New("运行节点必填")
+	}
+	if validateRuntime && input.RunNodeID != "" {
+		node := s.getNodeLocked(input.RunNodeID)
+		if node == nil {
+			return ChannelInput{}, errors.New("运行节点不存在")
+		}
+		if node.Status != NodeOnline {
+			return ChannelInput{}, errors.New("运行节点不可用")
+		}
+		if input.ResourceSpec != "" {
+			required, err := channelResourceSpecGB(input.ResourceSpec)
+			if err != nil {
+				return ChannelInput{}, err
+			}
+			if float64(node.Capacity) < required {
+				return ChannelInput{}, fmt.Errorf("节点资源不足，当前 %dG，需要 %s", node.Capacity, input.ResourceSpec)
+			}
+		}
+	}
+	return input, nil
+}
+
+func normalizeChannelResourceSpec(spec string) string {
+	spec = strings.TrimSpace(strings.ToUpper(spec))
+	if spec == ".5G" {
+		return "0.5G"
+	}
+	return spec
+}
+
+func channelResourceSpecGB(spec string) (float64, error) {
+	switch normalizeChannelResourceSpec(spec) {
+	case "0.5G":
+		return 0.5, nil
+	case "1G":
+		return 1, nil
+	case "2G":
+		return 2, nil
+	case "3G":
+		return 3, nil
+	case "4G":
+		return 4, nil
+	default:
+		return 0, errors.New("任务规格不支持")
+	}
 }
 
 func normalizeChannelMappingsInput(channelID string, version int, timestamp string, oldTableCreatedAt map[string]string, oldColumnCreatedAt map[string]string, input ChannelMappingsInput) ([]ChannelTableMapping, []ChannelColumnMapping, error) {

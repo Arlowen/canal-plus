@@ -35,23 +35,28 @@ type datasourceRow struct {
 }
 
 type channelRow struct {
-	SortOrder          int           `json:"-" gorm:"not null;index"`
-	ID                 string        `json:"id" gorm:"primaryKey;size:64"`
-	Name               string        `json:"name" gorm:"size:255;not null"`
-	Description        string        `json:"description,omitempty" gorm:"type:text"`
-	SourceDatasourceID string        `json:"sourceDatasourceId" gorm:"size:64;not null;index"`
-	TargetDatasourceID string        `json:"targetDatasourceId" gorm:"size:64;not null;index"`
-	Status             ChannelStatus `json:"status" gorm:"size:32;not null;index"`
-	Owner              string        `json:"owner,omitempty" gorm:"size:255;index"`
-	Tags               []string      `json:"tags" gorm:"type:json;serializer:json"`
-	MappingVersion     int           `json:"mappingVersion" gorm:"not null"`
-	TaskCount          int           `json:"taskCount" gorm:"not null"`
-	RunningTaskCount   int           `json:"runningTaskCount" gorm:"not null"`
-	LastRunID          string        `json:"lastRunId,omitempty" gorm:"size:64;index"`
-	LastRunStatus      TaskRunStatus `json:"lastRunStatus,omitempty" gorm:"size:32;index"`
-	CreatedAt          string        `json:"createdAt" gorm:"size:64;index"`
-	UpdatedAt          string        `json:"updatedAt" gorm:"size:64;index"`
-	ArchivedAt         string        `json:"archivedAt,omitempty" gorm:"size:64;index"`
+	SortOrder            int            `json:"-" gorm:"not null;index"`
+	ID                   string         `json:"id" gorm:"primaryKey;size:64"`
+	Name                 string         `json:"name" gorm:"size:255;not null"`
+	Description          string         `json:"description,omitempty" gorm:"type:text"`
+	SourceDatasourceID   string         `json:"sourceDatasourceId" gorm:"size:64;not null;index"`
+	TargetDatasourceID   string         `json:"targetDatasourceId" gorm:"size:64;not null;index"`
+	SourceDatasourceType DatasourceType `json:"sourceDatasourceType,omitempty" gorm:"size:32;index"`
+	TargetDatasourceType DatasourceType `json:"targetDatasourceType,omitempty" gorm:"size:32;index"`
+	RunNodeID            string         `json:"runNodeId,omitempty" gorm:"size:64;index"`
+	ResourceSpec         string         `json:"resourceSpec,omitempty" gorm:"size:16;index"`
+	Kind                 ChannelKind    `json:"kind,omitempty" gorm:"size:32;index"`
+	Status               ChannelStatus  `json:"status" gorm:"size:32;not null;index"`
+	Owner                string         `json:"owner,omitempty" gorm:"size:255;index"`
+	Tags                 []string       `json:"tags" gorm:"type:json;serializer:json"`
+	MappingVersion       int            `json:"mappingVersion" gorm:"not null"`
+	TaskCount            int            `json:"taskCount" gorm:"not null"`
+	RunningTaskCount     int            `json:"runningTaskCount" gorm:"not null"`
+	LastRunID            string         `json:"lastRunId,omitempty" gorm:"size:64;index"`
+	LastRunStatus        TaskRunStatus  `json:"lastRunStatus,omitempty" gorm:"size:32;index"`
+	CreatedAt            string         `json:"createdAt" gorm:"size:64;index"`
+	UpdatedAt            string         `json:"updatedAt" gorm:"size:64;index"`
+	ArchivedAt           string         `json:"archivedAt,omitempty" gorm:"size:64;index"`
 }
 
 type channelTableMappingRow struct {

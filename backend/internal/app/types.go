@@ -136,6 +136,13 @@ const (
 	ChannelStatusArchived ChannelStatus = "archived"
 )
 
+type ChannelKind string
+
+const (
+	ChannelKindSync  ChannelKind = "sync"
+	ChannelKindCheck ChannelKind = "check"
+)
+
 type ChannelTaskType string
 
 const (
@@ -173,30 +180,40 @@ const (
 )
 
 type Channel struct {
-	ID                 string        `json:"id"`
-	Name               string        `json:"name"`
-	Description        string        `json:"description,omitempty"`
-	SourceDatasourceID string        `json:"sourceDatasourceId"`
-	TargetDatasourceID string        `json:"targetDatasourceId"`
-	Status             ChannelStatus `json:"status"`
-	Owner              string        `json:"owner,omitempty"`
-	Tags               []string      `json:"tags"`
-	MappingVersion     int           `json:"mappingVersion"`
-	TaskCount          int           `json:"taskCount"`
-	RunningTaskCount   int           `json:"runningTaskCount"`
-	LastRunID          string        `json:"lastRunId,omitempty"`
-	LastRunStatus      TaskRunStatus `json:"lastRunStatus,omitempty"`
-	CreatedAt          string        `json:"createdAt"`
-	UpdatedAt          string        `json:"updatedAt"`
-	ArchivedAt         string        `json:"archivedAt,omitempty"`
+	ID                   string         `json:"id"`
+	Name                 string         `json:"name"`
+	Description          string         `json:"description,omitempty"`
+	SourceDatasourceID   string         `json:"sourceDatasourceId"`
+	TargetDatasourceID   string         `json:"targetDatasourceId"`
+	SourceDatasourceType DatasourceType `json:"sourceDatasourceType,omitempty"`
+	TargetDatasourceType DatasourceType `json:"targetDatasourceType,omitempty"`
+	RunNodeID            string         `json:"runNodeId,omitempty"`
+	ResourceSpec         string         `json:"resourceSpec,omitempty"`
+	Kind                 ChannelKind    `json:"kind,omitempty"`
+	Status               ChannelStatus  `json:"status"`
+	Owner                string         `json:"owner,omitempty"`
+	Tags                 []string       `json:"tags"`
+	MappingVersion       int            `json:"mappingVersion"`
+	TaskCount            int            `json:"taskCount"`
+	RunningTaskCount     int            `json:"runningTaskCount"`
+	LastRunID            string         `json:"lastRunId,omitempty"`
+	LastRunStatus        TaskRunStatus  `json:"lastRunStatus,omitempty"`
+	CreatedAt            string         `json:"createdAt"`
+	UpdatedAt            string         `json:"updatedAt"`
+	ArchivedAt           string         `json:"archivedAt,omitempty"`
 }
 
 type ChannelInput struct {
-	Name               string   `json:"name"`
-	Description        string   `json:"description,omitempty"`
-	SourceDatasourceID string   `json:"sourceDatasourceId"`
-	TargetDatasourceID string   `json:"targetDatasourceId"`
-	Tags               []string `json:"tags,omitempty"`
+	Name                 string         `json:"name"`
+	Description          string         `json:"description,omitempty"`
+	SourceDatasourceID   string         `json:"sourceDatasourceId"`
+	TargetDatasourceID   string         `json:"targetDatasourceId"`
+	SourceDatasourceType DatasourceType `json:"sourceDatasourceType,omitempty"`
+	TargetDatasourceType DatasourceType `json:"targetDatasourceType,omitempty"`
+	RunNodeID            string         `json:"runNodeId,omitempty"`
+	ResourceSpec         string         `json:"resourceSpec,omitempty"`
+	Kind                 ChannelKind    `json:"kind,omitempty"`
+	Tags                 []string       `json:"tags,omitempty"`
 }
 
 type ChannelTableMapping struct {

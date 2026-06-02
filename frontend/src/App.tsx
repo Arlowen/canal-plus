@@ -50,6 +50,7 @@ import type {
   AlertRuleEvaluation,
   AlertRuleInput,
   Channel,
+  ChannelKind,
   ChannelColumnMappingInput,
   ChannelInput,
   ChannelMappingsResponse,
@@ -64,6 +65,7 @@ import type {
   DatasourceAuthType,
   DatasourceInput,
   DatasourcePurpose,
+  DatasourceType,
   DatasourceTestResult,
   NodeMetricHistoryResponse,
   NodeMetricRange,
@@ -74,7 +76,7 @@ import type {
 } from "./types/api";
 
 type MainPage = "channels" | "datasources" | "nodes" | "settings";
-type Page = MainPage | "channelDetail" | "nodeMonitor" | "datasourceCreate" | "datasourceEdit";
+type Page = MainPage | "channelDetail" | "channelCreate" | "nodeMonitor" | "datasourceCreate" | "datasourceEdit";
 type NoticeTone = NoticeToastTone;
 
 type Notice = {
@@ -115,6 +117,11 @@ type ChannelFormState = {
   description: string;
   sourceDatasourceId: string;
   targetDatasourceId: string;
+  sourceDatasourceType: DatasourceType;
+  targetDatasourceType: DatasourceType;
+  runNodeId: string;
+  resourceSpec: string;
+  kind: ChannelKind;
   tags: string;
 };
 
@@ -128,6 +135,40 @@ type ChannelTableMappingDraft = Omit<ChannelTableMappingInput, "columns"> & {
   columns: ChannelColumnMappingDraft[];
 };
 
+type ChannelWizardStep = "connections" | "tasks" | "tables" | "columns";
+type ResourceSpec = "0.5G" | "1G" | "2G" | "3G" | "4G";
+type DatasourceTestState = "idle" | "testing" | "success" | "failed";
+
+type ChannelWizardTableDraft = ChannelTableMappingDraft & {
+  createTarget: boolean;
+};
+
+type ChannelWizardFormState = {
+  name: string;
+  description: string;
+  runNodeId: string;
+  sourceDatasourceType: DatasourceType;
+  targetDatasourceType: DatasourceType;
+  sourceDatasourceId: string;
+  targetDatasourceId: string;
+  sourceTestState: DatasourceTestState;
+  targetTestState: DatasourceTestState;
+  sourceTestMessage: string;
+  targetTestMessage: string;
+  resourceSpec: ResourceSpec;
+  kind: ChannelKind;
+  fullMigration: boolean;
+  incrementalSync: boolean;
+  schemaCompare: boolean;
+  dataValidation: boolean;
+  dataCorrection: boolean;
+  sourceDatabase: string;
+  sourceSchema: string;
+  targetDatabase: string;
+  targetSchema: string;
+  tables: ChannelWizardTableDraft[];
+};
+
 type DatasourceFieldErrors = Partial<Record<"name" | "host" | "port" | "username" | "password" | "remark", string>>;
 type DatasourceTypeFilter = "all" | "mysql";
 type NodeTypeFilter = "all" | "master" | "standby";
@@ -139,6 +180,9 @@ const navItems: Array<{ id: MainPage; label: string; icon: typeof Database }> = 
   { id: "datasources", label: "数据源", icon: Database },
   { id: "nodes", label: "节点", icon: HardDrives }
 ];
+
+const channelWizardSteps: ChannelWizardStep[] = ["connections", "tasks", "tables", "columns"];
+const resourceSpecOptions: ResourceSpec[] = ["0.5G", "1G", "2G", "3G", "4G"];
 
 const emptyDatasourceForm: DatasourceFormState = {
   name: "",
@@ -894,6 +938,14 @@ function App() {
     navigateToPage("channelDetail", "push", channelId);
   };
 
+  const openChannelCreate = () => {
+    navigateToPage("channelCreate");
+  };
+
+  const closeChannelCreate = () => {
+    navigateToPage("channels", "replace");
+  };
+
   if (!tokenState) {
     if (serviceUnavailable) {
       return <BackendUnavailableScreen retrying={serviceRecoveryPending} onRetry={retryServiceConnection} />;
@@ -964,7 +1016,7 @@ function App() {
           </aside>
 
           <main className="min-w-0">
-            {page !== "channels" && page !== "channelDetail" && page !== "datasources" && page !== "nodes" && page !== "datasourceCreate" && page !== "datasourceEdit" && (
+            {page !== "channels" && page !== "channelDetail" && page !== "channelCreate" && page !== "datasources" && page !== "nodes" && page !== "datasourceCreate" && page !== "datasourceEdit" && (
               <div className="flex h-[101px] flex-col justify-center gap-1 border-b border-line px-5 md:px-8 xl:flex-row xl:items-center xl:justify-between">
                 <div>
                   <h1 className="text-3xl font-semibold tracking-tight text-coal">
@@ -995,7 +1047,18 @@ function App() {
                 datasources={datasources}
                 canManage={canManage}
                 onChanged={refresh}
+                onCreate={openChannelCreate}
                 onOpenChannel={openChannelDetail}
+                pushNotice={pushNotice}
+              />
+            ) : page === "channelCreate" ? (
+              <ChannelCreateWizardPage
+                datasources={datasources}
+                cluster={cluster}
+                canManage={canManage}
+                onBack={closeChannelCreate}
+                onOpenChannel={openChannelDetail}
+                onChanged={refresh}
                 pushNotice={pushNotice}
               />
             ) : page === "channelDetail" ? (
@@ -1076,6 +1139,7 @@ function ChannelsPage({
   datasources,
   canManage,
   onChanged,
+  onCreate,
   onOpenChannel,
   pushNotice
 }: {
@@ -1083,6 +1147,7 @@ function ChannelsPage({
   datasources: Datasource[];
   canManage: boolean;
   onChanged: (quiet?: boolean) => Promise<void>;
+  onCreate: () => void;
   onOpenChannel: (channelId: string) => void;
   pushNotice: (notice: Notice) => void;
 }) {
@@ -1114,8 +1179,7 @@ function ChannelsPage({
       pushNotice({ tone: "warning", message: "权限不足" });
       return;
     }
-    setEditingChannel(null);
-    setFormOpen(true);
+    onCreate();
   };
 
   const openEdit = (channel: Channel) => {
@@ -1132,8 +1196,6 @@ function ChannelsPage({
     try {
       if (editingChannel) {
         await api.updateChannel(editingChannel.id, input);
-      } else {
-        await api.createChannel(input);
       }
       pushNotice({ tone: "success", message: "已保存" });
       setFormOpen(false);
@@ -1431,6 +1493,619 @@ function ChannelFormModal({
         </div>
       </form>
     </Modal>
+  );
+}
+
+function ChannelCreateWizardPage({
+  datasources,
+  cluster,
+  canManage,
+  onBack,
+  onOpenChannel,
+  onChanged,
+  pushNotice
+}: {
+  datasources: Datasource[];
+  cluster: ClusterSnapshot | null;
+  canManage: boolean;
+  onBack: () => void;
+  onOpenChannel: (channelId: string) => void;
+  onChanged: (quiet?: boolean) => Promise<void>;
+  pushNotice: (notice: Notice) => void;
+}) {
+  const onlineNodes = useMemo(() => (cluster?.nodes || []).filter((node) => node.status === "online"), [cluster]);
+  const [form, setForm] = useState<ChannelWizardFormState>(() => emptyChannelWizardForm(datasources, onlineNodes));
+  const [step, setStep] = useState<ChannelWizardStep>("connections");
+  const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    setForm((current) => {
+      let next = current;
+      const sourceDatasources = datasourcesForWizard(datasources, "source", current.sourceDatasourceType);
+      const targetDatasources = datasourcesForWizard(datasources, "target", current.targetDatasourceType);
+      if (!current.runNodeId && onlineNodes[0]) {
+        next = { ...next, runNodeId: onlineNodes[0].id };
+      }
+      if (!sourceDatasources.some((datasource) => datasource.id === current.sourceDatasourceId) && sourceDatasources[0]) {
+        next = {
+          ...next,
+          sourceDatasourceId: sourceDatasources[0].id,
+          sourceDatabase: sourceDatasources[0].defaultSchema || next.sourceDatabase,
+          sourceTestState: "idle",
+          sourceTestMessage: ""
+        };
+      }
+      if (!targetDatasources.some((datasource) => datasource.id === current.targetDatasourceId) && targetDatasources[0]) {
+        next = {
+          ...next,
+          targetDatasourceId: targetDatasources[0].id,
+          targetDatabase: targetDatasources[0].defaultSchema || next.targetDatabase,
+          targetTestState: "idle",
+          targetTestMessage: ""
+        };
+      }
+      return next;
+    });
+  }, [datasources, onlineNodes]);
+
+  const selectedNode = onlineNodes.find((node) => node.id === form.runNodeId) || null;
+  const sourceOptions = datasourceOptionsForWizard(datasources, "source", form.sourceDatasourceType);
+  const targetOptions = datasourceOptionsForWizard(datasources, "target", form.targetDatasourceType);
+  const requiredCapacity = channelResourceSpecGB(form.resourceSpec);
+  const hasCapacity = Boolean(selectedNode && selectedNode.capacity >= requiredCapacity);
+  const needsPrimaryKeys = form.kind === "check" && (form.dataValidation || form.dataCorrection);
+  const connectionStepValid = Boolean(
+    form.name.trim()
+    && form.runNodeId
+    && form.sourceDatasourceId
+    && form.targetDatasourceId
+    && form.sourceDatasourceId !== form.targetDatasourceId
+    && form.sourceTestState === "success"
+    && form.targetTestState === "success"
+  );
+  const taskStepValid = hasCapacity && (form.kind === "sync" || form.schemaCompare || form.dataValidation);
+  const tableStepValid = form.tables.length > 0 && form.tables.every((table) => {
+    const hasNames = Boolean(table.sourceTable.trim() && table.targetTable.trim());
+    const hasPrimaryKeys = !needsPrimaryKeys || Boolean(table.primaryKeysText.trim());
+    return hasNames && hasPrimaryKeys;
+  });
+  const columnStepValid = tableStepValid && form.tables.every((table) => table.columns.some((column) => column.sourceColumn.trim() && column.targetColumn.trim()));
+  const stepIndex = channelWizardSteps.indexOf(step);
+  const maxReachableStepIndex = !connectionStepValid ? 0 : !taskStepValid ? 1 : !tableStepValid ? 2 : 3;
+  const currentStepValid = step === "connections"
+    ? connectionStepValid
+    : step === "tasks"
+      ? taskStepValid
+      : step === "tables"
+        ? tableStepValid
+        : columnStepValid;
+
+  const patchForm = (patch: Partial<ChannelWizardFormState>) => setForm((current) => ({ ...current, ...patch }));
+
+  const updateSourceDatasource = (datasourceId: string) => {
+    const datasource = datasources.find((item) => item.id === datasourceId);
+    patchForm({
+      sourceDatasourceId: datasourceId,
+      sourceDatabase: datasource?.defaultSchema || form.sourceDatabase,
+      sourceTestState: "idle",
+      sourceTestMessage: ""
+    });
+  };
+
+  const updateTargetDatasource = (datasourceId: string) => {
+    const datasource = datasources.find((item) => item.id === datasourceId);
+    patchForm({
+      targetDatasourceId: datasourceId,
+      targetDatabase: datasource?.defaultSchema || form.targetDatabase,
+      targetTestState: "idle",
+      targetTestMessage: ""
+    });
+  };
+
+  const testDatasourceConnection = async (side: "source" | "target") => {
+    const datasourceId = side === "source" ? form.sourceDatasourceId : form.targetDatasourceId;
+    if (!datasourceId || !form.runNodeId) {
+      pushNotice({ tone: "warning", message: "先选节点" });
+      return;
+    }
+    setForm((current) => ({
+      ...current,
+      [side === "source" ? "sourceTestState" : "targetTestState"]: "testing",
+      [side === "source" ? "sourceTestMessage" : "targetTestMessage"]: ""
+    }));
+    try {
+      const result = await api.testDatasource(datasourceId, { nodeId: form.runNodeId });
+      setForm((current) => ({
+        ...current,
+        [side === "source" ? "sourceTestState" : "targetTestState"]: result.success ? "success" : "failed",
+        [side === "source" ? "sourceTestMessage" : "targetTestMessage"]: result.message
+      }));
+    } catch (requestError) {
+      setForm((current) => ({
+        ...current,
+        [side === "source" ? "sourceTestState" : "targetTestState"]: "failed",
+        [side === "source" ? "sourceTestMessage" : "targetTestMessage"]: requestError instanceof Error ? requestError.message : "测试失败"
+      }));
+    }
+  };
+
+  const addTable = () => {
+    setForm((current) => ({ ...current, tables: [...current.tables, emptyChannelWizardTable()] }));
+  };
+
+  const updateTable = (index: number, patch: Partial<ChannelWizardTableDraft>) => {
+    setForm((current) => ({
+      ...current,
+      tables: current.tables.map((table, tableIndex) => tableIndex === index ? { ...table, ...patch } : table)
+    }));
+  };
+
+  const removeTable = (index: number) => {
+    setForm((current) => ({ ...current, tables: current.tables.filter((_, tableIndex) => tableIndex !== index) }));
+  };
+
+  const addColumn = (tableIndex: number) => {
+    setForm((current) => ({
+      ...current,
+      tables: current.tables.map((table, currentTableIndex) => (
+        currentTableIndex === tableIndex ? { ...table, columns: [...table.columns, emptyColumnDraft()] } : table
+      ))
+    }));
+  };
+
+  const updateColumn = (tableIndex: number, columnIndex: number, patch: Partial<ChannelColumnMappingDraft>) => {
+    setForm((current) => ({
+      ...current,
+      tables: current.tables.map((table, currentTableIndex) => {
+        if (currentTableIndex !== tableIndex) return table;
+        const columns = table.columns.map((column, currentColumnIndex) => currentColumnIndex === columnIndex ? { ...column, ...patch } : column);
+        const patchedColumn = columns[columnIndex];
+        const primaryKeys = new Set(splitList(table.primaryKeysText));
+        if (patch.isPrimaryKey !== undefined && patchedColumn?.sourceColumn.trim()) {
+          if (patch.isPrimaryKey) {
+            primaryKeys.add(patchedColumn.sourceColumn.trim());
+          } else {
+            primaryKeys.delete(patchedColumn.sourceColumn.trim());
+          }
+        }
+        return {
+          ...table,
+          columns,
+          primaryKeysText: patch.isPrimaryKey !== undefined ? Array.from(primaryKeys).join(", ") : table.primaryKeysText
+        };
+      })
+    }));
+  };
+
+  const removeColumn = (tableIndex: number, columnIndex: number) => {
+    setForm((current) => ({
+      ...current,
+      tables: current.tables.map((table, currentTableIndex) => (
+        currentTableIndex === tableIndex ? { ...table, columns: table.columns.filter((_, currentColumnIndex) => currentColumnIndex !== columnIndex) } : table
+      ))
+    }));
+  };
+
+  const goNext = () => {
+    if (!currentStepValid) {
+      pushNotice({ tone: "warning", message: channelWizardStepError(step, needsPrimaryKeys) });
+      return;
+    }
+    setStep(channelWizardSteps[Math.min(channelWizardSteps.length - 1, stepIndex + 1)]);
+  };
+
+  const goPrevious = () => {
+    setStep(channelWizardSteps[Math.max(0, stepIndex - 1)]);
+  };
+
+  const submit = async () => {
+    if (!canManage) {
+      pushNotice({ tone: "warning", message: "权限不足" });
+      return;
+    }
+    if (!connectionStepValid || !taskStepValid || !columnStepValid) {
+      pushNotice({ tone: "warning", message: "配置不完整" });
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const channel = await api.createChannel({
+        name: form.name.trim(),
+        description: form.description.trim(),
+        sourceDatasourceId: form.sourceDatasourceId,
+        targetDatasourceId: form.targetDatasourceId,
+        sourceDatasourceType: form.sourceDatasourceType,
+        targetDatasourceType: form.targetDatasourceType,
+        runNodeId: form.runNodeId,
+        resourceSpec: form.resourceSpec,
+        kind: form.kind,
+        tags: [form.kind === "sync" ? "同步" : "检查"]
+      });
+      await api.saveChannelMappings(channel.id, { tables: channelWizardMappingPayload(form) });
+      const baseConfig = channelWizardTaskConfig(form);
+      if (form.kind === "sync") {
+        const createTables = form.tables.filter((table) => table.createTarget);
+        if (createTables.length > 0) {
+          await api.createChannelTask(channel.id, {
+            name: "结构迁移",
+            type: "schema_migration",
+            enabled: true,
+            config: { ...baseConfig, createTables: createTables.map((table) => table.targetTable.trim()).join(",") }
+          });
+        }
+        if (form.fullMigration) {
+          await api.createChannelTask(channel.id, { name: "全量迁移", type: "full_migration", enabled: true, config: baseConfig });
+        }
+        if (form.incrementalSync) {
+          await api.createChannelTask(channel.id, { name: "增量同步", type: "incremental_sync", enabled: true, config: baseConfig });
+        }
+      } else {
+        if (form.schemaCompare) {
+          await api.createChannelTask(channel.id, { name: "结构对比", type: "schema_compare", enabled: true, config: baseConfig });
+        }
+        let validationTask: ChannelTask | null = null;
+        if (form.dataValidation) {
+          validationTask = await api.createChannelTask(channel.id, { name: "数据校验", type: "data_validation", enabled: true, config: baseConfig });
+        }
+        if (form.dataCorrection && validationTask) {
+          await api.createChannelTask(channel.id, {
+            name: "数据订正",
+            type: "data_correction",
+            enabled: true,
+            dependsOn: [validationTask.id],
+            config: baseConfig
+          });
+        }
+      }
+      pushNotice({ tone: "success", message: "已创建" });
+      await onChanged(true);
+      onOpenChannel(channel.id);
+    } catch (requestError) {
+      pushNotice({ tone: "error", message: requestError instanceof Error ? requestError.message : "创建失败" });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <section className="min-w-0 overflow-hidden">
+      <div className="flex h-[101px] items-center justify-between border-b border-line px-5 md:px-8">
+        <div className="min-w-0">
+          <h1 className="truncate text-3xl font-semibold tracking-tight text-coal">新增 Channel</h1>
+        </div>
+        <Button type="button" onClick={onBack} className="btn-secondary h-11 px-4">
+          <ArrowRight size={16} className="rotate-180" />
+          返回
+        </Button>
+      </div>
+
+      <div className="px-5 py-6 md:px-8">
+        {!canManage ? (
+          <PermissionNotice description="当前账号不能创建 Channel。" />
+        ) : (
+          <div className="grid gap-6 xl:grid-cols-[260px_minmax(0,1fr)]">
+            <aside className="rounded-lg border border-line bg-white p-3">
+              <div className="grid gap-2">
+                {channelWizardSteps.map((wizardStep, index) => (
+                  <Button
+                    key={wizardStep}
+                    type="button"
+                    disabled={index > maxReachableStepIndex}
+                    onClick={() => setStep(wizardStep)}
+                    className={cx(
+                      "flex min-h-12 items-center justify-start gap-3 rounded-lg px-3 text-left text-sm font-semibold transition",
+                      step === wizardStep
+                        ? "border border-blue-100 bg-blue-50 text-accent"
+                        : "border border-transparent bg-white text-slate-600 hover:border-line hover:bg-slate-50",
+                      index > maxReachableStepIndex && "cursor-not-allowed opacity-45"
+                    )}
+                  >
+                    <span className={cx(
+                      "flex h-7 w-7 shrink-0 items-center justify-center rounded-md border text-xs",
+                      step === wizardStep ? "border-blue-200 bg-white" : "border-line bg-slate-50"
+                    )}>
+                      {index + 1}
+                    </span>
+                    <span>{channelWizardStepLabel(wizardStep)}</span>
+                  </Button>
+                ))}
+              </div>
+            </aside>
+
+            <div className="min-w-0 rounded-lg border border-line bg-white">
+              {step === "connections" && (
+                <div className="grid gap-6 p-5">
+                  <div className="grid gap-4 lg:grid-cols-2">
+                    <Field label="名称" required error={!form.name.trim() ? "必填" : undefined}>
+                      <TextInput className="input" maxLength={80} value={form.name} onChange={(event) => patchForm({ name: event.target.value })} />
+                    </Field>
+                    <Field label="运行节点" required error={!form.runNodeId ? "必填" : undefined}>
+                      <DropdownSelect
+                        value={form.runNodeId}
+                        ariaLabel="运行节点"
+                        options={nodeOptionsForWizard(onlineNodes)}
+                        onChange={(runNodeId) => patchForm({ runNodeId, sourceTestState: "idle", targetTestState: "idle", sourceTestMessage: "", targetTestMessage: "" })}
+                      />
+                    </Field>
+                  </div>
+
+                  <div className="grid gap-4 lg:grid-cols-2">
+                    <div className="rounded-lg border border-line p-4">
+                      <div className="mb-4 flex items-center justify-between gap-3">
+                        <div className="text-base font-semibold text-coal">源端</div>
+                        <DatasourceTestBadge state={form.sourceTestState} />
+                      </div>
+                      <div className="grid gap-4">
+                        <Field label="类型" required>
+                          <DropdownSelect
+                            value={form.sourceDatasourceType}
+                            ariaLabel="源端类型"
+                            options={channelWizardDatasourceTypeOptions()}
+                            onChange={(value) => patchForm({ sourceDatasourceType: value as DatasourceType, sourceDatasourceId: "", sourceTestState: "idle", sourceTestMessage: "" })}
+                          />
+                        </Field>
+                        <Field label="数据源" required>
+                          <DropdownSelect value={form.sourceDatasourceId} ariaLabel="源端数据源" options={sourceOptions} onChange={updateSourceDatasource} />
+                        </Field>
+                        <Button type="button" onClick={() => void testDatasourceConnection("source")} disabled={!form.sourceDatasourceId || !form.runNodeId || form.sourceTestState === "testing"} className="btn-secondary justify-center">
+                          {form.sourceTestState === "testing" ? <ArrowsClockwise size={16} className="animate-spin" /> : <ShieldCheck size={16} />}
+                          测试
+                        </Button>
+                        {form.sourceTestMessage && <div className="text-sm text-slate-500">{form.sourceTestMessage}</div>}
+                      </div>
+                    </div>
+
+                    <div className="rounded-lg border border-line p-4">
+                      <div className="mb-4 flex items-center justify-between gap-3">
+                        <div className="text-base font-semibold text-coal">目标端</div>
+                        <DatasourceTestBadge state={form.targetTestState} />
+                      </div>
+                      <div className="grid gap-4">
+                        <Field label="类型" required>
+                          <DropdownSelect
+                            value={form.targetDatasourceType}
+                            ariaLabel="目标端类型"
+                            options={channelWizardDatasourceTypeOptions()}
+                            onChange={(value) => patchForm({ targetDatasourceType: value as DatasourceType, targetDatasourceId: "", targetTestState: "idle", targetTestMessage: "" })}
+                          />
+                        </Field>
+                        <Field label="数据源" required>
+                          <DropdownSelect value={form.targetDatasourceId} ariaLabel="目标端数据源" options={targetOptions} onChange={updateTargetDatasource} />
+                        </Field>
+                        <Button type="button" onClick={() => void testDatasourceConnection("target")} disabled={!form.targetDatasourceId || !form.runNodeId || form.targetTestState === "testing"} className="btn-secondary justify-center">
+                          {form.targetTestState === "testing" ? <ArrowsClockwise size={16} className="animate-spin" /> : <ShieldCheck size={16} />}
+                          测试
+                        </Button>
+                        {form.targetTestMessage && <div className="text-sm text-slate-500">{form.targetTestMessage}</div>}
+                      </div>
+                    </div>
+                  </div>
+
+                  <Field label="描述">
+                    <TextareaInput className="textarea" maxLength={300} value={form.description} onChange={(event) => patchForm({ description: event.target.value })} />
+                  </Field>
+                </div>
+              )}
+
+              {step === "tasks" && (
+                <div className="grid gap-6 p-5">
+                  <div>
+                    <div className="mb-3 text-sm font-semibold text-slate-500">规格</div>
+                    <div className="flex flex-wrap gap-2">
+                      {resourceSpecOptions.map((spec) => (
+                        <Button
+                          key={spec}
+                          type="button"
+                          onClick={() => patchForm({ resourceSpec: spec })}
+                          className={cx(
+                            "h-11 min-w-[82px] rounded-lg border px-4 text-sm font-semibold transition",
+                            form.resourceSpec === spec ? "border-blue-200 bg-blue-50 text-accent" : "border-line bg-white text-slate-600 hover:border-blue-200"
+                          )}
+                        >
+                          {spec}
+                        </Button>
+                      ))}
+                    </div>
+                    <div className={cx("mt-3 flex items-center gap-2 text-sm", hasCapacity ? "text-emerald-700" : "text-amber-700")}>
+                      {hasCapacity ? <CheckCircle size={16} /> : <WarningCircle size={16} />}
+                      {selectedNode ? `${selectedNode.name} ${selectedNode.capacity}G` : "无在线节点"}
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="mb-3 text-sm font-semibold text-slate-500">类型</div>
+                    <div className="inline-flex rounded-lg border border-line bg-slate-50 p-1">
+                      <Button type="button" onClick={() => patchForm({ kind: "sync", schemaCompare: false, dataValidation: false, dataCorrection: false })} className={cx("h-10 rounded-md px-4 text-sm font-semibold", form.kind === "sync" ? "bg-white text-accent shadow-sm" : "text-slate-600")}>
+                        同步
+                      </Button>
+                      <Button type="button" onClick={() => patchForm({ kind: "check", fullMigration: false, incrementalSync: false })} className={cx("h-10 rounded-md px-4 text-sm font-semibold", form.kind === "check" ? "bg-white text-accent shadow-sm" : "text-slate-600")}>
+                        检查
+                      </Button>
+                    </div>
+                  </div>
+
+                  {form.kind === "sync" ? (
+                    <div className="grid gap-3">
+                      <div className="rounded-lg border border-line p-4">
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="font-semibold text-coal">结构迁移</div>
+                          <Badge tone="blue">按表</Badge>
+                        </div>
+                      </div>
+                      <TaskToggle label="全量迁移" checked={form.fullMigration} onChange={(fullMigration) => patchForm({ fullMigration })} />
+                      <TaskToggle label="增量同步" checked={form.incrementalSync} onChange={(incrementalSync) => patchForm({ incrementalSync })} />
+                    </div>
+                  ) : (
+                    <div className="grid gap-3">
+                      <TaskToggle label="结构对比" checked={form.schemaCompare} onChange={(schemaCompare) => patchForm({ schemaCompare })} />
+                      <TaskToggle label="数据校验" checked={form.dataValidation} onChange={(dataValidation) => patchForm({ dataValidation, dataCorrection: dataValidation ? form.dataCorrection : false })} />
+                      <TaskToggle label="数据订正" checked={form.dataCorrection} disabled={!form.dataValidation} onChange={(dataCorrection) => patchForm({ dataCorrection })} />
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {step === "tables" && (
+                <div className="grid gap-5 p-5">
+                  <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                    <Field label="源 DB">
+                      <TextInput className="input" value={form.sourceDatabase} onChange={(event) => patchForm({ sourceDatabase: event.target.value })} />
+                    </Field>
+                    <Field label="源 Schema">
+                      <TextInput className="input" value={form.sourceSchema} onChange={(event) => patchForm({ sourceSchema: event.target.value })} />
+                    </Field>
+                    <Field label="目标 DB">
+                      <TextInput className="input" value={form.targetDatabase} onChange={(event) => patchForm({ targetDatabase: event.target.value })} />
+                    </Field>
+                    <Field label="目标 Schema">
+                      <TextInput className="input" value={form.targetSchema} onChange={(event) => patchForm({ targetSchema: event.target.value })} />
+                    </Field>
+                  </div>
+
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="text-base font-semibold text-coal">表</div>
+                    <Button type="button" onClick={addTable} className="btn-secondary">
+                      <Plus size={16} />
+                      表
+                    </Button>
+                  </div>
+
+                  {form.tables.length === 0 ? (
+                    <EmptyPanel icon={Database} title="暂无表" action={(
+                      <Button type="button" onClick={addTable} className="btn-primary">
+                        <Plus size={16} />
+                        添加
+                      </Button>
+                    )} />
+                  ) : (
+                    <div className="overflow-x-auto rounded-lg border border-line">
+                      <table className="w-full min-w-[900px] table-fixed text-left text-sm">
+                        <colgroup>
+                          <col className="w-[220px]" />
+                          <col className="w-[220px]" />
+                          <col className="w-[190px]" />
+                          <col className="w-[120px]" />
+                          <col className="w-[80px]" />
+                        </colgroup>
+                        <thead className="border-b border-line bg-slate-50 text-xs font-semibold text-slate-500">
+                          <tr>
+                            <th className="px-4 py-3">源表</th>
+                            <th className="px-4 py-3">目标表</th>
+                            <th className="px-4 py-3">主键</th>
+                            <th className="px-4 py-3">建表</th>
+                            <th className="px-4 py-3">操作</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-line">
+                          {form.tables.map((table, tableIndex) => (
+                            <tr key={table.localId}>
+                              <td className="px-4 py-3">
+                                <TextInput className="input h-10" value={table.sourceTable} onChange={(event) => updateTable(tableIndex, { sourceTable: event.target.value })} />
+                              </td>
+                              <td className="px-4 py-3">
+                                <TextInput className="input h-10" value={table.targetTable} onChange={(event) => updateTable(tableIndex, { targetTable: event.target.value })} />
+                              </td>
+                              <td className="px-4 py-3">
+                                <TextInput className="input h-10" value={table.primaryKeysText} placeholder={needsPrimaryKeys ? "必填" : "可选"} onChange={(event) => updateTable(tableIndex, { primaryKeysText: event.target.value })} />
+                              </td>
+                              <td className="px-4 py-3">
+                                <CheckboxInput checked={table.createTarget} disabled={form.kind !== "sync"} onChange={(event) => updateTable(tableIndex, { createTarget: event.target.checked })} />
+                              </td>
+                              <td className="px-4 py-3">
+                                <IconActionButton label="删除表" tone="danger" onClick={() => removeTable(tableIndex)}>
+                                  <Trash size={18} />
+                                </IconActionButton>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {step === "columns" && (
+                <div className="grid gap-5 p-5">
+                  {form.tables.map((table, tableIndex) => (
+                    <div key={table.localId} className="rounded-lg border border-line p-4">
+                      <div className="mb-4 flex items-center justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="truncate font-semibold text-coal">{table.sourceTable || "源表"} → {table.targetTable || "目标表"}</div>
+                        </div>
+                        <Button type="button" onClick={() => addColumn(tableIndex)} className="btn-secondary">
+                          <Plus size={16} />
+                          列
+                        </Button>
+                      </div>
+                      <div className="overflow-x-auto">
+                        <table className="w-full min-w-[820px] table-fixed text-left text-sm">
+                          <colgroup>
+                            <col className="w-[160px]" />
+                            <col className="w-[120px]" />
+                            <col className="w-[160px]" />
+                            <col className="w-[120px]" />
+                            <col className="w-[90px]" />
+                            <col className="w-[90px]" />
+                            <col className="w-[80px]" />
+                          </colgroup>
+                          <thead className="border-b border-line text-xs font-semibold text-slate-500">
+                            <tr>
+                              <th className="py-2 pr-3">源列</th>
+                              <th className="py-2 pr-3">源类型</th>
+                              <th className="py-2 pr-3">目标列</th>
+                              <th className="py-2 pr-3">目标类型</th>
+                              <th className="py-2 pr-3">主键</th>
+                              <th className="py-2 pr-3">可空</th>
+                              <th className="py-2 pr-3">操作</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-line">
+                            {table.columns.map((column, columnIndex) => (
+                              <tr key={column.localId}>
+                                <td className="py-2 pr-3"><TextInput className="input h-10" value={column.sourceColumn} onChange={(event) => updateColumn(tableIndex, columnIndex, { sourceColumn: event.target.value })} /></td>
+                                <td className="py-2 pr-3"><TextInput className="input h-10" value={column.sourceType || ""} onChange={(event) => updateColumn(tableIndex, columnIndex, { sourceType: event.target.value })} /></td>
+                                <td className="py-2 pr-3"><TextInput className="input h-10" value={column.targetColumn} onChange={(event) => updateColumn(tableIndex, columnIndex, { targetColumn: event.target.value })} /></td>
+                                <td className="py-2 pr-3"><TextInput className="input h-10" value={column.targetType || ""} onChange={(event) => updateColumn(tableIndex, columnIndex, { targetType: event.target.value })} /></td>
+                                <td className="py-2 pr-3"><CheckboxInput checked={Boolean(column.isPrimaryKey)} onChange={(event) => updateColumn(tableIndex, columnIndex, { isPrimaryKey: event.target.checked })} /></td>
+                                <td className="py-2 pr-3"><CheckboxInput checked={Boolean(column.nullable)} onChange={(event) => updateColumn(tableIndex, columnIndex, { nullable: event.target.checked })} /></td>
+                                <td className="py-2 pr-3">
+                                  <IconActionButton label="删除列" tone="danger" onClick={() => removeColumn(tableIndex, columnIndex)}>
+                                    <Trash size={18} />
+                                  </IconActionButton>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="flex items-center justify-between gap-3 border-t border-line p-5">
+                <Button type="button" onClick={goPrevious} disabled={stepIndex === 0 || submitting} className="btn-secondary">
+                  <CaretLeft size={16} />
+                  上一步
+                </Button>
+                {step === "columns" ? (
+                  <Button type="button" onClick={() => void submit()} disabled={submitting || !columnStepValid} className="btn-primary">
+                    {submitting ? <ArrowsClockwise size={16} className="animate-spin" /> : <CheckCircle size={16} />}
+                    创建
+                  </Button>
+                ) : (
+                  <Button type="button" onClick={goNext} disabled={submitting || !currentStepValid} className="btn-primary">
+                    下一步
+                    <CaretRight size={16} />
+                  </Button>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </section>
   );
 }
 
@@ -5219,6 +5894,38 @@ function ChannelTaskStatusBadge({ status }: { status: ChannelTask["status"] }) {
   return <Badge tone={tone}>{channelTaskStatusText(status)}</Badge>;
 }
 
+function DatasourceTestBadge({ state }: { state: DatasourceTestState }) {
+  const meta: Record<DatasourceTestState, { label: string; tone: "blue" | "green" | "red" | "neutral" }> = {
+    idle: { label: "未测", tone: "neutral" },
+    testing: { label: "测试中", tone: "blue" },
+    success: { label: "通过", tone: "green" },
+    failed: { label: "失败", tone: "red" }
+  };
+  return <Badge tone={meta[state].tone}>{meta[state].label}</Badge>;
+}
+
+function TaskToggle({
+  label,
+  checked,
+  disabled,
+  onChange
+}: {
+  label: string;
+  checked: boolean;
+  disabled?: boolean;
+  onChange: (checked: boolean) => void;
+}) {
+  return (
+    <label className={cx(
+      "flex min-h-14 cursor-pointer items-center justify-between gap-3 rounded-lg border border-line p-4 transition",
+      disabled ? "cursor-not-allowed bg-slate-50 opacity-60" : "bg-white hover:border-blue-200"
+    )}>
+      <span className="font-semibold text-coal">{label}</span>
+      <CheckboxInput disabled={disabled} checked={checked} onChange={(event) => onChange(event.target.checked)} />
+    </label>
+  );
+}
+
 function taskRunStatusText(status: TaskRun["status"]) {
   const labels: Record<TaskRun["status"], string> = {
     running: "运行中",
@@ -5255,12 +5962,174 @@ function datasourceSelectOptions(datasources: Datasource[], purpose: DatasourceP
   }));
 }
 
+function channelWizardDatasourceTypeOptions() {
+  return [{
+    value: "mysql",
+    label: "MySQL",
+    icon: <DatasourceTypeLogo type="mysql" className="h-5 w-5" />
+  }];
+}
+
+function datasourcesForWizard(datasources: Datasource[], purpose: DatasourcePurpose, type: DatasourceType) {
+  const typed = datasources.filter((datasource) => datasource.type === type);
+  const scoped = typed.filter((datasource) => datasource.purpose === purpose || datasource.purpose === "general" || !datasource.purpose);
+  return scoped.length > 0 ? scoped : typed;
+}
+
+function datasourceOptionsForWizard(datasources: Datasource[], purpose: DatasourcePurpose, type: DatasourceType) {
+  const candidates = datasourcesForWizard(datasources, purpose, type);
+  if (candidates.length === 0) {
+    return [{ value: "", label: "暂无数据源", disabled: true }];
+  }
+  return candidates.map((datasource) => ({
+    value: datasource.id,
+    label: datasource.name,
+    description: `${datasource.host}:${datasource.port}`,
+    icon: <DatasourceTypeLogo type={datasource.type} className="h-5 w-5" />
+  }));
+}
+
+function nodeOptionsForWizard(nodes: ClusterNode[]) {
+  if (nodes.length === 0) {
+    return [{ value: "", label: "暂无在线节点", disabled: true }];
+  }
+  return nodes.map((node) => ({
+    value: node.id,
+    label: node.name,
+    description: `${node.endpoint} · ${node.capacity}G`
+  }));
+}
+
+function emptyChannelWizardForm(datasources: Datasource[], onlineNodes: ClusterNode[]): ChannelWizardFormState {
+  const source = datasourcesForWizard(datasources, "source", "mysql")[0];
+  const target = datasourcesForWizard(datasources, "target", "mysql").find((datasource) => datasource.id !== source?.id)
+    || datasourcesForWizard(datasources, "target", "mysql")[0];
+  return {
+    name: "",
+    description: "",
+    runNodeId: onlineNodes[0]?.id || "",
+    sourceDatasourceType: "mysql",
+    targetDatasourceType: "mysql",
+    sourceDatasourceId: source?.id || "",
+    targetDatasourceId: target?.id || "",
+    sourceTestState: "idle",
+    targetTestState: "idle",
+    sourceTestMessage: "",
+    targetTestMessage: "",
+    resourceSpec: "0.5G",
+    kind: "sync",
+    fullMigration: true,
+    incrementalSync: true,
+    schemaCompare: true,
+    dataValidation: true,
+    dataCorrection: false,
+    sourceDatabase: source?.defaultSchema || "",
+    sourceSchema: "",
+    targetDatabase: target?.defaultSchema || "",
+    targetSchema: "",
+    tables: [emptyChannelWizardTable()]
+  };
+}
+
+function emptyChannelWizardTable(): ChannelWizardTableDraft {
+  return {
+    localId: newLocalId(),
+    sourceSchema: "",
+    sourceTable: "",
+    targetSchema: "",
+    targetTable: "",
+    primaryKeys: [],
+    primaryKeysText: "",
+    enabled: true,
+    createTarget: true,
+    columns: [emptyColumnDraft()]
+  };
+}
+
+function channelResourceSpecGB(spec: ResourceSpec | string) {
+  if (spec === "0.5G") return 0.5;
+  if (spec === "1G") return 1;
+  if (spec === "2G") return 2;
+  if (spec === "3G") return 3;
+  if (spec === "4G") return 4;
+  return 0;
+}
+
+function channelWizardMappingPayload(form: ChannelWizardFormState): ChannelTableMappingInput[] {
+  const sourceSchema = effectiveChannelSchema(form.sourceDatabase, form.sourceSchema);
+  const targetSchema = effectiveChannelSchema(form.targetDatabase, form.targetSchema);
+  return form.tables.map((table) => {
+    const markedPrimaryKeys = table.columns
+      .filter((column) => column.isPrimaryKey && column.sourceColumn.trim())
+      .map((column) => column.sourceColumn.trim());
+    const primaryKeys = splitList(table.primaryKeysText);
+    return {
+      sourceSchema,
+      sourceTable: table.sourceTable.trim(),
+      targetSchema,
+      targetTable: table.targetTable.trim(),
+      primaryKeys: primaryKeys.length > 0 ? primaryKeys : markedPrimaryKeys,
+      enabled: true,
+      columns: table.columns
+        .filter((column) => column.sourceColumn.trim() && column.targetColumn.trim())
+        .map((column) => ({
+          sourceColumn: column.sourceColumn.trim(),
+          sourceType: column.sourceType?.trim() || "",
+          targetColumn: column.targetColumn.trim(),
+          targetType: column.targetType?.trim() || "",
+          isPrimaryKey: Boolean(column.isPrimaryKey),
+          nullable: Boolean(column.nullable),
+          defaultValue: column.defaultValue?.trim() || "",
+          enabled: true
+        }))
+    };
+  });
+}
+
+function channelWizardTaskConfig(form: ChannelWizardFormState): Record<string, string> {
+  return {
+    runNodeId: form.runNodeId,
+    resourceSpec: form.resourceSpec,
+    sourceDatabase: form.sourceDatabase.trim(),
+    sourceSchema: form.sourceSchema.trim(),
+    targetDatabase: form.targetDatabase.trim(),
+    targetSchema: form.targetSchema.trim(),
+    channelKind: form.kind
+  };
+}
+
+function effectiveChannelSchema(database: string, schema: string) {
+  return schema.trim() || database.trim();
+}
+
+function channelWizardStepLabel(step: ChannelWizardStep) {
+  const labels: Record<ChannelWizardStep, string> = {
+    connections: "连接",
+    tasks: "任务",
+    tables: "表",
+    columns: "列"
+  };
+  return labels[step];
+}
+
+function channelWizardStepError(step: ChannelWizardStep, needsPrimaryKeys: boolean) {
+  if (step === "connections") return "连接未完成";
+  if (step === "tasks") return "任务未完成";
+  if (step === "tables") return needsPrimaryKeys ? "主键必填" : "表未完成";
+  return "列未完成";
+}
+
 function channelFormFromChannel(channel: Channel | null, datasources: Datasource[]): ChannelFormState {
   return {
     name: channel?.name || "",
     description: channel?.description || "",
     sourceDatasourceId: channel?.sourceDatasourceId || datasources.find((item) => item.purpose === "source")?.id || datasources[0]?.id || "",
     targetDatasourceId: channel?.targetDatasourceId || datasources.find((item) => item.purpose === "target")?.id || datasources.find((item) => item.id !== datasources[0]?.id)?.id || "",
+    sourceDatasourceType: channel?.sourceDatasourceType || "mysql",
+    targetDatasourceType: channel?.targetDatasourceType || "mysql",
+    runNodeId: channel?.runNodeId || "",
+    resourceSpec: channel?.resourceSpec || "",
+    kind: channel?.kind || "sync",
     tags: channel?.tags?.join(", ") || ""
   };
 }
@@ -5278,6 +6147,11 @@ function channelFormPayload(form: ChannelFormState): ChannelInput {
     description: form.description.trim(),
     sourceDatasourceId: form.sourceDatasourceId,
     targetDatasourceId: form.targetDatasourceId,
+    sourceDatasourceType: form.sourceDatasourceType,
+    targetDatasourceType: form.targetDatasourceType,
+    runNodeId: form.runNodeId,
+    resourceSpec: form.resourceSpec,
+    kind: form.kind,
     tags: splitList(form.tags)
   };
 }
@@ -5533,6 +6407,7 @@ function datasourceAuthTypeFromItem(item: Datasource): DatasourceAuthType {
 
 function pageFromPathname(pathname: string): Page {
   if (pathname === "/" || pathname === "/channels") return "channels";
+  if (pathname === "/channels/create") return "channelCreate";
   if (channelDetailIdFromPathname(pathname)) return "channelDetail";
   if (pathname === "/datasources") return "datasources";
   if (pathname === "/datasource/create") return "datasourceCreate";
@@ -5544,6 +6419,7 @@ function pageFromPathname(pathname: string): Page {
 
 function pathForPage(page: Page, resourceId?: string) {
   if (page === "channels") return "/channels";
+  if (page === "channelCreate") return "/channels/create";
   if (page === "channelDetail" && resourceId) return `/channels/${encodeURIComponent(resourceId)}`;
   if (page === "datasources") return "/datasources";
   if (page === "datasourceCreate") return "/datasource/create";
@@ -5554,6 +6430,7 @@ function pathForPage(page: Page, resourceId?: string) {
 }
 
 function navPage(page: Page): MainPage {
+  if (page === "channelCreate") return "channels";
   if (page === "channelDetail") return "channels";
   if (page === "datasourceCreate") return "datasources";
   if (page === "datasourceEdit") return "datasources";
@@ -5563,6 +6440,7 @@ function navPage(page: Page): MainPage {
 
 function pageTitle(page: Page) {
   if (page === "channels") return "Channel";
+  if (page === "channelCreate") return "新增 Channel";
   if (page === "channelDetail") return "Channel";
   if (page === "datasources") return "数据源";
   if (page === "datasourceCreate") return "新增数据源";
@@ -5574,6 +6452,7 @@ function pageTitle(page: Page) {
 
 function pageDescription(page: Page) {
   if (page === "channels") return "";
+  if (page === "channelCreate") return "";
   if (page === "channelDetail") return "";
   if (page === "datasources") return "";
   if (page === "datasourceCreate") return "";
@@ -5586,6 +6465,7 @@ function pageDescription(page: Page) {
 function channelDetailIdFromPathname(pathname: string) {
   const match = pathname.match(/^\/channels\/([^/]+)$/);
   if (!match) return null;
+  if (match[1] === "create") return null;
   try {
     return decodeURIComponent(match[1]);
   } catch {

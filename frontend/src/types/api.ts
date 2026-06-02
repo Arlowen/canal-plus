@@ -57,6 +57,7 @@ export interface DatasourceTestResult {
 }
 
 export type ChannelStatus = "draft" | "ready" | "running" | "warning" | "failed" | "stopped" | "archived";
+export type ChannelKind = "sync" | "check";
 export type ChannelTaskType = "schema_migration" | "full_migration" | "incremental_sync" | "schema_compare" | "data_validation" | "data_correction";
 export type ChannelTaskStatus = "draft" | "ready" | "disabled" | "queued" | "running" | "stopping" | "stopped" | "success" | "failed" | "canceled";
 export type TaskRunStatus = "running" | "stopped" | "success" | "failed" | "canceled";
@@ -67,6 +68,11 @@ export interface Channel {
   description?: string;
   sourceDatasourceId: string;
   targetDatasourceId: string;
+  sourceDatasourceType?: DatasourceType;
+  targetDatasourceType?: DatasourceType;
+  runNodeId?: string;
+  resourceSpec?: string;
+  kind?: ChannelKind;
   status: ChannelStatus;
   owner?: string;
   tags: string[];
@@ -85,6 +91,11 @@ export interface ChannelInput {
   description?: string;
   sourceDatasourceId: string;
   targetDatasourceId: string;
+  sourceDatasourceType?: DatasourceType;
+  targetDatasourceType?: DatasourceType;
+  runNodeId?: string;
+  resourceSpec?: string;
+  kind?: ChannelKind;
   tags?: string[];
 }
 
