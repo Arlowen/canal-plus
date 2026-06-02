@@ -217,6 +217,10 @@ func (s *Server) handleDatasources(response http.ResponseWriter, request *http.R
 		s.createDatasource(response, request)
 	case len(parts) == 2 && parts[1] == "test" && request.Method == http.MethodPost:
 		s.testDatasourceInput(response, request)
+	case len(parts) == 3 && parts[2] == "databases" && request.Method == http.MethodGet:
+		s.listSavedDatasourceDatabases(response, request, parts[1])
+	case len(parts) == 3 && parts[2] == "tables" && request.Method == http.MethodGet:
+		s.listSavedDatasourceTables(response, request, parts[1])
 	case len(parts) == 2 && request.Method == http.MethodGet:
 		datasource, ok := s.store.GetDatasource(parts[1])
 		if !ok {
@@ -419,6 +423,58 @@ func (s *Server) testSavedDatasource(response http.ResponseWriter, request *http
 		return
 	}
 	writeJSON(response, http.StatusOK, result)
+}
+
+func (s *Server) listSavedDatasourceDatabases(response http.ResponseWriter, request *http.Request, id string) {
+	if err := s.ensureDatasourceTestNode(request.URL.Query().Get("nodeId")); err != nil {
+		writeError(response, http.StatusBadRequest, err.Error())
+		return
+	}
+	datasource, ok := s.store.GetDatasource(id)
+	if !ok {
+		writeError(response, http.StatusNotFound, "数据源不存在")
+		return
+	}
+	if datasource.Type != DatasourceTypeMySQL {
+		writeError(response, http.StatusBadRequest, "数据源类型不支持")
+		return
+	}
+	databases, err := datasourceDatabaseLister(datasource)
+	if err != nil {
+		writeError(response, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(response, http.StatusOK, DatasourceDatabasesResponse{
+		DatasourceID: datasource.ID,
+		Databases:    databases,
+	})
+}
+
+func (s *Server) listSavedDatasourceTables(response http.ResponseWriter, request *http.Request, id string) {
+	if err := s.ensureDatasourceTestNode(request.URL.Query().Get("nodeId")); err != nil {
+		writeError(response, http.StatusBadRequest, err.Error())
+		return
+	}
+	datasource, ok := s.store.GetDatasource(id)
+	if !ok {
+		writeError(response, http.StatusNotFound, "数据源不存在")
+		return
+	}
+	if datasource.Type != DatasourceTypeMySQL {
+		writeError(response, http.StatusBadRequest, "数据源类型不支持")
+		return
+	}
+	database := strings.TrimSpace(request.URL.Query().Get("database"))
+	tables, err := datasourceTableLister(datasource, database)
+	if err != nil {
+		writeError(response, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(response, http.StatusOK, DatasourceTablesResponse{
+		DatasourceID: datasource.ID,
+		Database:     database,
+		Tables:       tables,
+	})
 }
 
 func (s *Server) ensureDatasourceTestNode(nodeID string) error {

@@ -402,6 +402,49 @@ func TestAdminCanManageChannelAndRunTask(t *testing.T) {
 	}
 }
 
+func TestAdminCanReadDatasourceMetadata(t *testing.T) {
+	server := newTestServer(t)
+	adminToken := tokenFor("user-admin")
+	datasource := createNamedTestDatasource(t, server.store, "metadata-source", DatasourcePurposeSource)
+	originalDatabaseLister := datasourceDatabaseLister
+	originalTableLister := datasourceTableLister
+	t.Cleanup(func() {
+		datasourceDatabaseLister = originalDatabaseLister
+		datasourceTableLister = originalTableLister
+	})
+	datasourceDatabaseLister = func(input Datasource) ([]string, error) {
+		if input.ID != datasource.ID {
+			t.Fatalf("unexpected datasource id = %q", input.ID)
+		}
+		return []string{"sales"}, nil
+	}
+	datasourceTableLister = func(input Datasource, database string) ([]string, error) {
+		if input.ID != datasource.ID {
+			t.Fatalf("unexpected datasource id = %q", input.ID)
+		}
+		if database != "sales" {
+			t.Fatalf("database = %q, want sales", database)
+		}
+		return []string{"orders"}, nil
+	}
+
+	databasesResponse := serveTestRequest(server, authRequest(http.MethodGet, "/api/datasources/"+datasource.ID+"/databases", adminToken, ""))
+	if databasesResponse.Code != http.StatusOK {
+		t.Fatalf("read databases status = %d body = %s", databasesResponse.Code, databasesResponse.Body.String())
+	}
+	if !strings.Contains(databasesResponse.Body.String(), `"sales"`) {
+		t.Fatalf("read databases body = %s", databasesResponse.Body.String())
+	}
+
+	tablesResponse := serveTestRequest(server, authRequest(http.MethodGet, "/api/datasources/"+datasource.ID+"/tables?database=sales", adminToken, ""))
+	if tablesResponse.Code != http.StatusOK {
+		t.Fatalf("read tables status = %d body = %s", tablesResponse.Code, tablesResponse.Body.String())
+	}
+	if !strings.Contains(tablesResponse.Body.String(), `"orders"`) {
+		t.Fatalf("read tables body = %s", tablesResponse.Body.String())
+	}
+}
+
 func TestOperatorCanRunChannelTaskButCannotEdit(t *testing.T) {
 	server := newTestServer(t)
 	operatorToken := tokenFor("user-operator")

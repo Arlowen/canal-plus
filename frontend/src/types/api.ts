@@ -56,6 +56,17 @@ export interface DatasourceTestResult {
   message: string;
 }
 
+export interface DatasourceDatabasesResponse {
+  datasourceId: string;
+  databases: string[];
+}
+
+export interface DatasourceTablesResponse {
+  datasourceId: string;
+  database: string;
+  tables: string[];
+}
+
 export type ChannelStatus = "draft" | "ready" | "running" | "warning" | "failed" | "stopped" | "archived";
 export type ChannelKind = "sync" | "check";
 export type ChannelTaskType = "schema_migration" | "full_migration" | "incremental_sync" | "schema_compare" | "data_validation" | "data_correction";

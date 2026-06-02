@@ -13,7 +13,9 @@ import type {
   ClusterSnapshot,
   ClusterNode,
   Datasource,
+  DatasourceDatabasesResponse,
   DatasourceInput,
+  DatasourceTablesResponse,
   DatasourceTestResult,
   LoginResponse,
   NodeMetricHistoryResponse,
@@ -206,6 +208,18 @@ export const api = {
       method: "POST",
       body: JSON.stringify(input)
     });
+  },
+  datasourceDatabases(id: string, input: { nodeId?: string } = {}) {
+    const params = new URLSearchParams();
+    if (input.nodeId) params.set("nodeId", input.nodeId);
+    const query = params.toString();
+    return request<DatasourceDatabasesResponse>(`/datasources/${id}/databases${query ? `?${query}` : ""}`);
+  },
+  datasourceTables(id: string, input: { nodeId?: string; database: string }) {
+    const params = new URLSearchParams();
+    if (input.nodeId) params.set("nodeId", input.nodeId);
+    params.set("database", input.database);
+    return request<DatasourceTablesResponse>(`/datasources/${id}/tables?${params.toString()}`);
   },
   channels() {
     return request<Channel[]>("/channels");

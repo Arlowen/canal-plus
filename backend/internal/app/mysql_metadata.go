@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"regexp"
 	"strings"
 	"time"
@@ -14,6 +15,8 @@ import (
 var datasourceDSNPattern = regexp.MustCompile(`[^\s]+:[^\s@]+@tcp\([^)]+\)/[^\s]*`)
 
 var datasourceConnectionTester = runDatasourceConnectionTest
+var datasourceDatabaseLister = listDatasourceDatabases
+var datasourceTableLister = listDatasourceTables
 
 func runDatasourceConnectionTest(datasource Datasource) DatasourceTestResult {
 	startedAt := time.Now()
@@ -126,4 +129,107 @@ func openMySQL(datasource Datasource, database string) (*sql.DB, error) {
 	config.Timeout = 3 * time.Second
 	config.ParseTime = true
 	return sql.Open("mysql", config.FormatDSN())
+}
+
+func listDatasourceDatabases(datasource Datasource) ([]string, error) {
+	if datasource.IsDemo {
+		return demoDatasourceDatabases(datasource), nil
+	}
+	db, err := openMySQL(datasource, "")
+	if err != nil {
+		return nil, errors.New(sanitizeDatasourceError(err.Error(), datasource))
+	}
+	defer db.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	rows, err := db.QueryContext(ctx, "SHOW DATABASES")
+	if err != nil {
+		return nil, errors.New(sanitizeDatasourceError(err.Error(), datasource))
+	}
+	defer rows.Close()
+
+	databases := []string{}
+	for rows.Next() {
+		database := ""
+		if err := rows.Scan(&database); err != nil {
+			return nil, errors.New(sanitizeDatasourceError(err.Error(), datasource))
+		}
+		database = strings.TrimSpace(database)
+		if database == "" || isMySQLSystemDatabase(database) {
+			continue
+		}
+		databases = append(databases, database)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, errors.New(sanitizeDatasourceError(err.Error(), datasource))
+	}
+	return databases, nil
+}
+
+func listDatasourceTables(datasource Datasource, database string) ([]string, error) {
+	database = strings.TrimSpace(database)
+	if database == "" {
+		return nil, errors.New("DB 必填")
+	}
+	if datasource.IsDemo {
+		return demoDatasourceTables(database), nil
+	}
+	db, err := openMySQL(datasource, "")
+	if err != nil {
+		return nil, errors.New(sanitizeDatasourceError(err.Error(), datasource))
+	}
+	defer db.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	rows, err := db.QueryContext(ctx, `
+SELECT table_name
+FROM information_schema.tables
+WHERE table_schema = ? AND table_type = 'BASE TABLE'
+ORDER BY table_name
+`, database)
+	if err != nil {
+		return nil, errors.New(sanitizeDatasourceError(err.Error(), datasource))
+	}
+	defer rows.Close()
+
+	tables := []string{}
+	for rows.Next() {
+		table := ""
+		if err := rows.Scan(&table); err != nil {
+			return nil, errors.New(sanitizeDatasourceError(err.Error(), datasource))
+		}
+		table = strings.TrimSpace(table)
+		if table != "" {
+			tables = append(tables, table)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, errors.New(sanitizeDatasourceError(err.Error(), datasource))
+	}
+	return tables, nil
+}
+
+func isMySQLSystemDatabase(database string) bool {
+	switch strings.ToLower(strings.TrimSpace(database)) {
+	case "information_schema", "mysql", "performance_schema", "sys":
+		return true
+	default:
+		return false
+	}
+}
+
+func demoDatasourceDatabases(datasource Datasource) []string {
+	if strings.TrimSpace(datasource.DefaultSchema) != "" {
+		return []string{strings.TrimSpace(datasource.DefaultSchema)}
+	}
+	return []string{"canal_plus"}
+}
+
+func demoDatasourceTables(database string) []string {
+	if strings.TrimSpace(database) == "" {
+		return []string{}
+	}
+	return []string{"orders", "users"}
 }

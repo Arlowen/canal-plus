@@ -138,6 +138,7 @@ type ChannelTableMappingDraft = Omit<ChannelTableMappingInput, "columns"> & {
 type ChannelWizardStep = "connections" | "tasks" | "tables" | "columns";
 type ResourceSpec = "0.5G" | "1G" | "2G" | "3G" | "4G";
 type DatasourceTestState = "idle" | "testing" | "success" | "failed";
+type MetadataLoadState = "idle" | "loading" | "success" | "failed";
 
 type ChannelWizardTableDraft = ChannelTableMappingDraft & {
   createTarget: boolean;
@@ -1517,6 +1518,16 @@ function ChannelCreateWizardPage({
   const [form, setForm] = useState<ChannelWizardFormState>(() => emptyChannelWizardForm(datasources, onlineNodes));
   const [step, setStep] = useState<ChannelWizardStep>("connections");
   const [submitting, setSubmitting] = useState(false);
+  const [sourceDatabaseOptions, setSourceDatabaseOptions] = useState<string[]>([]);
+  const [targetDatabaseOptions, setTargetDatabaseOptions] = useState<string[]>([]);
+  const [sourceTableOptions, setSourceTableOptions] = useState<string[]>([]);
+  const [targetTableOptions, setTargetTableOptions] = useState<string[]>([]);
+  const [sourceDatabaseLoadState, setSourceDatabaseLoadState] = useState<MetadataLoadState>("idle");
+  const [targetDatabaseLoadState, setTargetDatabaseLoadState] = useState<MetadataLoadState>("idle");
+  const [sourceTableLoadState, setSourceTableLoadState] = useState<MetadataLoadState>("idle");
+  const [targetTableLoadState, setTargetTableLoadState] = useState<MetadataLoadState>("idle");
+  const [sourceMetadataError, setSourceMetadataError] = useState("");
+  const [targetMetadataError, setTargetMetadataError] = useState("");
 
   useEffect(() => {
     setForm((current) => {
@@ -1548,9 +1559,157 @@ function ChannelCreateWizardPage({
     });
   }, [datasources, onlineNodes]);
 
+  useEffect(() => {
+    if (form.sourceTestState !== "success" || !form.sourceDatasourceId || !form.runNodeId) {
+      setSourceDatabaseOptions([]);
+      setSourceDatabaseLoadState("idle");
+      return;
+    }
+    let active = true;
+    setSourceDatabaseLoadState("loading");
+    setSourceMetadataError("");
+    void api.datasourceDatabases(form.sourceDatasourceId, { nodeId: form.runNodeId })
+      .then((response) => {
+        if (!active) return;
+        setSourceDatabaseOptions(response.databases);
+        setSourceDatabaseLoadState("success");
+        setForm((current) => {
+          if (current.sourceDatasourceId !== form.sourceDatasourceId) return current;
+          const nextDatabase = current.sourceDatabase && response.databases.includes(current.sourceDatabase)
+            ? current.sourceDatabase
+            : response.databases[0] || "";
+          const databaseChanged = nextDatabase !== current.sourceDatabase;
+          return {
+            ...current,
+            sourceDatabase: nextDatabase,
+            sourceSchema: "",
+            tables: databaseChanged ? resetWizardTables(current.tables, "source") : current.tables
+          };
+        });
+      })
+      .catch((requestError) => {
+        if (!active) return;
+        setSourceDatabaseOptions([]);
+        setSourceDatabaseLoadState("failed");
+        setSourceMetadataError(requestError instanceof Error ? requestError.message : "加载失败");
+      });
+    return () => {
+      active = false;
+    };
+  }, [form.runNodeId, form.sourceDatasourceId, form.sourceTestState]);
+
+  useEffect(() => {
+    if (form.targetTestState !== "success" || !form.targetDatasourceId || !form.runNodeId) {
+      setTargetDatabaseOptions([]);
+      setTargetDatabaseLoadState("idle");
+      return;
+    }
+    let active = true;
+    setTargetDatabaseLoadState("loading");
+    setTargetMetadataError("");
+    void api.datasourceDatabases(form.targetDatasourceId, { nodeId: form.runNodeId })
+      .then((response) => {
+        if (!active) return;
+        setTargetDatabaseOptions(response.databases);
+        setTargetDatabaseLoadState("success");
+        setForm((current) => {
+          if (current.targetDatasourceId !== form.targetDatasourceId) return current;
+          const nextDatabase = current.targetDatabase && response.databases.includes(current.targetDatabase)
+            ? current.targetDatabase
+            : response.databases[0] || "";
+          const databaseChanged = nextDatabase !== current.targetDatabase;
+          return {
+            ...current,
+            targetDatabase: nextDatabase,
+            targetSchema: "",
+            tables: databaseChanged ? resetWizardTables(current.tables, "target") : current.tables
+          };
+        });
+      })
+      .catch((requestError) => {
+        if (!active) return;
+        setTargetDatabaseOptions([]);
+        setTargetDatabaseLoadState("failed");
+        setTargetMetadataError(requestError instanceof Error ? requestError.message : "加载失败");
+      });
+    return () => {
+      active = false;
+    };
+  }, [form.runNodeId, form.targetDatasourceId, form.targetTestState]);
+
+  useEffect(() => {
+    if (form.sourceTestState !== "success" || !form.sourceDatasourceId || !form.runNodeId || !form.sourceDatabase) {
+      setSourceTableOptions([]);
+      setSourceTableLoadState("idle");
+      return;
+    }
+    let active = true;
+    setSourceTableLoadState("loading");
+    setSourceMetadataError("");
+    void api.datasourceTables(form.sourceDatasourceId, { nodeId: form.runNodeId, database: form.sourceDatabase })
+      .then((response) => {
+        if (!active) return;
+        setSourceTableOptions(response.tables);
+        setSourceTableLoadState("success");
+        setForm((current) => {
+          if (current.sourceDatasourceId !== form.sourceDatasourceId || current.sourceDatabase !== form.sourceDatabase) return current;
+          return {
+            ...current,
+            tables: current.tables.map((table) => response.tables.includes(table.sourceTable) ? table : { ...table, sourceTable: "" })
+          };
+        });
+      })
+      .catch((requestError) => {
+        if (!active) return;
+        setSourceTableOptions([]);
+        setSourceTableLoadState("failed");
+        setSourceMetadataError(requestError instanceof Error ? requestError.message : "加载失败");
+      });
+    return () => {
+      active = false;
+    };
+  }, [form.runNodeId, form.sourceDatabase, form.sourceDatasourceId, form.sourceTestState]);
+
+  useEffect(() => {
+    if (form.targetTestState !== "success" || !form.targetDatasourceId || !form.runNodeId || !form.targetDatabase) {
+      setTargetTableOptions([]);
+      setTargetTableLoadState("idle");
+      return;
+    }
+    let active = true;
+    setTargetTableLoadState("loading");
+    setTargetMetadataError("");
+    void api.datasourceTables(form.targetDatasourceId, { nodeId: form.runNodeId, database: form.targetDatabase })
+      .then((response) => {
+        if (!active) return;
+        setTargetTableOptions(response.tables);
+        setTargetTableLoadState("success");
+        setForm((current) => {
+          if (current.targetDatasourceId !== form.targetDatasourceId || current.targetDatabase !== form.targetDatabase) return current;
+          return {
+            ...current,
+            tables: current.tables.map((table) => response.tables.includes(table.targetTable) ? table : { ...table, targetTable: "" })
+          };
+        });
+      })
+      .catch((requestError) => {
+        if (!active) return;
+        setTargetTableOptions([]);
+        setTargetTableLoadState("failed");
+        setTargetMetadataError(requestError instanceof Error ? requestError.message : "加载失败");
+      });
+    return () => {
+      active = false;
+    };
+  }, [form.runNodeId, form.targetDatabase, form.targetDatasourceId, form.targetTestState]);
+
   const selectedNode = onlineNodes.find((node) => node.id === form.runNodeId) || null;
   const sourceOptions = datasourceOptionsForWizard(datasources, "source", form.sourceDatasourceType);
   const targetOptions = datasourceOptionsForWizard(datasources, "target", form.targetDatasourceType);
+  const sourceDatabaseSelectOptions = metadataValueOptions(sourceDatabaseOptions, sourceDatabaseLoadState, "暂无 DB");
+  const targetDatabaseSelectOptions = metadataValueOptions(targetDatabaseOptions, targetDatabaseLoadState, "暂无 DB");
+  const sourceTableSelectOptions = metadataValueOptions(sourceTableOptions, sourceTableLoadState, "暂无表", "选择表");
+  const targetTableSelectOptions = metadataValueOptions(targetTableOptions, targetTableLoadState, "暂无表", "选择表");
   const requiredCapacity = channelResourceSpecGB(form.resourceSpec);
   const hasCapacity = Boolean(selectedNode && selectedNode.capacity >= requiredCapacity);
   const needsPrimaryKeys = form.kind === "check" && (form.dataValidation || form.dataCorrection);
@@ -1564,7 +1723,7 @@ function ChannelCreateWizardPage({
     && form.targetTestState === "success"
   );
   const taskStepValid = hasCapacity && (form.kind === "sync" || form.schemaCompare || form.dataValidation);
-  const tableStepValid = form.tables.length > 0 && form.tables.every((table) => {
+  const tableStepValid = Boolean(form.sourceDatabase && form.targetDatabase) && form.tables.length > 0 && form.tables.every((table) => {
     const hasNames = Boolean(table.sourceTable.trim() && table.targetTable.trim());
     const hasPrimaryKeys = !needsPrimaryKeys || Boolean(table.primaryKeysText.trim());
     return hasNames && hasPrimaryKeys;
@@ -1587,9 +1746,15 @@ function ChannelCreateWizardPage({
     patchForm({
       sourceDatasourceId: datasourceId,
       sourceDatabase: datasource?.defaultSchema || form.sourceDatabase,
+      sourceSchema: "",
       sourceTestState: "idle",
-      sourceTestMessage: ""
+      sourceTestMessage: "",
+      tables: resetWizardTables(form.tables, "source")
     });
+    setSourceDatabaseOptions([]);
+    setSourceTableOptions([]);
+    setSourceDatabaseLoadState("idle");
+    setSourceTableLoadState("idle");
   };
 
   const updateTargetDatasource = (datasourceId: string) => {
@@ -1597,8 +1762,30 @@ function ChannelCreateWizardPage({
     patchForm({
       targetDatasourceId: datasourceId,
       targetDatabase: datasource?.defaultSchema || form.targetDatabase,
+      targetSchema: "",
       targetTestState: "idle",
-      targetTestMessage: ""
+      targetTestMessage: "",
+      tables: resetWizardTables(form.tables, "target")
+    });
+    setTargetDatabaseOptions([]);
+    setTargetTableOptions([]);
+    setTargetDatabaseLoadState("idle");
+    setTargetTableLoadState("idle");
+  };
+
+  const updateSourceDatabase = (sourceDatabase: string) => {
+    patchForm({
+      sourceDatabase,
+      sourceSchema: "",
+      tables: resetWizardTables(form.tables, "source")
+    });
+  };
+
+  const updateTargetDatabase = (targetDatabase: string) => {
+    patchForm({
+      targetDatabase,
+      targetSchema: "",
+      tables: resetWizardTables(form.tables, "target")
     });
   };
 
@@ -1841,7 +2028,15 @@ function ChannelCreateWizardPage({
                             value={form.sourceDatasourceType}
                             ariaLabel="源端类型"
                             options={channelWizardDatasourceTypeOptions()}
-                            onChange={(value) => patchForm({ sourceDatasourceType: value as DatasourceType, sourceDatasourceId: "", sourceTestState: "idle", sourceTestMessage: "" })}
+                            onChange={(value) => patchForm({
+                              sourceDatasourceType: value as DatasourceType,
+                              sourceDatasourceId: "",
+                              sourceDatabase: "",
+                              sourceSchema: "",
+                              sourceTestState: "idle",
+                              sourceTestMessage: "",
+                              tables: resetWizardTables(form.tables, "source")
+                            })}
                           />
                         </Field>
                         <Field label="数据源" required>
@@ -1866,7 +2061,15 @@ function ChannelCreateWizardPage({
                             value={form.targetDatasourceType}
                             ariaLabel="目标端类型"
                             options={channelWizardDatasourceTypeOptions()}
-                            onChange={(value) => patchForm({ targetDatasourceType: value as DatasourceType, targetDatasourceId: "", targetTestState: "idle", targetTestMessage: "" })}
+                            onChange={(value) => patchForm({
+                              targetDatasourceType: value as DatasourceType,
+                              targetDatasourceId: "",
+                              targetDatabase: "",
+                              targetSchema: "",
+                              targetTestState: "idle",
+                              targetTestMessage: "",
+                              tables: resetWizardTables(form.tables, "target")
+                            })}
                           />
                         </Field>
                         <Field label="数据源" required>
@@ -1947,20 +2150,31 @@ function ChannelCreateWizardPage({
 
               {step === "tables" && (
                 <div className="grid gap-5 p-5">
-                  <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                    <Field label="源 DB">
-                      <TextInput className="input" value={form.sourceDatabase} onChange={(event) => patchForm({ sourceDatabase: event.target.value })} />
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <Field label="源 DB" required error={!form.sourceDatabase ? "必选" : undefined}>
+                      <DropdownSelect
+                        value={form.sourceDatabase}
+                        ariaLabel="源 DB"
+                        options={sourceDatabaseSelectOptions}
+                        disabled={sourceDatabaseLoadState === "loading"}
+                        onChange={updateSourceDatabase}
+                      />
                     </Field>
-                    <Field label="源 Schema">
-                      <TextInput className="input" value={form.sourceSchema} onChange={(event) => patchForm({ sourceSchema: event.target.value })} />
-                    </Field>
-                    <Field label="目标 DB">
-                      <TextInput className="input" value={form.targetDatabase} onChange={(event) => patchForm({ targetDatabase: event.target.value })} />
-                    </Field>
-                    <Field label="目标 Schema">
-                      <TextInput className="input" value={form.targetSchema} onChange={(event) => patchForm({ targetSchema: event.target.value })} />
+                    <Field label="目标 DB" required error={!form.targetDatabase ? "必选" : undefined}>
+                      <DropdownSelect
+                        value={form.targetDatabase}
+                        ariaLabel="目标 DB"
+                        options={targetDatabaseSelectOptions}
+                        disabled={targetDatabaseLoadState === "loading"}
+                        onChange={updateTargetDatabase}
+                      />
                     </Field>
                   </div>
+                  {(sourceMetadataError || targetMetadataError) && (
+                    <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                      {sourceMetadataError || targetMetadataError}
+                    </div>
+                  )}
 
                   <div className="flex items-center justify-between gap-3">
                     <div className="text-base font-semibold text-coal">表</div>
@@ -2000,10 +2214,24 @@ function ChannelCreateWizardPage({
                           {form.tables.map((table, tableIndex) => (
                             <tr key={table.localId}>
                               <td className="px-4 py-3">
-                                <TextInput className="input h-10" value={table.sourceTable} onChange={(event) => updateTable(tableIndex, { sourceTable: event.target.value })} />
+                                <DropdownSelect
+                                  value={table.sourceTable}
+                                  ariaLabel="源表"
+                                  options={sourceTableSelectOptions}
+                                  disabled={!form.sourceDatabase || sourceTableLoadState === "loading"}
+                                  onChange={(sourceTable) => updateTable(tableIndex, { sourceTable })}
+                                  className="h-10 min-h-10"
+                                />
                               </td>
                               <td className="px-4 py-3">
-                                <TextInput className="input h-10" value={table.targetTable} onChange={(event) => updateTable(tableIndex, { targetTable: event.target.value })} />
+                                <DropdownSelect
+                                  value={table.targetTable}
+                                  ariaLabel="目标表"
+                                  options={targetTableSelectOptions}
+                                  disabled={!form.targetDatabase || targetTableLoadState === "loading"}
+                                  onChange={(targetTable) => updateTable(tableIndex, { targetTable })}
+                                  className="h-10 min-h-10"
+                                />
                               </td>
                               <td className="px-4 py-3">
                                 <TextInput className="input h-10" value={table.primaryKeysText} placeholder={needsPrimaryKeys ? "必填" : "可选"} onChange={(event) => updateTable(tableIndex, { primaryKeysText: event.target.value })} />
@@ -5989,6 +6217,17 @@ function datasourceOptionsForWizard(datasources: Datasource[], purpose: Datasour
   }));
 }
 
+function metadataValueOptions(values: string[], state: MetadataLoadState, emptyLabel: string, placeholderLabel = "") {
+  if (state === "loading") {
+    return [{ value: "", label: "加载中", disabled: true }];
+  }
+  if (values.length === 0) {
+    return [{ value: "", label: emptyLabel, disabled: true }];
+  }
+  const options = values.map((value) => ({ value, label: value }));
+  return placeholderLabel ? [{ value: "", label: placeholderLabel, disabled: true }, ...options] : options;
+}
+
 function nodeOptionsForWizard(nodes: ClusterNode[]) {
   if (nodes.length === 0) {
     return [{ value: "", label: "暂无在线节点", disabled: true }];
@@ -6041,9 +6280,17 @@ function emptyChannelWizardTable(): ChannelWizardTableDraft {
     primaryKeys: [],
     primaryKeysText: "",
     enabled: true,
-    createTarget: true,
+    createTarget: false,
     columns: [emptyColumnDraft()]
   };
+}
+
+function resetWizardTables(tables: ChannelWizardTableDraft[], side: "source" | "target") {
+  return tables.map((table) => ({
+    ...table,
+    sourceTable: side === "source" ? "" : table.sourceTable,
+    targetTable: side === "target" ? "" : table.targetTable
+  }));
 }
 
 function channelResourceSpecGB(spec: ResourceSpec | string) {

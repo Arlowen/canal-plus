@@ -124,6 +124,17 @@ type DatasourceTestRequest struct {
 	NodeID string `json:"nodeId,omitempty"`
 }
 
+type DatasourceDatabasesResponse struct {
+	DatasourceID string   `json:"datasourceId"`
+	Databases    []string `json:"databases"`
+}
+
+type DatasourceTablesResponse struct {
+	DatasourceID string   `json:"datasourceId"`
+	Database     string   `json:"database"`
+	Tables       []string `json:"tables"`
+}
+
 type ChannelStatus string
 
 const (
