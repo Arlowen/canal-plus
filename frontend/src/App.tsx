@@ -156,6 +156,14 @@ const nodeMetricRangeDurations: Record<NodeMetricRange, number> = {
   "1mo": 30 * 24 * 60 * 60 * 1000
 };
 
+const resourceTrendViewBox = {
+  width: 760,
+  height: 318,
+  yTickLabelX: 16,
+  xTickLabelY: 306
+};
+const resourceTrendYAxisTicks = [0, 25, 50, 75, 100];
+
 const focusableSelector = [
   "a[href]",
   "button:not([disabled])",
@@ -2881,13 +2889,12 @@ function ResourceTrendPanel({
         <TrendLegend color="#10b981" label="内存使用率 (%)" />
         <TrendLegend color="#f97316" label="磁盘使用率 (%)" />
       </div>
-      <div className="mt-4 overflow-hidden">
-        <svg className="h-[330px] w-full" viewBox="0 0 760 318" preserveAspectRatio="none" role="img" aria-label="资源趋势图">
-          {[0, 25, 50, 75, 100].map((tick) => {
+      <div className="relative mt-4 h-[330px] overflow-hidden">
+        <svg className="absolute inset-0 h-full w-full" viewBox={`0 0 ${resourceTrendViewBox.width} ${resourceTrendViewBox.height}`} preserveAspectRatio="none" role="img" aria-label="资源趋势图">
+          {resourceTrendYAxisTicks.map((tick) => {
             const y = chart.yFor(tick);
             return (
               <g key={tick}>
-                <text x="16" y={y + 5} className="fill-slate-500 font-sans text-[13px] font-medium tabular-nums">{tick}</text>
                 <line x1="58" x2="738" y1={y} y2={y} stroke="#dbe7f6" strokeDasharray="4 4" />
               </g>
             );
@@ -2897,11 +2904,36 @@ function ResourceTrendPanel({
           <path d={chart.cpuPath} fill="none" stroke="#2563eb" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.6" />
           <path d={chart.memoryPath} fill="none" stroke="#10b981" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.6" />
           <path d={chart.diskPath} fill="none" stroke="#f97316" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.6" />
-          {monitor.labels.map((label, index) => {
-            const x = 58 + (680 / Math.max(1, monitor.labels.length - 1)) * index;
-            return <text key={`${label}-${index}`} x={x} y="306" textAnchor="middle" className="fill-slate-600 font-sans text-[13px] font-medium tabular-nums">{label}</text>;
-          })}
         </svg>
+        {resourceTrendYAxisTicks.map((tick) => (
+          <span
+            key={tick}
+            aria-hidden="true"
+            className="resource-trend-axis-label absolute -translate-y-1/2 text-[13px] font-medium leading-none text-slate-500"
+            style={{
+              left: `${resourceTrendPercent(resourceTrendViewBox.yTickLabelX, resourceTrendViewBox.width)}%`,
+              top: `${resourceTrendPercent(chart.yFor(tick), resourceTrendViewBox.height)}%`
+            }}
+          >
+            {tick}
+          </span>
+        ))}
+        {monitor.labels.map((label, index) => {
+          const x = 58 + (680 / Math.max(1, monitor.labels.length - 1)) * index;
+          return (
+            <span
+              key={`${label}-${index}`}
+              aria-hidden="true"
+              className="resource-trend-axis-label absolute -translate-x-1/2 -translate-y-1/2 whitespace-nowrap text-[13px] font-medium leading-none text-slate-600"
+              style={{
+                left: `${resourceTrendPercent(x, resourceTrendViewBox.width)}%`,
+                top: `${resourceTrendPercent(resourceTrendViewBox.xTickLabelY, resourceTrendViewBox.height)}%`
+              }}
+            >
+              {label}
+            </span>
+          );
+        })}
       </div>
     </div>
   );
@@ -2914,6 +2946,10 @@ function TrendLegend({ color, label }: { color: string; label: string }) {
       {label}
     </span>
   );
+}
+
+function resourceTrendPercent(value: number, total: number) {
+  return total === 0 ? 0 : value / total * 100;
 }
 
 function buildRuntimeOverviewData(history: NodeMetricHistoryResponse | null) {
