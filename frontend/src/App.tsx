@@ -177,7 +177,7 @@ type ChannelStatusFilter = "all" | Channel["status"];
 type ChannelDetailTab = "overview" | "mappings" | "tasks" | "runs" | "logs";
 
 const navItems: Array<{ id: MainPage; label: string; icon: typeof Database }> = [
-  { id: "channels", label: "Channel", icon: ArrowRight },
+  { id: "channels", label: "Canal", icon: ArrowRight },
   { id: "datasources", label: "数据源", icon: Database },
   { id: "nodes", label: "节点", icon: HardDrives }
 ];
@@ -1211,7 +1211,7 @@ function ChannelsPage({
 
   const confirmDelete = (channel: Channel) => {
     setConfirmation({
-      title: "删除 Channel",
+      title: "删除 Canal",
       description: "删除后，映射、任务和运行记录会一起移除。",
       confirmLabel: "删除",
       confirmTone: "danger",
@@ -1256,7 +1256,7 @@ function ChannelsPage({
     <>
       <section className="min-w-0 overflow-hidden">
         <div className="flex h-[101px] items-center border-b border-line px-5 md:px-8">
-          <h1 className="text-3xl font-semibold tracking-tight text-coal">Channel</h1>
+          <h1 className="text-3xl font-semibold tracking-tight text-coal">Canal</h1>
         </div>
 
         <div className="px-5 py-6 md:px-8">
@@ -1276,7 +1276,7 @@ function ChannelsPage({
                 <TextInput
                   className="input h-12 pl-11"
                   value={draftQuery}
-                  placeholder="搜索 Channel、源端、目标端"
+                  placeholder="搜索 Canal、源端、目标端"
                   onChange={(event) => setDraftQuery(event.target.value)}
                   onKeyDown={(event) => {
                     if (event.key === "Enter") {
@@ -1321,7 +1321,7 @@ function ChannelsPage({
               </colgroup>
               <thead className="bg-slate-50/70 text-sm font-semibold text-slate-500">
                 <tr className="border-b border-line">
-                  <th className="whitespace-nowrap px-6 py-4">Channel</th>
+                  <th className="whitespace-nowrap px-6 py-4">Canal</th>
                   <th className="whitespace-nowrap px-5 py-4">源端</th>
                   <th className="whitespace-nowrap px-5 py-4">目标端</th>
                   <th className="whitespace-nowrap px-5 py-4">任务</th>
@@ -1335,7 +1335,7 @@ function ChannelsPage({
                   <tr>
                     <td colSpan={7} className="px-6 py-16">
                       <div className="mx-auto flex max-w-sm flex-col items-center text-center">
-                        <div className="text-base font-semibold text-coal">{channels.length === 0 ? "暂无 Channel" : "无匹配"}</div>
+                        <div className="text-base font-semibold text-coal">{channels.length === 0 ? "暂无 Canal" : "无匹配"}</div>
                         {canManage && channels.length === 0 && datasources.length >= 2 && (
                           <Button type="button" onClick={openCreate} className="btn-primary mt-5">
                             <Plus size={16} />
@@ -1464,7 +1464,7 @@ function ChannelFormModal({
   };
 
   return (
-    <Modal open={open} title={channel ? "编辑 Channel" : "新增 Channel"} onClose={onClose} size="lg">
+    <Modal open={open} title={channel ? "编辑 Canal" : "新增 Canal"} onClose={onClose} size="lg">
       <form onSubmit={submit} className="grid gap-4">
         <Field label="名称" required error={!form.name.trim() ? "必填" : undefined}>
           <TextInput className="input" value={form.name} maxLength={80} onChange={(event) => setForm({ ...form, name: event.target.value })} />
@@ -1967,7 +1967,7 @@ function ChannelCreateWizardPage({
       <section className="min-w-0 overflow-hidden">
       <div className="flex h-[101px] items-center justify-between border-b border-line px-5 md:px-8">
         <div className="min-w-0">
-          <h1 className="truncate text-3xl font-semibold tracking-tight text-coal">新增 Channel</h1>
+          <h1 className="truncate text-3xl font-semibold tracking-tight text-coal">新增 Canal</h1>
         </div>
         <Button type="button" onClick={onBack} className="btn-secondary h-11 px-4">
           <ArrowRight size={16} className="rotate-180" />
@@ -1977,10 +1977,10 @@ function ChannelCreateWizardPage({
 
       <div className="px-5 py-6 md:px-8">
         {!canManage ? (
-          <PermissionNotice description="当前账号不能创建 Channel。" />
+          <PermissionNotice description="当前账号不能创建 Canal。" />
         ) : (
           <div className="grid gap-6">
-            <nav className="overflow-x-auto rounded-lg border border-line bg-white p-3" aria-label="Channel 创建步骤">
+            <nav className="overflow-x-auto rounded-lg border border-line bg-white p-3" aria-label="Canal 创建步骤">
               <div className="grid min-w-[680px] grid-cols-4 gap-3">
                 {channelWizardSteps.map((wizardStep, index) => (
                   <Button
@@ -2452,7 +2452,7 @@ function ChannelDetailPage({
     return (
       <section>
         <div className="flex h-[101px] items-center justify-between gap-4 border-b border-line px-5 md:px-8">
-          <h1 className="text-3xl font-semibold tracking-tight text-coal">Channel</h1>
+          <h1 className="text-3xl font-semibold tracking-tight text-coal">Canal</h1>
           <Button type="button" onClick={onBack} className="btn-secondary">
             <ArrowRight size={14} className="rotate-180" />
             返回
@@ -6768,9 +6768,9 @@ function navPage(page: Page): MainPage {
 }
 
 function pageTitle(page: Page) {
-  if (page === "channels") return "Channel";
-  if (page === "channelCreate") return "新增 Channel";
-  if (page === "channelDetail") return "Channel";
+  if (page === "channels") return "Canal";
+  if (page === "channelCreate") return "新增 Canal";
+  if (page === "channelDetail") return "Canal";
   if (page === "datasources") return "数据源";
   if (page === "datasourceCreate") return "新增数据源";
   if (page === "datasourceEdit") return "编辑数据源";
