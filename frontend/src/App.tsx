@@ -2854,7 +2854,7 @@ function ResourceTrendPanel({
             const y = chart.yFor(tick);
             return (
               <g key={tick}>
-                <text x="16" y={y + 5} className="fill-slate-500 text-[13px]">{tick}</text>
+                <text x="16" y={y + 5} className="fill-slate-500 font-mono text-[13px] font-medium tabular-nums">{tick}</text>
                 <line x1="58" x2="738" y1={y} y2={y} stroke="#dbe7f6" strokeDasharray="4 4" />
               </g>
             );
@@ -2866,7 +2866,7 @@ function ResourceTrendPanel({
           <path d={chart.diskPath} fill="none" stroke="#f97316" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.6" />
           {monitor.labels.map((label, index) => {
             const x = 58 + (680 / Math.max(1, monitor.labels.length - 1)) * index;
-            return <text key={`${label}-${index}`} x={x} y="306" textAnchor="middle" className="fill-slate-600 text-[13px]">{label}</text>;
+            return <text key={`${label}-${index}`} x={x} y="306" textAnchor="middle" className="fill-slate-600 font-mono text-[13px] font-medium tabular-nums">{label}</text>;
           })}
         </svg>
       </div>
