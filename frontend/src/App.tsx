@@ -2662,7 +2662,6 @@ function NodeMonitorPage({
   const activeMetricHistory = metricHistory?.nodeId === selected.id && metricHistory.range === metricRange ? metricHistory : null;
   const monitor = buildNodeMonitorData(selected, activeMetricHistory, metricRange);
   const heartbeatAge = formatNodeHeartbeatAge(selected.lastHeartbeatAt);
-  const recentExceptions = selected.status === "online" ? 0 : 1;
 
   return (
     <section className="min-w-0 px-5 py-6 md:px-8">
@@ -2687,11 +2686,7 @@ function NodeMonitorPage({
         </div>
       </div>
 
-      <div className="mt-5 grid items-start gap-5 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5">
-        <RuntimeOverviewPanel
-          runningTasks={selected.capacity}
-          recentExceptions={recentExceptions}
-        />
+      <div className="mt-5 grid items-start gap-5 md:grid-cols-2 xl:grid-cols-4">
         {monitor.metrics.map((metric) => (
           <NodeMetricPanel key={metric.key} metric={metric} />
         ))}
@@ -2875,62 +2870,6 @@ function TrendLegend({ color, label }: { color: string; label: string }) {
 
 function resourceTrendPercent(value: number, total: number) {
   return total === 0 ? 0 : value / total * 100;
-}
-
-function RuntimeOverviewPanel({
-  runningTasks,
-  recentExceptions
-}: {
-  runningTasks: number;
-  recentExceptions: number;
-}) {
-  return (
-    <div className="min-h-[168px] rounded-lg border border-line bg-white p-5 shadow-[0_18px_48px_-42px_rgba(37,99,235,0.25)]">
-      <h3 className="text-lg font-semibold tracking-tight text-coal">运行概览</h3>
-      <div className="mt-5 grid grid-cols-2 border-t border-line">
-        <OverviewCell icon={HardDrives} tone="blue" label="运行任务数" value={Math.max(0, runningTasks)} className="border-r border-line" compact />
-        <OverviewCell icon={WarningCircle} tone="red" label="最近异常" value={recentExceptions} className="pl-4" compact />
-      </div>
-    </div>
-  );
-}
-
-function OverviewCell({
-  icon: Icon,
-  tone,
-  label,
-  value,
-  valueMono = true,
-  className,
-  compact
-}: {
-  icon: typeof Database;
-  tone: "blue" | "green" | "red" | "amber";
-  label: string;
-  value: ReactNode;
-  valueMono?: boolean;
-  className?: string;
-  compact?: boolean;
-}) {
-  const toneClass = tone === "blue"
-    ? "border-blue-100 bg-blue-50 text-accent"
-    : tone === "green"
-      ? "border-emerald-100 bg-emerald-50 text-emerald-600"
-      : tone === "red"
-        ? "border-red-100 bg-red-50 text-red-600"
-        : "border-amber-100 bg-amber-50 text-amber-600";
-
-  return (
-    <div className={cx("flex items-center gap-4 py-5", compact && "gap-3 py-3.5", className)}>
-      <span className={cx("flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border", compact && "h-9 w-9", toneClass)}>
-        <Icon size={compact ? 19 : 21} />
-      </span>
-      <div className="min-w-0">
-        <div className="text-sm font-semibold text-slate-600">{label}</div>
-        <div className={cx("mt-1.5 truncate font-semibold leading-none tracking-tight text-coal", compact ? "text-xl" : "text-2xl", valueMono && "font-mono")}>{value}</div>
-      </div>
-    </div>
-  );
 }
 
 function buildNodeMonitorData(
