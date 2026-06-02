@@ -4225,12 +4225,14 @@ function datasourceAuthTypeFromItem(item: Datasource): DatasourceAuthType {
 function pageFromPathname(pathname: string): Page {
   if (pathname === "/datasource/create") return "datasourceCreate";
   if (datasourceEditIdFromPathname(pathname)) return "datasourceEdit";
+  if (pathname === "/nodes") return "nodes";
   return "datasources";
 }
 
 function pathForPage(page: Page, datasourceId?: string) {
   if (page === "datasourceCreate") return "/datasource/create";
   if (page === "datasourceEdit" && datasourceId) return `/datasource/${encodeURIComponent(datasourceId)}/edit`;
+  if (page === "nodes") return "/nodes";
   return "/";
 }
 
