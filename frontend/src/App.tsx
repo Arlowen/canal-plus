@@ -2745,7 +2745,6 @@ type NodeMonitorMetric = {
   unit: string;
   color: string;
   series: number[];
-  compareValue: number;
   ringValue?: number;
   precision?: number;
 };
@@ -2761,16 +2760,6 @@ type NodeMonitorData = {
 };
 
 function NodeMetricPanel({ metric }: { metric: NodeMonitorMetric }) {
-  const delta = metric.value - metric.compareValue;
-  const isUsageMetric = metric.key !== "network";
-  const trendImproved = isUsageMetric ? delta <= 0 : delta >= 0;
-  const trendClass = trendImproved ? "text-emerald-600" : "text-red-600";
-  const trendPrefix = delta <= 0 ? "↓" : "↑";
-  const deltaValue = Math.abs(delta);
-  const formattedDelta = metric.unit === "%"
-    ? `${Math.round(deltaValue)}%`
-    : `${deltaValue.toFixed(1)} ${metric.unit}`;
-
   return (
     <div className="min-h-[240px] rounded-lg border border-line bg-white p-5 shadow-[0_18px_48px_-42px_rgba(37,99,235,0.28)]">
       <div className="flex items-start justify-between gap-4">
@@ -2782,9 +2771,6 @@ function NodeMetricPanel({ metric }: { metric: NodeMonitorMetric }) {
           <div className="mt-4 flex items-end gap-1 font-mono font-semibold tracking-tight text-accent">
             <span className="text-4xl leading-none">{formatMetricValue(metric.value, metric.precision)}</span>
             <span className="pb-1 text-lg leading-none">{metric.unit}</span>
-          </div>
-          <div className="mt-4 flex items-center gap-2 text-sm font-medium">
-            <span className={trendClass}>{trendPrefix} {formattedDelta}</span>
           </div>
         </div>
         {metric.ringValue !== undefined && (
@@ -3036,15 +3022,10 @@ function buildNodeMonitorData(
 ): NodeMonitorData {
   const samples = normalizeMetricSamples(node, history);
   const current = samples[samples.length - 1] ?? nodeMetricSampleFromNode(node);
-  const compare = findCompareMetricSample(samples, current, 5 * 60 * 1000);
   const cpuValue = clampPercent(current.cpuPercent);
   const memoryValue = clampPercent(current.memoryPercent);
   const diskValue = clampPercent(current.diskPercent);
   const networkValue = normalizeNetworkValue(current.networkThroughputMBps);
-  const cpuCompare = clampPercent(compare.cpuPercent);
-  const memoryCompare = clampPercent(compare.memoryPercent);
-  const diskCompare = clampPercent(compare.diskPercent);
-  const networkCompare = normalizeNetworkValue(compare.networkThroughputMBps);
   const cpuSeries = samples.map((sample) => clampPercent(sample.cpuPercent));
   const memorySeries = samples.map((sample) => clampPercent(sample.memoryPercent));
   const diskSeries = samples.map((sample) => clampPercent(sample.diskPercent));
@@ -3061,7 +3042,6 @@ function buildNodeMonitorData(
         unit: "%",
         color: "#2563eb",
         series: cpuSeries,
-        compareValue: cpuCompare,
         ringValue: cpuValue
       },
       {
@@ -3071,7 +3051,6 @@ function buildNodeMonitorData(
         unit: "%",
         color: "#2563eb",
         series: memorySeries,
-        compareValue: memoryCompare,
         ringValue: memoryValue
       },
       {
@@ -3081,7 +3060,6 @@ function buildNodeMonitorData(
         unit: "%",
         color: "#2563eb",
         series: diskSeries,
-        compareValue: diskCompare,
         ringValue: diskValue
       },
       {
@@ -3091,7 +3069,6 @@ function buildNodeMonitorData(
         unit: "MB/s",
         color: "#10b981",
         series: networkSeries,
-        compareValue: networkCompare,
         precision: 1
       }
     ],
@@ -3129,31 +3106,6 @@ function nodeMetricSampleFromNode(node: ClusterNode): NodeMetricSample {
     diskPercent: clampPercent(node.diskPercent ?? 0),
     networkThroughputMBps: normalizeNetworkValue(node.networkThroughputMBps ?? 0)
   };
-}
-
-function findCompareMetricSample(samples: NodeMetricSample[], current: NodeMetricSample, offsetMs: number) {
-  if (samples.length <= 1) {
-    return current;
-  }
-  const currentTime = metricTime(current.collectedAt);
-  if (!Number.isFinite(currentTime)) {
-    return samples[Math.max(0, samples.length - 2)] ?? current;
-  }
-  const targetTime = currentTime - offsetMs;
-  let closest = samples[0];
-  let closestDistance = Number.POSITIVE_INFINITY;
-  for (const sample of samples) {
-    const sampleTime = metricTime(sample.collectedAt);
-    if (!Number.isFinite(sampleTime) || sampleTime > currentTime) {
-      continue;
-    }
-    const distance = Math.abs(sampleTime - targetTime);
-    if (distance < closestDistance) {
-      closest = sample;
-      closestDistance = distance;
-    }
-  }
-  return closest;
 }
 
 function normalizeNetworkValue(value: number) {
