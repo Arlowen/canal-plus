@@ -2002,7 +2002,7 @@ function ChannelCreateWizardPage({
             <div className="min-w-0 rounded-lg border border-line bg-white">
               {step === "connections" && (
                 <div className="grid gap-6 p-5">
-                  <div className="grid gap-4 lg:grid-cols-2">
+                  <div className="grid gap-4">
                     <Field label="名称" required error={!form.name.trim() ? "必填" : undefined}>
                       <TextInput className="input" maxLength={80} value={form.name} onChange={(event) => patchForm({ name: event.target.value })} />
                     </Field>
