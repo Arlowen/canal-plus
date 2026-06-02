@@ -2607,7 +2607,7 @@ function NodeMonitorPage({
 }) {
   const nodes = cluster?.nodes ?? emptyNodes;
   const selected = nodeId ? nodes.find((item) => item.id === nodeId) || null : nodes[0] || null;
-  const [metricRange, setMetricRange] = useState<NodeMetricRange>("3h");
+  const [metricRange, setMetricRange] = useState<NodeMetricRange>("30m");
   const [metricHistory, setMetricHistory] = useState<NodeMetricHistoryResponse | null>(null);
   const [metricsLoading, setMetricsLoading] = useState(false);
   const [metricsError, setMetricsError] = useState<string | null>(null);
@@ -2686,7 +2686,7 @@ function NodeMonitorPage({
         </div>
       </div>
 
-      <div className="mt-5 grid items-start gap-5 md:grid-cols-2 xl:grid-cols-4">
+      <div className="mt-5 grid items-start gap-5 md:grid-cols-2 xl:grid-cols-3">
         {monitor.metrics.map((metric) => (
           <NodeMetricPanel key={metric.key} metric={metric} />
         ))}
@@ -2706,7 +2706,7 @@ function NodeMonitorPage({
 }
 
 type NodeMonitorMetric = {
-  key: "cpu" | "memory" | "disk" | "network";
+  key: "cpu" | "memory" | "disk";
   label: string;
   value: number;
   unit: string;
@@ -2963,7 +2963,6 @@ function buildNodeMonitorData(
   const cpuValue = clampPercent(current.cpuPercent);
   const memoryValue = clampPercent(current.memoryPercent);
   const diskValue = clampPercent(current.diskPercent);
-  const networkValue = normalizeNetworkValue(current.networkThroughputMBps);
   const cpuSeries = samples.map((sample) => clampPercent(sample.cpuPercent));
   const memorySeries = samples.map((sample) => clampPercent(sample.memoryPercent));
   const diskSeries = samples.map((sample) => clampPercent(sample.diskPercent));
@@ -2995,14 +2994,6 @@ function buildNodeMonitorData(
         unit: "%",
         color: "#2563eb",
         ringValue: diskValue
-      },
-      {
-        key: "network",
-        label: "网络吞吐",
-        value: networkValue,
-        unit: "MB/s",
-        color: "#10b981",
-        precision: 1
       }
     ],
     cpuSeries,
