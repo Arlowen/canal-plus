@@ -862,7 +862,7 @@ function App() {
           <NoticeToast
             tone="warning"
             action={(
-              <Button onClick={() => void retryServiceConnection()} disabled={serviceRecoveryPending} className="btn-compact border-white/45 bg-white/90 text-slate-800 hover:bg-white">
+              <Button onClick={() => void retryServiceConnection()} disabled={serviceRecoveryPending} className="btn-compact border-blue-100 bg-blue-50 text-accent hover:bg-blue-100">
                 <ArrowsClockwise size={14} />
                 {serviceRecoveryPending ? "重试中" : "重试"}
               </Button>

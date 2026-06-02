@@ -16,15 +16,25 @@ type NoticeToastProps = {
 
 const NOTICE_TOAST_EXIT_MS = 240;
 
-const toneClasses: Record<NoticeToastTone, { icon: typeof CheckCircle }> = {
+const toneClasses: Record<NoticeToastTone, {
+  icon: typeof CheckCircle;
+  iconWrap: string;
+  closeButton: string;
+}> = {
   success: {
-    icon: CheckCircle
+    icon: CheckCircle,
+    iconWrap: "border-blue-100 bg-blue-50 text-accent",
+    closeButton: "text-slate-500 hover:border-blue-100 hover:bg-blue-50 hover:text-accent"
   },
   warning: {
-    icon: WarningCircle
+    icon: WarningCircle,
+    iconWrap: "border-amber-100 bg-amber-50 text-amber-600",
+    closeButton: "text-slate-500 hover:border-amber-100 hover:bg-amber-50 hover:text-amber-600"
   },
   error: {
-    icon: XCircle
+    icon: XCircle,
+    iconWrap: "border-red-100 bg-red-50 text-red-600",
+    closeButton: "text-slate-500 hover:border-red-100 hover:bg-red-50 hover:text-red-600"
   }
 };
 
@@ -99,15 +109,15 @@ export function NoticeToast({
       aria-live={tone === "error" ? "assertive" : "polite"}
       data-state={closing ? "closing" : "open"}
       className={cx(
-        "notice-toast pointer-events-auto relative overflow-hidden rounded-lg border border-blue-500/80 bg-accent px-4 py-3 text-white",
-        "shadow-[0_24px_70px_-28px_rgba(37,99,235,0.72)]"
+        "notice-toast pointer-events-auto relative overflow-hidden rounded-lg border border-line bg-white px-4 py-3 text-coal",
+        "shadow-[0_24px_70px_-32px_rgba(37,99,235,0.34)]"
       )}
     >
       <div className="relative flex min-w-0 items-start gap-3">
-        <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-white/16 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.28)]">
+        <span className={cx("mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md border", style.iconWrap)}>
           <Icon size={18} weight="fill" />
         </span>
-        <div className="min-w-0 flex-1 pt-1 text-sm font-medium leading-5 drop-shadow-[0_1px_1px_rgba(15,23,42,0.18)]">
+        <div className="min-w-0 flex-1 pt-1 text-sm font-medium leading-5">
           {children}
         </div>
         {action && <div className="shrink-0 pl-2">{action}</div>}
@@ -116,7 +126,7 @@ export function NoticeToast({
             type="button"
             aria-label="关闭提示"
             onClick={requestClose}
-            className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-white/14 text-white transition hover:bg-white/22 active:translate-y-px"
+            className={cx("mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-transparent bg-white transition active:translate-y-px", style.closeButton)}
           >
             <X size={16} />
           </Button>
