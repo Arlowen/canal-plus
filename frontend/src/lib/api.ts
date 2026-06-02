@@ -3,6 +3,13 @@ import type {
   AlertEvent,
   AlertRuleEvaluation,
   AlertRuleInput,
+  Channel,
+  ChannelInput,
+  ChannelMappingsInput,
+  ChannelMappingsResponse,
+  ChannelPrecheckResult,
+  ChannelTask,
+  ChannelTaskInput,
   ClusterSnapshot,
   ClusterNode,
   Datasource,
@@ -12,6 +19,8 @@ import type {
   NodeMetricHistoryResponse,
   NodeMetricRange,
   OperationLog,
+  TaskLog,
+  TaskRun,
   User
 } from "../types/api";
 
@@ -197,6 +206,75 @@ export const api = {
       method: "POST",
       body: JSON.stringify(input)
     });
+  },
+  channels() {
+    return request<Channel[]>("/channels");
+  },
+  channel(id: string) {
+    return request<Channel>(`/channels/${id}`);
+  },
+  createChannel(input: ChannelInput) {
+    return request<Channel>("/channels", {
+      method: "POST",
+      body: JSON.stringify(input)
+    });
+  },
+  updateChannel(id: string, input: ChannelInput) {
+    return request<Channel>(`/channels/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(input)
+    });
+  },
+  deleteChannel(id: string) {
+    return request<void>(`/channels/${id}`, { method: "DELETE" });
+  },
+  archiveChannel(id: string) {
+    return request<Channel>(`/channels/${id}/archive`, { method: "POST" });
+  },
+  precheckChannel(id: string) {
+    return request<ChannelPrecheckResult>(`/channels/${id}/precheck`, { method: "POST" });
+  },
+  channelMappings(id: string) {
+    return request<ChannelMappingsResponse>(`/channels/${id}/mappings`);
+  },
+  saveChannelMappings(id: string, input: ChannelMappingsInput) {
+    return request<ChannelMappingsResponse>(`/channels/${id}/mappings`, {
+      method: "PUT",
+      body: JSON.stringify(input)
+    });
+  },
+  channelTasks(id: string) {
+    return request<ChannelTask[]>(`/channels/${id}/tasks`);
+  },
+  createChannelTask(id: string, input: ChannelTaskInput) {
+    return request<ChannelTask>(`/channels/${id}/tasks`, {
+      method: "POST",
+      body: JSON.stringify(input)
+    });
+  },
+  updateChannelTask(channelId: string, taskId: string, input: ChannelTaskInput) {
+    return request<ChannelTask>(`/channels/${channelId}/tasks/${taskId}`, {
+      method: "PUT",
+      body: JSON.stringify(input)
+    });
+  },
+  deleteChannelTask(channelId: string, taskId: string) {
+    return request<void>(`/channels/${channelId}/tasks/${taskId}`, { method: "DELETE" });
+  },
+  startChannelTask(channelId: string, taskId: string) {
+    return request<ChannelTask>(`/channels/${channelId}/tasks/${taskId}/start`, { method: "POST" });
+  },
+  stopChannelTask(channelId: string, taskId: string) {
+    return request<ChannelTask>(`/channels/${channelId}/tasks/${taskId}/stop`, { method: "POST" });
+  },
+  rerunChannelTask(channelId: string, taskId: string) {
+    return request<ChannelTask>(`/channels/${channelId}/tasks/${taskId}/rerun`, { method: "POST" });
+  },
+  channelRuns(id: string) {
+    return request<TaskRun[]>(`/channels/${id}/runs`);
+  },
+  channelLogs(id: string) {
+    return request<TaskLog[]>(`/channels/${id}/logs`);
   },
   logs() {
     return request<OperationLog[]>("/operation-logs");

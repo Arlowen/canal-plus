@@ -171,6 +171,8 @@ func (s *Server) ServeHTTP(response http.ResponseWriter, request *http.Request) 
 		writeJSON(response, http.StatusOK, s.runtimeConfig)
 	case len(parts) >= 1 && parts[0] == "datasources":
 		s.handleDatasources(response, request, parts)
+	case len(parts) >= 1 && parts[0] == "channels":
+		s.handleChannels(response, request, parts, user)
 	case len(parts) >= 1 && parts[0] == "cluster":
 		s.handleCluster(response, request, parts)
 	case len(parts) == 1 && parts[0] == "operation-logs" && request.Method == http.MethodGet:
@@ -821,9 +823,19 @@ func operatorCanMutate(method string, parts []string) bool {
 		return true
 	case len(parts) == 3 && parts[0] == "datasources" && parts[2] == "test":
 		return true
+	case len(parts) == 3 && parts[0] == "channels" && parts[2] == "precheck":
+		return true
+	case len(parts) == 4 && parts[0] == "channels" && parts[2] == "mappings" && parts[3] == "precheck":
+		return true
+	case len(parts) == 5 && parts[0] == "channels" && parts[2] == "tasks" && isOperatorTaskAction(parts[4]):
+		return true
 	default:
 		return false
 	}
+}
+
+func isOperatorTaskAction(action string) bool {
+	return action == "start" || action == "stop" || action == "rerun"
 }
 
 func (s *Server) applyCORS(response http.ResponseWriter, request *http.Request) {

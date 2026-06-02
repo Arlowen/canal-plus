@@ -11,6 +11,7 @@ import {
 } from "react";
 import {
   ArrowsClockwise,
+  Archive,
   ArrowRight,
   CaretLeft,
   CaretRight,
@@ -48,6 +49,15 @@ import type {
   AlertRule,
   AlertRuleEvaluation,
   AlertRuleInput,
+  Channel,
+  ChannelColumnMappingInput,
+  ChannelInput,
+  ChannelMappingsResponse,
+  ChannelPrecheckResult,
+  ChannelTableMappingInput,
+  ChannelTask,
+  ChannelTaskInput,
+  ChannelTaskType,
   ClusterNode,
   ClusterSnapshot,
   Datasource,
@@ -58,11 +68,13 @@ import type {
   NodeMetricHistoryResponse,
   NodeMetricRange,
   NodeMetricSample,
+  TaskLog,
+  TaskRun,
   User
 } from "./types/api";
 
-type MainPage = "datasources" | "nodes" | "settings";
-type Page = MainPage | "nodeMonitor" | "datasourceCreate" | "datasourceEdit";
+type MainPage = "channels" | "datasources" | "nodes" | "settings";
+type Page = MainPage | "channelDetail" | "nodeMonitor" | "datasourceCreate" | "datasourceEdit";
 type NoticeTone = NoticeToastTone;
 
 type Notice = {
@@ -98,11 +110,32 @@ type DatasourceFormState = {
   remark: string;
 };
 
+type ChannelFormState = {
+  name: string;
+  description: string;
+  sourceDatasourceId: string;
+  targetDatasourceId: string;
+  tags: string;
+};
+
+type ChannelColumnMappingDraft = ChannelColumnMappingInput & {
+  localId: string;
+};
+
+type ChannelTableMappingDraft = Omit<ChannelTableMappingInput, "columns"> & {
+  localId: string;
+  primaryKeysText: string;
+  columns: ChannelColumnMappingDraft[];
+};
+
 type DatasourceFieldErrors = Partial<Record<"name" | "host" | "port" | "username" | "password" | "remark", string>>;
 type DatasourceTypeFilter = "all" | "mysql";
 type NodeTypeFilter = "all" | "master" | "standby";
+type ChannelStatusFilter = "all" | Channel["status"];
+type ChannelDetailTab = "overview" | "mappings" | "tasks" | "runs" | "logs";
 
 const navItems: Array<{ id: MainPage; label: string; icon: typeof Database }> = [
+  { id: "channels", label: "Channel", icon: ArrowRight },
   { id: "datasources", label: "数据源", icon: Database },
   { id: "nodes", label: "节点", icon: HardDrives }
 ];
@@ -659,6 +692,7 @@ function App() {
   const [tokenState, setTokenState] = useState(getToken());
   const [user, setUser] = useState<User | null>(null);
   const [page, setPage] = useState<Page>(() => pageFromPathname(window.location.pathname));
+  const [channels, setChannels] = useState<Channel[]>([]);
   const [datasources, setDatasources] = useState<Datasource[]>([]);
   const [cluster, setCluster] = useState<ClusterSnapshot | null>(null);
   const [alertRules, setAlertRules] = useState<AlertRule[]>([]);
@@ -669,14 +703,17 @@ function App() {
   const [globalError, setGlobalError] = useState<string | null>(null);
   const [serviceUnavailable, setServiceUnavailable] = useState(false);
   const [serviceRecoveryPending, setServiceRecoveryPending] = useState(false);
+  const [focusedChannelId, setFocusedChannelId] = useState<string | null>(() => channelDetailIdFromPathname(window.location.pathname));
   const [focusedNodeId, setFocusedNodeId] = useState<string | null>(() => nodeMonitorIdFromPathname(window.location.pathname));
   const [focusedDatasourceId, setFocusedDatasourceId] = useState<string | null>(() => datasourceEditIdFromPathname(window.location.pathname));
   const previousServiceUnavailable = useRef(false);
   const canManage = canManageConfig(user);
   const canTestDatasources = canTestDatasource(user);
+  const canOperateTasks = user?.role === "admin" || user?.role === "operator";
 
   const navigateToPage = useCallback((nextPage: Page, mode: "push" | "replace" = "push", resourceId?: string) => {
     setPage(nextPage);
+    setFocusedChannelId(nextPage === "channelDetail" ? resourceId ?? null : null);
     setFocusedDatasourceId(nextPage === "datasourceEdit" ? resourceId ?? null : null);
     setFocusedNodeId(nextPage === "nodeMonitor" ? resourceId ?? null : null);
     const nextPath = pathForPage(nextPage, resourceId);
@@ -701,18 +738,21 @@ function App() {
     setGlobalError(null);
     try {
       const [
+        nextChannels,
         nextDatasources,
         nextCluster,
         nextAlertRules,
         nextAlertEvaluations,
         nextAlertEvents
       ] = await Promise.all([
+        api.channels(),
         api.datasources(),
         api.cluster(),
         api.alertRules(),
         api.alertEvaluations(),
         api.alertEvents()
       ]);
+      setChannels(nextChannels);
       setDatasources(nextDatasources);
       setCluster(nextCluster);
       setAlertRules(nextAlertRules);
@@ -800,6 +840,7 @@ function App() {
     const handlePopState = () => {
       const pathname = window.location.pathname;
       setPage(pageFromPathname(pathname));
+      setFocusedChannelId(channelDetailIdFromPathname(pathname));
       setFocusedDatasourceId(datasourceEditIdFromPathname(pathname));
       setFocusedNodeId(nodeMonitorIdFromPathname(pathname));
     };
@@ -819,7 +860,7 @@ function App() {
     setToken(response.token);
     setTokenState(response.token);
     setUser(response.user);
-    navigateToPage("datasources", "replace");
+    navigateToPage("channels", "replace");
   };
 
   const handleLogout = () => {
@@ -847,6 +888,10 @@ function App() {
 
   const closeDatasourceEdit = () => {
     navigateToPage("datasources", "replace");
+  };
+
+  const openChannelDetail = (channelId: string) => {
+    navigateToPage("channelDetail", "push", channelId);
   };
 
   if (!tokenState) {
@@ -919,7 +964,7 @@ function App() {
           </aside>
 
           <main className="min-w-0">
-            {page !== "datasources" && page !== "nodes" && page !== "datasourceCreate" && page !== "datasourceEdit" && (
+            {page !== "channels" && page !== "channelDetail" && page !== "datasources" && page !== "nodes" && page !== "datasourceCreate" && page !== "datasourceEdit" && (
               <div className="flex h-[101px] flex-col justify-center gap-1 border-b border-line px-5 md:px-8 xl:flex-row xl:items-center xl:justify-between">
                 <div>
                   <h1 className="text-3xl font-semibold tracking-tight text-coal">
@@ -942,8 +987,28 @@ function App() {
               </div>
             )}
 
-            {loading && datasources.length === 0 ? (
+            {loading && channels.length === 0 && datasources.length === 0 ? (
               <ShellSkeleton />
+            ) : page === "channels" ? (
+              <ChannelsPage
+                channels={channels}
+                datasources={datasources}
+                canManage={canManage}
+                onChanged={refresh}
+                onOpenChannel={openChannelDetail}
+                pushNotice={pushNotice}
+              />
+            ) : page === "channelDetail" ? (
+              <ChannelDetailPage
+                channelId={focusedChannelId}
+                channels={channels}
+                datasources={datasources}
+                canManage={canManage}
+                canOperate={canOperateTasks}
+                onBack={() => navigateToPage("channels")}
+                onChanged={refresh}
+                pushNotice={pushNotice}
+              />
             ) : page === "datasources" ? (
               <DatasourcePage
                 datasources={datasources}
@@ -1004,6 +1069,1020 @@ function App() {
       </div>
     </div>
   );
+}
+
+function ChannelsPage({
+  channels,
+  datasources,
+  canManage,
+  onChanged,
+  onOpenChannel,
+  pushNotice
+}: {
+  channels: Channel[];
+  datasources: Datasource[];
+  canManage: boolean;
+  onChanged: (quiet?: boolean) => Promise<void>;
+  onOpenChannel: (channelId: string) => void;
+  pushNotice: (notice: Notice) => void;
+}) {
+  const [draftQuery, setDraftQuery] = useState("");
+  const [draftStatus, setDraftStatus] = useState<ChannelStatusFilter>("all");
+  const [appliedQuery, setAppliedQuery] = useState("");
+  const [appliedStatus, setAppliedStatus] = useState<ChannelStatusFilter>("all");
+  const [editingChannel, setEditingChannel] = useState<Channel | null>(null);
+  const [formOpen, setFormOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [confirmation, setConfirmation] = useState<ConfirmationDialogState | null>(null);
+
+  const filteredChannels = useMemo(() => channels.filter((channel) => {
+    const query = appliedQuery.trim().toLowerCase();
+    const source = datasourceById(datasources, channel.sourceDatasourceId);
+    const target = datasourceById(datasources, channel.targetDatasourceId);
+    const matchesQuery = !query
+      || channel.name.toLowerCase().includes(query)
+      || channel.description?.toLowerCase().includes(query)
+      || source?.name.toLowerCase().includes(query)
+      || target?.name.toLowerCase().includes(query);
+    const matchesStatus = appliedStatus === "all" || channel.status === appliedStatus;
+    return matchesQuery && matchesStatus;
+  }), [appliedQuery, appliedStatus, channels, datasources]);
+
+  const openCreate = () => {
+    if (!canManage) {
+      pushNotice({ tone: "warning", message: "权限不足" });
+      return;
+    }
+    setEditingChannel(null);
+    setFormOpen(true);
+  };
+
+  const openEdit = (channel: Channel) => {
+    if (!canManage) {
+      pushNotice({ tone: "warning", message: "权限不足" });
+      return;
+    }
+    setEditingChannel(channel);
+    setFormOpen(true);
+  };
+
+  const saveChannel = async (input: ChannelInput) => {
+    setSaving(true);
+    try {
+      if (editingChannel) {
+        await api.updateChannel(editingChannel.id, input);
+      } else {
+        await api.createChannel(input);
+      }
+      pushNotice({ tone: "success", message: "已保存" });
+      setFormOpen(false);
+      setEditingChannel(null);
+      await onChanged();
+    } catch (requestError) {
+      pushNotice({ tone: "error", message: requestError instanceof Error ? requestError.message : "保存失败" });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const confirmDelete = (channel: Channel) => {
+    setConfirmation({
+      title: "删除 Channel",
+      description: "删除后，映射、任务和运行记录会一起移除。",
+      confirmLabel: "删除",
+      confirmTone: "danger",
+      onConfirm: () => {
+        void deleteChannel(channel.id);
+      }
+    });
+  };
+
+  const deleteChannel = async (channelId: string) => {
+    if (!canManage) {
+      pushNotice({ tone: "warning", message: "权限不足" });
+      return;
+    }
+    setDeletingId(channelId);
+    try {
+      await api.deleteChannel(channelId);
+      pushNotice({ tone: "success", message: "已删除" });
+      await onChanged();
+    } catch (requestError) {
+      pushNotice({ tone: "error", message: requestError instanceof Error ? requestError.message : "删除失败" });
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  const archiveChannel = async (channel: Channel) => {
+    if (!canManage) {
+      pushNotice({ tone: "warning", message: "权限不足" });
+      return;
+    }
+    try {
+      await api.archiveChannel(channel.id);
+      pushNotice({ tone: "success", message: "已归档" });
+      await onChanged();
+    } catch (requestError) {
+      pushNotice({ tone: "error", message: requestError instanceof Error ? requestError.message : "归档失败" });
+    }
+  };
+
+  return (
+    <>
+      <section className="min-w-0 overflow-hidden">
+        <div className="flex h-[101px] items-center border-b border-line px-5 md:px-8">
+          <h1 className="text-3xl font-semibold tracking-tight text-coal">Channel</h1>
+        </div>
+
+        <div className="px-5 py-6 md:px-8">
+          <div className="mb-6 flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+              <div className="w-full sm:w-[174px]">
+                <DropdownSelect
+                  value={draftStatus}
+                  ariaLabel="状态"
+                  options={channelStatusOptions()}
+                  onChange={(nextValue) => setDraftStatus(nextValue as ChannelStatusFilter)}
+                  className="h-12 min-h-12"
+                />
+              </div>
+              <label className="relative block w-full sm:w-[344px]">
+                <MagnifyingGlass aria-hidden="true" className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
+                <TextInput
+                  className="input h-12 pl-11"
+                  value={draftQuery}
+                  placeholder="搜索 Channel、源端、目标端"
+                  onChange={(event) => setDraftQuery(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      setAppliedQuery(draftQuery);
+                      setAppliedStatus(draftStatus);
+                    }
+                  }}
+                />
+              </label>
+              <Button type="button" onClick={() => {
+                setAppliedQuery(draftQuery);
+                setAppliedStatus(draftStatus);
+              }} className="btn-primary h-12 min-w-[108px]">
+                <MagnifyingGlass size={16} />
+                查询
+              </Button>
+            </div>
+
+            <Button type="button" onClick={openCreate} disabled={!canManage || datasources.length < 2} className="btn-primary h-12 min-w-[118px] px-4">
+              <Plus size={18} />
+              新增
+            </Button>
+          </div>
+
+          {datasources.length < 2 && (
+            <div className="mb-5 border-l-4 border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
+              需要源端和目标端。
+            </div>
+          )}
+
+          <div className="overflow-x-auto rounded-lg border border-line bg-white">
+            <table className="w-full min-w-[1020px] table-fixed border-collapse text-left">
+              <colgroup>
+                <col className="w-[250px]" />
+                <col className="w-[180px]" />
+                <col className="w-[180px]" />
+                <col className="w-[100px]" />
+                <col className="w-[130px]" />
+                <col className="w-[150px]" />
+                <col className="w-[230px]" />
+              </colgroup>
+              <thead className="bg-slate-50/70 text-sm font-semibold text-slate-500">
+                <tr className="border-b border-line">
+                  <th className="whitespace-nowrap px-6 py-4">Channel</th>
+                  <th className="whitespace-nowrap px-5 py-4">源端</th>
+                  <th className="whitespace-nowrap px-5 py-4">目标端</th>
+                  <th className="whitespace-nowrap px-5 py-4">任务</th>
+                  <th className="whitespace-nowrap px-5 py-4">状态</th>
+                  <th className="whitespace-nowrap px-5 py-4">最近运行</th>
+                  <th className="whitespace-nowrap px-5 py-4">操作</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-line bg-white">
+                {filteredChannels.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="px-6 py-16">
+                      <div className="mx-auto flex max-w-sm flex-col items-center text-center">
+                        <div className="text-base font-semibold text-coal">{channels.length === 0 ? "暂无 Channel" : "无匹配"}</div>
+                        {canManage && channels.length === 0 && datasources.length >= 2 && (
+                          <Button type="button" onClick={openCreate} className="btn-primary mt-5">
+                            <Plus size={16} />
+                            新增
+                          </Button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ) : filteredChannels.map((channel) => {
+                  const source = datasourceById(datasources, channel.sourceDatasourceId);
+                  const target = datasourceById(datasources, channel.targetDatasourceId);
+                  return (
+                    <tr key={channel.id} className="transition hover:bg-slate-50/70">
+                      <td className="px-6 py-5 align-middle">
+                        <div className="min-w-0">
+                          <div className="truncate text-base font-semibold text-coal">{channel.name}</div>
+                          <div className="mt-1 truncate text-sm text-slate-500">{channel.description || channel.id}</div>
+                        </div>
+                      </td>
+                      <td className="px-5 py-5 align-middle">
+                        <DatasourceEndpointLabel datasource={source} fallback={channel.sourceDatasourceId} />
+                      </td>
+                      <td className="px-5 py-5 align-middle">
+                        <DatasourceEndpointLabel datasource={target} fallback={channel.targetDatasourceId} />
+                      </td>
+                      <td className="px-5 py-5 align-middle text-sm text-coal">{channel.runningTaskCount}/{channel.taskCount}</td>
+                      <td className="px-5 py-5 align-middle">
+                        <ChannelStatusBadge status={channel.status} />
+                      </td>
+                      <td className="px-5 py-5 align-middle text-sm text-slate-600">{channel.lastRunStatus ? taskRunStatusText(channel.lastRunStatus) : "-"}</td>
+                      <td className="px-5 py-5 align-middle">
+                        <div className="flex items-center gap-2">
+                          <Button type="button" onClick={() => onOpenChannel(channel.id)} className="btn-secondary h-9 px-3">
+                            详情
+                          </Button>
+                          {canManage && (
+                            <IconActionButton label="编辑" onClick={() => openEdit(channel)}>
+                              <PencilSimple size={18} />
+                            </IconActionButton>
+                          )}
+                          {canManage && (
+                            <IconActionButton label="归档" onClick={() => void archiveChannel(channel)} disabled={channel.status === "archived"}>
+                              <ArchiveIcon />
+                            </IconActionButton>
+                          )}
+                          {canManage && (
+                            <IconActionButton label={deletingId === channel.id ? "删除中" : "删除"} tone="danger" disabled={deletingId === channel.id} onClick={() => confirmDelete(channel)}>
+                              {deletingId === channel.id ? <ArrowsClockwise size={18} className="animate-spin" /> : <Trash size={18} />}
+                            </IconActionButton>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="mt-6 text-sm text-slate-600">共 {filteredChannels.length} 条</div>
+        </div>
+      </section>
+
+      <ChannelFormModal
+        open={formOpen}
+        channel={editingChannel}
+        datasources={datasources}
+        saving={saving}
+        onClose={() => {
+          setFormOpen(false);
+          setEditingChannel(null);
+        }}
+        onSubmit={saveChannel}
+      />
+
+      <ConfirmDialog
+        open={Boolean(confirmation)}
+        title={confirmation?.title || ""}
+        description={confirmation?.description || ""}
+        confirmLabel={confirmation?.confirmLabel || "确认"}
+        confirmTone={confirmation?.confirmTone}
+        onCancel={() => setConfirmation(null)}
+        onConfirm={() => {
+          const action = confirmation?.onConfirm;
+          setConfirmation(null);
+          action?.();
+        }}
+      />
+    </>
+  );
+}
+
+function ChannelFormModal({
+  open,
+  channel,
+  datasources,
+  saving,
+  onClose,
+  onSubmit
+}: {
+  open: boolean;
+  channel: Channel | null;
+  datasources: Datasource[];
+  saving: boolean;
+  onClose: () => void;
+  onSubmit: (input: ChannelInput) => Promise<void>;
+}) {
+  const [form, setForm] = useState<ChannelFormState>(() => channelFormFromChannel(channel, datasources));
+
+  useEffect(() => {
+    if (!open) return;
+    setForm(channelFormFromChannel(channel, datasources));
+  }, [channel, datasources, open]);
+
+  const sourceOptions = datasourceSelectOptions(datasources, "source");
+  const targetOptions = datasourceSelectOptions(datasources, "target");
+  const validationError = validateChannelForm(form);
+
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    if (validationError) {
+      return;
+    }
+    await onSubmit(channelFormPayload(form));
+  };
+
+  return (
+    <Modal open={open} title={channel ? "编辑 Channel" : "新增 Channel"} onClose={onClose} size="lg">
+      <form onSubmit={submit} className="grid gap-4">
+        <Field label="名称" required error={!form.name.trim() ? "必填" : undefined}>
+          <TextInput className="input" value={form.name} maxLength={80} onChange={(event) => setForm({ ...form, name: event.target.value })} />
+        </Field>
+        <div className="grid gap-4 md:grid-cols-2">
+          <Field label="源端" required>
+            <DropdownSelect value={form.sourceDatasourceId} ariaLabel="源端" options={sourceOptions} onChange={(sourceDatasourceId) => setForm({ ...form, sourceDatasourceId })} />
+          </Field>
+          <Field label="目标端" required>
+            <DropdownSelect value={form.targetDatasourceId} ariaLabel="目标端" options={targetOptions} onChange={(targetDatasourceId) => setForm({ ...form, targetDatasourceId })} />
+          </Field>
+        </div>
+        <Field label="标签">
+          <TextInput className="input" value={form.tags} placeholder="迁移, 生产" onChange={(event) => setForm({ ...form, tags: event.target.value })} />
+        </Field>
+        <Field label="描述">
+          <TextareaInput className="textarea" maxLength={300} value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} />
+        </Field>
+        <div className="flex justify-end gap-3 pt-2">
+          <Button type="button" onClick={onClose} className="btn-secondary">
+            取消
+          </Button>
+          <Button type="submit" disabled={saving || Boolean(validationError)} title={validationError || undefined} className="btn-primary">
+            {saving ? <ArrowsClockwise size={16} className="animate-spin" /> : <CheckCircle size={16} />}
+            {saving ? "保存中" : "保存"}
+          </Button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+function ChannelDetailPage({
+  channelId,
+  channels,
+  datasources,
+  canManage,
+  canOperate,
+  onBack,
+  onChanged,
+  pushNotice
+}: {
+  channelId: string | null;
+  channels: Channel[];
+  datasources: Datasource[];
+  canManage: boolean;
+  canOperate: boolean;
+  onBack: () => void;
+  onChanged: (quiet?: boolean) => Promise<void>;
+  pushNotice: (notice: Notice) => void;
+}) {
+  const channel = channelId ? channels.find((item) => item.id === channelId) ?? null : null;
+  const [activeTab, setActiveTab] = useState<ChannelDetailTab>("overview");
+  const [mappingDraft, setMappingDraft] = useState<ChannelTableMappingDraft[]>([]);
+  const [tasks, setTasks] = useState<ChannelTask[]>([]);
+  const [runs, setRuns] = useState<TaskRun[]>([]);
+  const [logs, setLogs] = useState<TaskLog[]>([]);
+  const [precheck, setPrecheck] = useState<ChannelPrecheckResult | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailBusy, setDetailBusy] = useState(false);
+  const [newTask, setNewTask] = useState<ChannelTaskInput>({ name: "", type: "schema_compare", enabled: true, config: {} });
+
+  const loadDetail = useCallback(async () => {
+    if (!channelId) return;
+    setDetailLoading(true);
+    try {
+      const [nextMappings, nextTasks, nextRuns, nextLogs] = await Promise.all([
+        api.channelMappings(channelId),
+        api.channelTasks(channelId),
+        api.channelRuns(channelId),
+        api.channelLogs(channelId)
+      ]);
+      setMappingDraft(mappingDraftFromResponse(nextMappings));
+      setTasks(nextTasks);
+      setRuns(nextRuns);
+      setLogs(nextLogs);
+    } catch (requestError) {
+      pushNotice({ tone: "error", message: requestError instanceof Error ? requestError.message : "加载失败" });
+    } finally {
+      setDetailLoading(false);
+    }
+  }, [channelId, pushNotice]);
+
+  useEffect(() => {
+    void loadDetail();
+  }, [loadDetail]);
+
+  if (!channelId || !channel) {
+    return (
+      <section>
+        <div className="flex h-[101px] items-center justify-between gap-4 border-b border-line px-5 md:px-8">
+          <h1 className="text-3xl font-semibold tracking-tight text-coal">Channel</h1>
+          <Button type="button" onClick={onBack} className="btn-secondary">
+            <ArrowRight size={14} className="rotate-180" />
+            返回
+          </Button>
+        </div>
+        <div className="p-5 md:p-6">
+          <EmptyPanel icon={ArrowRight} title="不存在" />
+        </div>
+      </section>
+    );
+  }
+
+  const source = datasourceById(datasources, channel.sourceDatasourceId);
+  const target = datasourceById(datasources, channel.targetDatasourceId);
+
+  const saveMappings = async () => {
+    if (!canManage) {
+      pushNotice({ tone: "warning", message: "权限不足" });
+      return;
+    }
+    setDetailBusy(true);
+    try {
+      const response = await api.saveChannelMappings(channel.id, { tables: mappingDraftPayload(mappingDraft) });
+      setMappingDraft(mappingDraftFromResponse(response));
+      pushNotice({ tone: "success", message: "已保存" });
+      await onChanged(true);
+      await loadDetail();
+    } catch (requestError) {
+      pushNotice({ tone: "error", message: requestError instanceof Error ? requestError.message : "保存失败" });
+    } finally {
+      setDetailBusy(false);
+    }
+  };
+
+  const runPrecheck = async () => {
+    setDetailBusy(true);
+    try {
+      const result = await api.precheckChannel(channel.id);
+      setPrecheck(result);
+      pushNotice({ tone: result.success ? "success" : "warning", message: result.success ? "预检通过" : "预检未通过" });
+    } catch (requestError) {
+      pushNotice({ tone: "error", message: requestError instanceof Error ? requestError.message : "预检失败" });
+    } finally {
+      setDetailBusy(false);
+    }
+  };
+
+  const createTask = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!canManage) {
+      pushNotice({ tone: "warning", message: "权限不足" });
+      return;
+    }
+    if (!newTask.name.trim()) {
+      pushNotice({ tone: "warning", message: "任务名称必填" });
+      return;
+    }
+    setDetailBusy(true);
+    try {
+      await api.createChannelTask(channel.id, newTask);
+      setNewTask({ name: "", type: "schema_compare", enabled: true, config: {} });
+      pushNotice({ tone: "success", message: "已保存" });
+      await onChanged(true);
+      await loadDetail();
+    } catch (requestError) {
+      pushNotice({ tone: "error", message: requestError instanceof Error ? requestError.message : "保存失败" });
+    } finally {
+      setDetailBusy(false);
+    }
+  };
+
+  const runTaskAction = async (task: ChannelTask, action: "start" | "stop" | "rerun") => {
+    if (!canOperate) {
+      pushNotice({ tone: "warning", message: "权限不足" });
+      return;
+    }
+    setDetailBusy(true);
+    try {
+      if (action === "start") {
+        await api.startChannelTask(channel.id, task.id);
+      } else if (action === "stop") {
+        await api.stopChannelTask(channel.id, task.id);
+      } else {
+        await api.rerunChannelTask(channel.id, task.id);
+      }
+      pushNotice({ tone: "success", message: action === "stop" ? "已停止" : "已启动" });
+      await onChanged(true);
+      await loadDetail();
+    } catch (requestError) {
+      pushNotice({ tone: "error", message: requestError instanceof Error ? requestError.message : "操作失败" });
+    } finally {
+      setDetailBusy(false);
+    }
+  };
+
+  const deleteTask = async (task: ChannelTask) => {
+    if (!canManage) {
+      pushNotice({ tone: "warning", message: "权限不足" });
+      return;
+    }
+    setDetailBusy(true);
+    try {
+      await api.deleteChannelTask(channel.id, task.id);
+      pushNotice({ tone: "success", message: "已删除" });
+      await onChanged(true);
+      await loadDetail();
+    } catch (requestError) {
+      pushNotice({ tone: "error", message: requestError instanceof Error ? requestError.message : "删除失败" });
+    } finally {
+      setDetailBusy(false);
+    }
+  };
+
+  return (
+    <section className="min-w-0 overflow-hidden">
+      <div className="flex min-h-[101px] flex-col justify-center gap-3 border-b border-line px-5 py-4 md:px-8 xl:flex-row xl:items-center xl:justify-between">
+        <div className="min-w-0">
+          <div className="flex min-w-0 flex-wrap items-center gap-3">
+            <h1 className="truncate text-3xl font-semibold tracking-tight text-coal">{channel.name}</h1>
+            <ChannelStatusBadge status={channel.status} />
+          </div>
+          <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-slate-500">
+            <span>{source?.name || channel.sourceDatasourceId}</span>
+            <ArrowRight size={14} />
+            <span>{target?.name || channel.targetDatasourceId}</span>
+            <span>v{channel.mappingVersion}</span>
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-2 xl:justify-end">
+          <Button type="button" onClick={onBack} className="btn-secondary h-11 px-4">
+            <ArrowRight size={16} className="rotate-180" />
+            返回
+          </Button>
+          <Button type="button" onClick={() => void runPrecheck()} disabled={detailBusy} className="btn-secondary h-11 px-4">
+            {detailBusy ? <ArrowsClockwise size={16} className="animate-spin" /> : <ShieldCheck size={16} />}
+            预检
+          </Button>
+        </div>
+      </div>
+
+      <div className="px-5 py-6 md:px-8">
+        <div className="grid gap-4 md:grid-cols-4">
+          <MetricTile label="任务" value={`${channel.runningTaskCount}/${channel.taskCount}`} />
+          <MetricTile label="映射" value={`v${channel.mappingVersion}`} />
+          <MetricTile label="运行" value={channel.lastRunStatus ? taskRunStatusText(channel.lastRunStatus) : "-"} />
+          <MetricTile label="更新" value={formatDate(channel.updatedAt)} />
+        </div>
+
+        <div className="mt-6 flex flex-wrap items-center gap-2 border-b border-line pb-4">
+          {(["overview", "mappings", "tasks", "runs", "logs"] as ChannelDetailTab[]).map((tab) => (
+            <Button
+              key={tab}
+              type="button"
+              onClick={() => setActiveTab(tab)}
+              className={cx(
+                "rounded-lg px-4 py-2 text-sm font-medium transition",
+                activeTab === tab ? "bg-accent text-white" : "text-slate-600 hover:bg-slate-50"
+              )}
+            >
+              {channelTabText(tab)}
+            </Button>
+          ))}
+        </div>
+
+        {detailLoading ? (
+          <ShellSkeleton />
+        ) : activeTab === "overview" ? (
+          <ChannelOverview
+            source={source}
+            target={target}
+            tasks={tasks}
+            runs={runs}
+            logs={logs}
+            precheck={precheck}
+          />
+        ) : activeTab === "mappings" ? (
+          <ChannelMappingsEditor
+            draft={mappingDraft}
+            busy={detailBusy}
+            canManage={canManage}
+            onChange={setMappingDraft}
+            onSave={() => void saveMappings()}
+          />
+        ) : activeTab === "tasks" ? (
+          <ChannelTasksPanel
+            tasks={tasks}
+            newTask={newTask}
+            busy={detailBusy}
+            canManage={canManage}
+            canOperate={canOperate}
+            onNewTaskChange={setNewTask}
+            onCreateTask={(event) => void createTask(event)}
+            onTaskAction={(task, action) => void runTaskAction(task, action)}
+            onDeleteTask={(task) => void deleteTask(task)}
+          />
+        ) : activeTab === "runs" ? (
+          <ChannelRunsPanel runs={runs} tasks={tasks} />
+        ) : (
+          <ChannelLogsPanel logs={logs} />
+        )}
+      </div>
+    </section>
+  );
+}
+
+function ChannelOverview({
+  source,
+  target,
+  tasks,
+  runs,
+  logs,
+  precheck
+}: {
+  source?: Datasource;
+  target?: Datasource;
+  tasks: ChannelTask[];
+  runs: TaskRun[];
+  logs: TaskLog[];
+  precheck: ChannelPrecheckResult | null;
+}) {
+  const latestError = logs.find((log) => log.level === "error");
+  return (
+    <div className="grid gap-5 pt-5 xl:grid-cols-[0.9fr_1.1fr]">
+      <div className="grid gap-4">
+        <SectionHeader title="链路" />
+        <div className="rounded-lg border border-line bg-white p-4">
+          <div className="grid gap-3 text-sm">
+            <OverviewRow label="源端" value={source ? `${source.name} · ${source.host}:${source.port}` : "-"} />
+            <OverviewRow label="目标端" value={target ? `${target.name} · ${target.host}:${target.port}` : "-"} />
+            <OverviewRow label="任务" value={`${tasks.length}`} />
+            <OverviewRow label="运行" value={`${runs.length}`} />
+          </div>
+        </div>
+        {latestError && (
+          <div className="border-l-4 border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            {latestError.message}
+          </div>
+        )}
+      </div>
+      <div className="grid gap-4">
+        <SectionHeader title="预检" />
+        {precheck ? (
+          <div className="grid gap-3">
+            {precheck.items.map((item) => (
+              <div key={item.key} className="flex items-center justify-between gap-3 rounded-lg border border-line bg-white px-4 py-3">
+                <div>
+                  <div className="font-medium text-coal">{item.label}</div>
+                  <div className="mt-1 text-sm text-slate-500">{item.message}</div>
+                </div>
+                <Badge tone={item.success ? "green" : "red"}>{item.success ? "通过" : "失败"}</Badge>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="border-y border-dashed border-line bg-slate-50/60 px-4 py-6 text-sm text-slate-500">未预检</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ChannelMappingsEditor({
+  draft,
+  busy,
+  canManage,
+  onChange,
+  onSave
+}: {
+  draft: ChannelTableMappingDraft[];
+  busy: boolean;
+  canManage: boolean;
+  onChange: (draft: ChannelTableMappingDraft[]) => void;
+  onSave: () => void;
+}) {
+  const addTable = () => {
+    onChange([
+      ...draft,
+      {
+        localId: newLocalId(),
+        sourceSchema: "",
+        sourceTable: "",
+        targetSchema: "",
+        targetTable: "",
+        primaryKeys: [],
+        primaryKeysText: "",
+        enabled: true,
+        columns: [emptyColumnDraft()]
+      }
+    ]);
+  };
+
+  const updateTable = (index: number, patch: Partial<ChannelTableMappingDraft>) => {
+    onChange(draft.map((item, itemIndex) => itemIndex === index ? { ...item, ...patch } : item));
+  };
+
+  const removeTable = (index: number) => {
+    onChange(draft.filter((_, itemIndex) => itemIndex !== index));
+  };
+
+  const updateColumn = (tableIndex: number, columnIndex: number, patch: Partial<ChannelColumnMappingDraft>) => {
+    onChange(draft.map((table, currentTableIndex) => {
+      if (currentTableIndex !== tableIndex) return table;
+      return {
+        ...table,
+        columns: table.columns.map((column, currentColumnIndex) => currentColumnIndex === columnIndex ? { ...column, ...patch } : column)
+      };
+    }));
+  };
+
+  const addColumn = (tableIndex: number) => {
+    onChange(draft.map((table, currentTableIndex) => currentTableIndex === tableIndex ? { ...table, columns: [...table.columns, emptyColumnDraft()] } : table));
+  };
+
+  const removeColumn = (tableIndex: number, columnIndex: number) => {
+    onChange(draft.map((table, currentTableIndex) => currentTableIndex === tableIndex ? { ...table, columns: table.columns.filter((_, currentColumnIndex) => currentColumnIndex !== columnIndex) } : table));
+  };
+
+  return (
+    <div className="pt-5">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <SectionHeader title="映射" />
+        <div className="flex flex-wrap gap-2">
+          <Button type="button" onClick={addTable} disabled={!canManage || busy} className="btn-secondary">
+            <Plus size={16} />
+            表
+          </Button>
+          <Button type="button" onClick={onSave} disabled={!canManage || busy} className="btn-primary">
+            {busy ? <ArrowsClockwise size={16} className="animate-spin" /> : <CheckCircle size={16} />}
+            保存
+          </Button>
+        </div>
+      </div>
+      <div className="mt-5 grid gap-5">
+        {draft.length === 0 ? (
+          <EmptyPanel icon={Database} title="暂无映射" action={canManage ? (
+            <Button type="button" onClick={addTable} className="btn-primary">
+              <Plus size={16} />
+              添加表
+            </Button>
+          ) : undefined} />
+        ) : draft.map((table, tableIndex) => (
+          <div key={table.localId} className="rounded-lg border border-line bg-white p-4">
+            <div className="grid gap-3 md:grid-cols-[1fr_1fr_1fr_1fr_1fr_auto]">
+              <TextInput className="input" placeholder="源库" disabled={!canManage} value={table.sourceSchema || ""} onChange={(event) => updateTable(tableIndex, { sourceSchema: event.target.value })} />
+              <TextInput className="input" placeholder="源表" disabled={!canManage} value={table.sourceTable} onChange={(event) => updateTable(tableIndex, { sourceTable: event.target.value })} />
+              <TextInput className="input" placeholder="目标库" disabled={!canManage} value={table.targetSchema || ""} onChange={(event) => updateTable(tableIndex, { targetSchema: event.target.value })} />
+              <TextInput className="input" placeholder="目标表" disabled={!canManage} value={table.targetTable} onChange={(event) => updateTable(tableIndex, { targetTable: event.target.value })} />
+              <TextInput className="input" placeholder="主键" disabled={!canManage} value={table.primaryKeysText} onChange={(event) => updateTable(tableIndex, { primaryKeysText: event.target.value })} />
+              <IconActionButton label="删除表" tone="danger" disabled={!canManage} onClick={() => removeTable(tableIndex)}>
+                <Trash size={18} />
+              </IconActionButton>
+            </div>
+            <div className="mt-4 overflow-x-auto">
+              <table className="w-full min-w-[820px] table-fixed text-left text-sm">
+                <colgroup>
+                  <col className="w-[150px]" />
+                  <col className="w-[120px]" />
+                  <col className="w-[150px]" />
+                  <col className="w-[120px]" />
+                  <col className="w-[90px]" />
+                  <col className="w-[90px]" />
+                  <col className="w-[80px]" />
+                </colgroup>
+                <thead className="text-xs font-semibold text-slate-500">
+                  <tr className="border-b border-line">
+                    <th className="py-2 pr-3">源列</th>
+                    <th className="py-2 pr-3">源类型</th>
+                    <th className="py-2 pr-3">目标列</th>
+                    <th className="py-2 pr-3">目标类型</th>
+                    <th className="py-2 pr-3">主键</th>
+                    <th className="py-2 pr-3">可空</th>
+                    <th className="py-2 pr-3">操作</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-line">
+                  {table.columns.map((column, columnIndex) => (
+                    <tr key={column.localId}>
+                      <td className="py-2 pr-3"><TextInput className="input h-10" disabled={!canManage} value={column.sourceColumn} onChange={(event) => updateColumn(tableIndex, columnIndex, { sourceColumn: event.target.value })} /></td>
+                      <td className="py-2 pr-3"><TextInput className="input h-10" disabled={!canManage} value={column.sourceType || ""} onChange={(event) => updateColumn(tableIndex, columnIndex, { sourceType: event.target.value })} /></td>
+                      <td className="py-2 pr-3"><TextInput className="input h-10" disabled={!canManage} value={column.targetColumn} onChange={(event) => updateColumn(tableIndex, columnIndex, { targetColumn: event.target.value })} /></td>
+                      <td className="py-2 pr-3"><TextInput className="input h-10" disabled={!canManage} value={column.targetType || ""} onChange={(event) => updateColumn(tableIndex, columnIndex, { targetType: event.target.value })} /></td>
+                      <td className="py-2 pr-3"><CheckboxInput disabled={!canManage} checked={Boolean(column.isPrimaryKey)} onChange={(event) => updateColumn(tableIndex, columnIndex, { isPrimaryKey: event.target.checked })} /></td>
+                      <td className="py-2 pr-3"><CheckboxInput disabled={!canManage} checked={Boolean(column.nullable)} onChange={(event) => updateColumn(tableIndex, columnIndex, { nullable: event.target.checked })} /></td>
+                      <td className="py-2 pr-3">
+                        <IconActionButton label="删除列" tone="danger" disabled={!canManage} onClick={() => removeColumn(tableIndex, columnIndex)}>
+                          <Trash size={18} />
+                        </IconActionButton>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <Button type="button" onClick={() => addColumn(tableIndex)} disabled={!canManage} className="btn-secondary mt-3">
+              <Plus size={16} />
+              列
+            </Button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ChannelTasksPanel({
+  tasks,
+  newTask,
+  busy,
+  canManage,
+  canOperate,
+  onNewTaskChange,
+  onCreateTask,
+  onTaskAction,
+  onDeleteTask
+}: {
+  tasks: ChannelTask[];
+  newTask: ChannelTaskInput;
+  busy: boolean;
+  canManage: boolean;
+  canOperate: boolean;
+  onNewTaskChange: (task: ChannelTaskInput) => void;
+  onCreateTask: (event: FormEvent) => void;
+  onTaskAction: (task: ChannelTask, action: "start" | "stop" | "rerun") => void;
+  onDeleteTask: (task: ChannelTask) => void;
+}) {
+  return (
+    <div className="pt-5">
+      <SectionHeader title="任务" />
+      <form onSubmit={onCreateTask} className="mt-4 grid gap-3 rounded-lg border border-line bg-slate-50/60 p-4 md:grid-cols-[minmax(0,1fr)_220px_auto]">
+        <TextInput className="input" value={newTask.name} disabled={!canManage || busy} placeholder="任务名称" onChange={(event) => onNewTaskChange({ ...newTask, name: event.target.value })} />
+        <DropdownSelect value={newTask.type} ariaLabel="任务类型" disabled={!canManage || busy} options={channelTaskTypeOptions()} onChange={(type) => onNewTaskChange({ ...newTask, type: type as ChannelTaskType })} />
+        <Button type="submit" disabled={!canManage || busy || !newTask.name.trim()} className="btn-primary">
+          <Plus size={16} />
+          新增
+        </Button>
+      </form>
+      <div className="mt-5 overflow-x-auto rounded-lg border border-line bg-white">
+        <table className="w-full min-w-[840px] table-fixed text-left">
+          <colgroup>
+            <col className="w-[220px]" />
+            <col className="w-[150px]" />
+            <col className="w-[130px]" />
+            <col className="w-[90px]" />
+            <col className="w-[140px]" />
+            <col className="w-[250px]" />
+          </colgroup>
+          <thead className="bg-slate-50/70 text-sm font-semibold text-slate-500">
+            <tr className="border-b border-line">
+              <th className="px-5 py-4">任务</th>
+              <th className="px-5 py-4">类型</th>
+              <th className="px-5 py-4">状态</th>
+              <th className="px-5 py-4">映射</th>
+              <th className="px-5 py-4">最近运行</th>
+              <th className="px-5 py-4">操作</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-line">
+            {tasks.length === 0 ? (
+              <tr><td colSpan={6} className="px-5 py-12 text-center text-sm text-slate-500">暂无任务</td></tr>
+            ) : tasks.map((task) => (
+              <tr key={task.id} className="hover:bg-slate-50/70">
+                <td className="px-5 py-4">
+                  <div className="font-semibold text-coal">{task.name}</div>
+                  <div className="mt-1 truncate text-xs text-slate-500">{task.id}</div>
+                </td>
+                <td className="px-5 py-4 text-sm text-coal">{channelTaskTypeText(task.type)}</td>
+                <td className="px-5 py-4"><ChannelTaskStatusBadge status={task.status} /></td>
+                <td className="px-5 py-4 text-sm text-slate-600">v{task.mappingVersion}</td>
+                <td className="px-5 py-4 text-sm text-slate-600">{task.lastRunStatus ? taskRunStatusText(task.lastRunStatus) : "-"}</td>
+                <td className="px-5 py-4">
+                  <div className="flex items-center gap-2">
+                    <Button type="button" onClick={() => onTaskAction(task, task.status === "running" ? "stop" : "start")} disabled={!canOperate || busy} className="btn-secondary h-9 px-3">
+                      {task.status === "running" ? "停止" : "启动"}
+                    </Button>
+                    <Button type="button" onClick={() => onTaskAction(task, "rerun")} disabled={!canOperate || busy || task.status === "running"} className="btn-secondary h-9 px-3">
+                      重跑
+                    </Button>
+                    {canManage && (
+                      <IconActionButton label="删除" tone="danger" disabled={busy || task.status === "running"} onClick={() => onDeleteTask(task)}>
+                        <Trash size={18} />
+                      </IconActionButton>
+                    )}
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function ChannelRunsPanel({ runs, tasks }: { runs: TaskRun[]; tasks: ChannelTask[] }) {
+  return (
+    <div className="pt-5">
+      <SectionHeader title="运行" />
+      <div className="mt-5 overflow-x-auto rounded-lg border border-line bg-white">
+        <table className="w-full min-w-[900px] table-fixed text-left">
+          <colgroup>
+            <col className="w-[200px]" />
+            <col className="w-[180px]" />
+            <col className="w-[110px]" />
+            <col className="w-[160px]" />
+            <col className="w-[160px]" />
+            <col className="w-[90px]" />
+            <col className="w-[90px]" />
+          </colgroup>
+          <thead className="bg-slate-50/70 text-sm font-semibold text-slate-500">
+            <tr className="border-b border-line">
+              <th className="px-5 py-4">Run</th>
+              <th className="px-5 py-4">任务</th>
+              <th className="px-5 py-4">状态</th>
+              <th className="px-5 py-4">开始</th>
+              <th className="px-5 py-4">结束</th>
+              <th className="px-5 py-4">读</th>
+              <th className="px-5 py-4">写</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-line">
+            {runs.length === 0 ? (
+              <tr><td colSpan={7} className="px-5 py-12 text-center text-sm text-slate-500">暂无运行</td></tr>
+            ) : runs.map((run) => (
+              <tr key={run.id}>
+                <td className="px-5 py-4 font-mono text-xs text-slate-600">{run.id}</td>
+                <td className="px-5 py-4 text-sm text-coal">{tasks.find((task) => task.id === run.taskId)?.name || channelTaskTypeText(run.taskType)}</td>
+                <td className="px-5 py-4"><Badge tone={run.status === "success" ? "green" : run.status === "running" ? "blue" : run.status === "failed" ? "red" : "neutral"}>{taskRunStatusText(run.status)}</Badge></td>
+                <td className="px-5 py-4 text-sm text-slate-600">{formatDate(run.startedAt)}</td>
+                <td className="px-5 py-4 text-sm text-slate-600">{run.finishedAt ? formatDate(run.finishedAt) : "-"}</td>
+                <td className="px-5 py-4 text-sm text-slate-600">{run.readRows}</td>
+                <td className="px-5 py-4 text-sm text-slate-600">{run.writtenRows}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function ChannelLogsPanel({ logs }: { logs: TaskLog[] }) {
+  return (
+    <div className="pt-5">
+      <SectionHeader title="日志" />
+      <div className="mt-5 overflow-hidden rounded-lg border border-line bg-white">
+        {logs.length === 0 ? (
+          <div className="px-5 py-12 text-center text-sm text-slate-500">暂无日志</div>
+        ) : logs.map((log) => (
+          <div key={log.id} className="border-b border-line px-5 py-3 font-mono text-xs text-slate-700 last:border-b-0">
+            [{formatDateTime(log.createdAt)}][{log.level}][{log.thread}]{log.message}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function DatasourceEndpointLabel({ datasource, fallback }: { datasource?: Datasource; fallback: string }) {
+  if (!datasource) {
+    return <span className="block truncate text-sm text-slate-400">{fallback}</span>;
+  }
+  return (
+    <span className="block min-w-0">
+      <span className="block truncate text-sm font-semibold text-coal">{datasource.name}</span>
+      <span className="mt-1 block truncate font-mono text-xs text-slate-500">{datasource.host}:{datasource.port}</span>
+    </span>
+  );
+}
+
+function MetricTile({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg border border-line bg-white p-4">
+      <div className="text-sm font-medium text-slate-500">{label}</div>
+      <div className="mt-2 truncate text-2xl font-semibold text-coal">{value}</div>
+    </div>
+  );
+}
+
+function OverviewRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-center justify-between gap-4 border-b border-line py-2 last:border-b-0">
+      <span className="text-slate-500">{label}</span>
+      <span className="truncate text-right font-medium text-coal">{value}</span>
+    </div>
+  );
+}
+
+function ArchiveIcon() {
+  return <Archive size={18} />;
 }
 
 function DatasourcePage({
@@ -4048,6 +5127,234 @@ function clampPage(page: number, totalPages: number) {
   return Math.min(Math.max(1, Math.trunc(page)), Math.max(1, totalPages));
 }
 
+function datasourceById(datasources: Datasource[], id: string) {
+  return datasources.find((datasource) => datasource.id === id);
+}
+
+function channelStatusOptions() {
+  return [
+    { value: "all", label: "全部状态" },
+    { value: "draft", label: "草稿" },
+    { value: "ready", label: "就绪" },
+    { value: "running", label: "运行中" },
+    { value: "warning", label: "告警" },
+    { value: "failed", label: "失败" },
+    { value: "stopped", label: "已停止" },
+    { value: "archived", label: "已归档" }
+  ];
+}
+
+function channelStatusText(status: Channel["status"]) {
+  const labels: Record<Channel["status"], string> = {
+    draft: "草稿",
+    ready: "就绪",
+    running: "运行中",
+    warning: "告警",
+    failed: "失败",
+    stopped: "已停止",
+    archived: "已归档"
+  };
+  return labels[status] || status;
+}
+
+function ChannelStatusBadge({ status }: { status: Channel["status"] }) {
+  const tone = status === "running"
+    ? "blue"
+    : status === "ready"
+      ? "green"
+      : status === "warning"
+        ? "yellow"
+        : status === "failed"
+          ? "red"
+          : status === "archived"
+            ? "neutral"
+            : status === "stopped"
+              ? "purple"
+              : "neutral";
+  return <Badge tone={tone}>{channelStatusText(status)}</Badge>;
+}
+
+function channelTaskTypeOptions() {
+  return [
+    { value: "schema_migration", label: "结构迁移" },
+    { value: "full_migration", label: "全量迁移" },
+    { value: "incremental_sync", label: "增量同步" },
+    { value: "schema_compare", label: "结构对比" },
+    { value: "data_validation", label: "数据校验" },
+    { value: "data_correction", label: "数据订正" }
+  ];
+}
+
+function channelTaskTypeText(type: ChannelTaskType) {
+  const option = channelTaskTypeOptions().find((item) => item.value === type);
+  return option?.label || type;
+}
+
+function channelTaskStatusText(status: ChannelTask["status"]) {
+  const labels: Record<ChannelTask["status"], string> = {
+    draft: "草稿",
+    ready: "就绪",
+    disabled: "禁用",
+    queued: "排队中",
+    running: "运行中",
+    stopping: "停止中",
+    stopped: "已停止",
+    success: "成功",
+    failed: "失败",
+    canceled: "已取消"
+  };
+  return labels[status] || status;
+}
+
+function ChannelTaskStatusBadge({ status }: { status: ChannelTask["status"] }) {
+  const tone = status === "success" || status === "ready"
+    ? "green"
+    : status === "running" || status === "queued" || status === "stopping"
+      ? "blue"
+      : status === "failed"
+        ? "red"
+        : status === "stopped"
+          ? "purple"
+          : "neutral";
+  return <Badge tone={tone}>{channelTaskStatusText(status)}</Badge>;
+}
+
+function taskRunStatusText(status: TaskRun["status"]) {
+  const labels: Record<TaskRun["status"], string> = {
+    running: "运行中",
+    stopped: "已停止",
+    success: "成功",
+    failed: "失败",
+    canceled: "已取消"
+  };
+  return labels[status] || status;
+}
+
+function channelTabText(tab: ChannelDetailTab) {
+  const labels: Record<ChannelDetailTab, string> = {
+    overview: "概览",
+    mappings: "映射",
+    tasks: "任务",
+    runs: "运行",
+    logs: "日志"
+  };
+  return labels[tab];
+}
+
+function datasourceSelectOptions(datasources: Datasource[], purpose: DatasourcePurpose) {
+  const filtered = datasources.filter((datasource) => datasource.purpose === purpose || datasource.purpose === "general" || !datasource.purpose);
+  const candidates = filtered.length > 0 ? filtered : datasources;
+  if (candidates.length === 0) {
+    return [{ value: "", label: "暂无数据源", disabled: true }];
+  }
+  return candidates.map((datasource) => ({
+    value: datasource.id,
+    label: datasource.name,
+    description: `${datasource.host}:${datasource.port}`,
+    icon: <DatasourceTypeLogo type={datasource.type} className="h-5 w-5" />
+  }));
+}
+
+function channelFormFromChannel(channel: Channel | null, datasources: Datasource[]): ChannelFormState {
+  return {
+    name: channel?.name || "",
+    description: channel?.description || "",
+    sourceDatasourceId: channel?.sourceDatasourceId || datasources.find((item) => item.purpose === "source")?.id || datasources[0]?.id || "",
+    targetDatasourceId: channel?.targetDatasourceId || datasources.find((item) => item.purpose === "target")?.id || datasources.find((item) => item.id !== datasources[0]?.id)?.id || "",
+    tags: channel?.tags?.join(", ") || ""
+  };
+}
+
+function validateChannelForm(form: ChannelFormState) {
+  if (!form.name.trim()) return "名称必填";
+  if (!form.sourceDatasourceId) return "源端必填";
+  if (!form.targetDatasourceId) return "目标端必填";
+  return null;
+}
+
+function channelFormPayload(form: ChannelFormState): ChannelInput {
+  return {
+    name: form.name.trim(),
+    description: form.description.trim(),
+    sourceDatasourceId: form.sourceDatasourceId,
+    targetDatasourceId: form.targetDatasourceId,
+    tags: splitList(form.tags)
+  };
+}
+
+function splitList(value: string) {
+  return value.split(/[,，\n]/).map((item) => item.trim()).filter(Boolean);
+}
+
+function mappingDraftFromResponse(response: ChannelMappingsResponse): ChannelTableMappingDraft[] {
+  return response.tables.map((table) => ({
+    id: table.id,
+    localId: table.id || newLocalId(),
+    sourceSchema: table.sourceSchema || "",
+    sourceTable: table.sourceTable,
+    targetSchema: table.targetSchema || "",
+    targetTable: table.targetTable,
+    primaryKeys: table.primaryKeys,
+    primaryKeysText: table.primaryKeys.join(", "),
+    enabled: table.enabled,
+    columns: response.columns
+      .filter((column) => column.tableMappingId === table.id)
+      .map((column) => ({
+        id: column.id,
+        localId: column.id || newLocalId(),
+        sourceColumn: column.sourceColumn,
+        sourceType: column.sourceType || "",
+        targetColumn: column.targetColumn,
+        targetType: column.targetType || "",
+        isPrimaryKey: column.isPrimaryKey,
+        nullable: column.nullable,
+        defaultValue: column.defaultValue || "",
+        enabled: column.enabled
+      }))
+  }));
+}
+
+function mappingDraftPayload(draft: ChannelTableMappingDraft[]): ChannelTableMappingInput[] {
+  return draft.map((table) => ({
+    id: table.id,
+    sourceSchema: table.sourceSchema?.trim() || "",
+    sourceTable: table.sourceTable.trim(),
+    targetSchema: table.targetSchema?.trim() || "",
+    targetTable: table.targetTable.trim(),
+    primaryKeys: splitList(table.primaryKeysText),
+    enabled: table.enabled ?? true,
+    columns: table.columns.map((column) => ({
+      id: column.id,
+      sourceColumn: column.sourceColumn.trim(),
+      sourceType: column.sourceType?.trim() || "",
+      targetColumn: column.targetColumn.trim(),
+      targetType: column.targetType?.trim() || "",
+      isPrimaryKey: Boolean(column.isPrimaryKey),
+      nullable: Boolean(column.nullable),
+      defaultValue: column.defaultValue?.trim() || "",
+      enabled: column.enabled ?? true
+    }))
+  }));
+}
+
+function emptyColumnDraft(): ChannelColumnMappingDraft {
+  return {
+    localId: newLocalId(),
+    sourceColumn: "",
+    sourceType: "",
+    targetColumn: "",
+    targetType: "",
+    isPrimaryKey: false,
+    nullable: true,
+    defaultValue: "",
+    enabled: true
+  };
+}
+
+function newLocalId() {
+  return `local-${Math.random().toString(36).slice(2, 10)}`;
+}
+
 function paginationRange(currentPage: number, totalPages: number) {
   const visibleCount = 5;
   const normalizedTotal = Math.max(1, totalPages);
@@ -4225,7 +5532,9 @@ function datasourceAuthTypeFromItem(item: Datasource): DatasourceAuthType {
 }
 
 function pageFromPathname(pathname: string): Page {
-  if (pathname === "/" || pathname === "/datasources") return "datasources";
+  if (pathname === "/" || pathname === "/channels") return "channels";
+  if (channelDetailIdFromPathname(pathname)) return "channelDetail";
+  if (pathname === "/datasources") return "datasources";
   if (pathname === "/datasource/create") return "datasourceCreate";
   if (datasourceEditIdFromPathname(pathname)) return "datasourceEdit";
   if (nodeMonitorIdFromPathname(pathname)) return "nodeMonitor";
@@ -4234,6 +5543,8 @@ function pageFromPathname(pathname: string): Page {
 }
 
 function pathForPage(page: Page, resourceId?: string) {
+  if (page === "channels") return "/channels";
+  if (page === "channelDetail" && resourceId) return `/channels/${encodeURIComponent(resourceId)}`;
   if (page === "datasources") return "/datasources";
   if (page === "datasourceCreate") return "/datasource/create";
   if (page === "datasourceEdit" && resourceId) return `/datasource/${encodeURIComponent(resourceId)}/edit`;
@@ -4243,6 +5554,7 @@ function pathForPage(page: Page, resourceId?: string) {
 }
 
 function navPage(page: Page): MainPage {
+  if (page === "channelDetail") return "channels";
   if (page === "datasourceCreate") return "datasources";
   if (page === "datasourceEdit") return "datasources";
   if (page === "nodeMonitor") return "nodes";
@@ -4250,6 +5562,8 @@ function navPage(page: Page): MainPage {
 }
 
 function pageTitle(page: Page) {
+  if (page === "channels") return "Channel";
+  if (page === "channelDetail") return "Channel";
   if (page === "datasources") return "数据源";
   if (page === "datasourceCreate") return "新增数据源";
   if (page === "datasourceEdit") return "编辑数据源";
@@ -4259,12 +5573,24 @@ function pageTitle(page: Page) {
 }
 
 function pageDescription(page: Page) {
+  if (page === "channels") return "";
+  if (page === "channelDetail") return "";
   if (page === "datasources") return "";
   if (page === "datasourceCreate") return "";
   if (page === "datasourceEdit") return "";
   if (page === "nodes") return "";
   if (page === "settings") return "告警";
   return "";
+}
+
+function channelDetailIdFromPathname(pathname: string) {
+  const match = pathname.match(/^\/channels\/([^/]+)$/);
+  if (!match) return null;
+  try {
+    return decodeURIComponent(match[1]);
+  } catch {
+    return match[1];
+  }
 }
 
 function datasourceEditIdFromPathname(pathname: string) {

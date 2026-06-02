@@ -124,6 +124,230 @@ type DatasourceTestRequest struct {
 	NodeID string `json:"nodeId,omitempty"`
 }
 
+type ChannelStatus string
+
+const (
+	ChannelStatusDraft    ChannelStatus = "draft"
+	ChannelStatusReady    ChannelStatus = "ready"
+	ChannelStatusRunning  ChannelStatus = "running"
+	ChannelStatusWarning  ChannelStatus = "warning"
+	ChannelStatusFailed   ChannelStatus = "failed"
+	ChannelStatusStopped  ChannelStatus = "stopped"
+	ChannelStatusArchived ChannelStatus = "archived"
+)
+
+type ChannelTaskType string
+
+const (
+	ChannelTaskSchemaMigration ChannelTaskType = "schema_migration"
+	ChannelTaskFullMigration   ChannelTaskType = "full_migration"
+	ChannelTaskIncrementalSync ChannelTaskType = "incremental_sync"
+	ChannelTaskSchemaCompare   ChannelTaskType = "schema_compare"
+	ChannelTaskDataValidation  ChannelTaskType = "data_validation"
+	ChannelTaskDataCorrection  ChannelTaskType = "data_correction"
+)
+
+type ChannelTaskStatus string
+
+const (
+	ChannelTaskDraft    ChannelTaskStatus = "draft"
+	ChannelTaskReady    ChannelTaskStatus = "ready"
+	ChannelTaskDisabled ChannelTaskStatus = "disabled"
+	ChannelTaskQueued   ChannelTaskStatus = "queued"
+	ChannelTaskRunning  ChannelTaskStatus = "running"
+	ChannelTaskStopping ChannelTaskStatus = "stopping"
+	ChannelTaskStopped  ChannelTaskStatus = "stopped"
+	ChannelTaskSuccess  ChannelTaskStatus = "success"
+	ChannelTaskFailed   ChannelTaskStatus = "failed"
+	ChannelTaskCanceled ChannelTaskStatus = "canceled"
+)
+
+type TaskRunStatus string
+
+const (
+	TaskRunRunning  TaskRunStatus = "running"
+	TaskRunStopped  TaskRunStatus = "stopped"
+	TaskRunSuccess  TaskRunStatus = "success"
+	TaskRunFailed   TaskRunStatus = "failed"
+	TaskRunCanceled TaskRunStatus = "canceled"
+)
+
+type Channel struct {
+	ID                 string        `json:"id"`
+	Name               string        `json:"name"`
+	Description        string        `json:"description,omitempty"`
+	SourceDatasourceID string        `json:"sourceDatasourceId"`
+	TargetDatasourceID string        `json:"targetDatasourceId"`
+	Status             ChannelStatus `json:"status"`
+	Owner              string        `json:"owner,omitempty"`
+	Tags               []string      `json:"tags"`
+	MappingVersion     int           `json:"mappingVersion"`
+	TaskCount          int           `json:"taskCount"`
+	RunningTaskCount   int           `json:"runningTaskCount"`
+	LastRunID          string        `json:"lastRunId,omitempty"`
+	LastRunStatus      TaskRunStatus `json:"lastRunStatus,omitempty"`
+	CreatedAt          string        `json:"createdAt"`
+	UpdatedAt          string        `json:"updatedAt"`
+	ArchivedAt         string        `json:"archivedAt,omitempty"`
+}
+
+type ChannelInput struct {
+	Name               string   `json:"name"`
+	Description        string   `json:"description,omitempty"`
+	SourceDatasourceID string   `json:"sourceDatasourceId"`
+	TargetDatasourceID string   `json:"targetDatasourceId"`
+	Tags               []string `json:"tags,omitempty"`
+}
+
+type ChannelTableMapping struct {
+	ID             string   `json:"id"`
+	ChannelID      string   `json:"channelId"`
+	MappingVersion int      `json:"mappingVersion"`
+	SourceSchema   string   `json:"sourceSchema,omitempty"`
+	SourceTable    string   `json:"sourceTable"`
+	TargetSchema   string   `json:"targetSchema,omitempty"`
+	TargetTable    string   `json:"targetTable"`
+	PrimaryKeys    []string `json:"primaryKeys"`
+	Enabled        bool     `json:"enabled"`
+	CreatedAt      string   `json:"createdAt"`
+	UpdatedAt      string   `json:"updatedAt"`
+}
+
+type ChannelColumnMapping struct {
+	ID             string `json:"id"`
+	ChannelID      string `json:"channelId"`
+	TableMappingID string `json:"tableMappingId"`
+	MappingVersion int    `json:"mappingVersion"`
+	SourceColumn   string `json:"sourceColumn"`
+	SourceType     string `json:"sourceType,omitempty"`
+	TargetColumn   string `json:"targetColumn"`
+	TargetType     string `json:"targetType,omitempty"`
+	IsPrimaryKey   bool   `json:"isPrimaryKey"`
+	Nullable       bool   `json:"nullable"`
+	DefaultValue   string `json:"defaultValue,omitempty"`
+	Enabled        bool   `json:"enabled"`
+	CreatedAt      string `json:"createdAt"`
+	UpdatedAt      string `json:"updatedAt"`
+}
+
+type ChannelColumnMappingInput struct {
+	ID           string `json:"id,omitempty"`
+	SourceColumn string `json:"sourceColumn"`
+	SourceType   string `json:"sourceType,omitempty"`
+	TargetColumn string `json:"targetColumn"`
+	TargetType   string `json:"targetType,omitempty"`
+	IsPrimaryKey bool   `json:"isPrimaryKey,omitempty"`
+	Nullable     bool   `json:"nullable,omitempty"`
+	DefaultValue string `json:"defaultValue,omitempty"`
+	Enabled      *bool  `json:"enabled,omitempty"`
+}
+
+type ChannelTableMappingInput struct {
+	ID           string                      `json:"id,omitempty"`
+	SourceSchema string                      `json:"sourceSchema,omitempty"`
+	SourceTable  string                      `json:"sourceTable"`
+	TargetSchema string                      `json:"targetSchema,omitempty"`
+	TargetTable  string                      `json:"targetTable"`
+	PrimaryKeys  []string                    `json:"primaryKeys,omitempty"`
+	Enabled      *bool                       `json:"enabled,omitempty"`
+	Columns      []ChannelColumnMappingInput `json:"columns,omitempty"`
+}
+
+type ChannelMappingsInput struct {
+	Tables []ChannelTableMappingInput `json:"tables"`
+}
+
+type ChannelMappingsResponse struct {
+	ChannelID      string                 `json:"channelId"`
+	MappingVersion int                    `json:"mappingVersion"`
+	Tables         []ChannelTableMapping  `json:"tables"`
+	Columns        []ChannelColumnMapping `json:"columns"`
+}
+
+type ChannelTask struct {
+	ID             string            `json:"id"`
+	ChannelID      string            `json:"channelId"`
+	Name           string            `json:"name"`
+	Type           ChannelTaskType   `json:"type"`
+	Status         ChannelTaskStatus `json:"status"`
+	Enabled        bool              `json:"enabled"`
+	DependsOn      []string          `json:"dependsOn"`
+	MappingVersion int               `json:"mappingVersion"`
+	Config         map[string]string `json:"config"`
+	LastRunID      string            `json:"lastRunId,omitempty"`
+	LastRunStatus  TaskRunStatus     `json:"lastRunStatus,omitempty"`
+	CreatedAt      string            `json:"createdAt"`
+	UpdatedAt      string            `json:"updatedAt"`
+}
+
+type ChannelTaskInput struct {
+	Name      string            `json:"name"`
+	Type      ChannelTaskType   `json:"type"`
+	Enabled   *bool             `json:"enabled,omitempty"`
+	DependsOn []string          `json:"dependsOn,omitempty"`
+	Config    map[string]string `json:"config,omitempty"`
+}
+
+type TaskRun struct {
+	ID           string          `json:"id"`
+	ChannelID    string          `json:"channelId"`
+	TaskID       string          `json:"taskId"`
+	TaskType     ChannelTaskType `json:"taskType"`
+	Status       TaskRunStatus   `json:"status"`
+	StartedAt    string          `json:"startedAt"`
+	FinishedAt   string          `json:"finishedAt,omitempty"`
+	ReadRows     int             `json:"readRows"`
+	WrittenRows  int             `json:"writtenRows"`
+	FailedRows   int             `json:"failedRows"`
+	DiffRows     int             `json:"diffRows"`
+	ErrorMessage string          `json:"errorMessage,omitempty"`
+	CreatedBy    string          `json:"createdBy"`
+}
+
+type TaskLog struct {
+	ID        string `json:"id"`
+	ChannelID string `json:"channelId"`
+	TaskID    string `json:"taskId,omitempty"`
+	RunID     string `json:"runId,omitempty"`
+	Level     string `json:"level"`
+	Thread    string `json:"thread"`
+	Message   string `json:"message"`
+	CreatedAt string `json:"createdAt"`
+}
+
+type ChannelPrecheckItem struct {
+	Key     string `json:"key"`
+	Label   string `json:"label"`
+	Success bool   `json:"success"`
+	Message string `json:"message"`
+}
+
+type ChannelPrecheckResult struct {
+	Success   bool                  `json:"success"`
+	CheckedAt string                `json:"checkedAt"`
+	Items     []ChannelPrecheckItem `json:"items"`
+}
+
+type DataValidationDiff struct {
+	ID               string `json:"id"`
+	ChannelID        string `json:"channelId"`
+	ValidationTaskID string `json:"validationTaskId"`
+	ValidationRunID  string `json:"validationRunId"`
+	TableMappingID   string `json:"tableMappingId"`
+	SourceTable      string `json:"sourceTable"`
+	TargetTable      string `json:"targetTable"`
+	PrimaryKeyJSON   string `json:"primaryKeyJson"`
+	DiffType         string `json:"diffType"`
+	DiffColumnsJSON  string `json:"diffColumnsJson"`
+	SourceDigest     string `json:"sourceDigest,omitempty"`
+	TargetDigest     string `json:"targetDigest,omitempty"`
+	CorrectionStatus string `json:"correctionStatus"`
+	CorrectionTaskID string `json:"correctionTaskId,omitempty"`
+	CorrectionRunID  string `json:"correctionRunId,omitempty"`
+	CreatedAt        string `json:"createdAt"`
+	UpdatedAt        string `json:"updatedAt"`
+}
+
 type OperationLog struct {
 	ID         string `json:"id"`
 	Actor      string `json:"actor"`
@@ -318,13 +542,20 @@ type ClusterMasterNodeCountInput struct {
 }
 
 type DatabaseShape struct {
-	Users           []User          `json:"users"`
-	Datasources     []Datasource    `json:"datasources"`
-	OperationLogs   []OperationLog  `json:"operationLogs"`
-	AlertRules      []AlertRule     `json:"alertRules"`
-	AlertEvents     []AlertEvent    `json:"alertEvents"`
-	Nodes           []ClusterNode   `json:"nodes"`
-	ClusterSettings ClusterSettings `json:"clusterSettings"`
+	Users                 []User                 `json:"users"`
+	Datasources           []Datasource           `json:"datasources"`
+	Channels              []Channel              `json:"channels"`
+	ChannelTableMappings  []ChannelTableMapping  `json:"channelTableMappings"`
+	ChannelColumnMappings []ChannelColumnMapping `json:"channelColumnMappings"`
+	ChannelTasks          []ChannelTask          `json:"channelTasks"`
+	TaskRuns              []TaskRun              `json:"taskRuns"`
+	TaskLogs              []TaskLog              `json:"taskLogs"`
+	DataValidationDiffs   []DataValidationDiff   `json:"dataValidationDiffs"`
+	OperationLogs         []OperationLog         `json:"operationLogs"`
+	AlertRules            []AlertRule            `json:"alertRules"`
+	AlertEvents           []AlertEvent           `json:"alertEvents"`
+	Nodes                 []ClusterNode          `json:"nodes"`
+	ClusterSettings       ClusterSettings        `json:"clusterSettings"`
 }
 
 type RuntimeConfig struct {

@@ -56,11 +56,172 @@ export interface DatasourceTestResult {
   message: string;
 }
 
+export type ChannelStatus = "draft" | "ready" | "running" | "warning" | "failed" | "stopped" | "archived";
+export type ChannelTaskType = "schema_migration" | "full_migration" | "incremental_sync" | "schema_compare" | "data_validation" | "data_correction";
+export type ChannelTaskStatus = "draft" | "ready" | "disabled" | "queued" | "running" | "stopping" | "stopped" | "success" | "failed" | "canceled";
+export type TaskRunStatus = "running" | "stopped" | "success" | "failed" | "canceled";
+
+export interface Channel {
+  id: string;
+  name: string;
+  description?: string;
+  sourceDatasourceId: string;
+  targetDatasourceId: string;
+  status: ChannelStatus;
+  owner?: string;
+  tags: string[];
+  mappingVersion: number;
+  taskCount: number;
+  runningTaskCount: number;
+  lastRunId?: string;
+  lastRunStatus?: TaskRunStatus;
+  createdAt: string;
+  updatedAt: string;
+  archivedAt?: string;
+}
+
+export interface ChannelInput {
+  name: string;
+  description?: string;
+  sourceDatasourceId: string;
+  targetDatasourceId: string;
+  tags?: string[];
+}
+
+export interface ChannelTableMapping {
+  id: string;
+  channelId: string;
+  mappingVersion: number;
+  sourceSchema?: string;
+  sourceTable: string;
+  targetSchema?: string;
+  targetTable: string;
+  primaryKeys: string[];
+  enabled: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ChannelColumnMapping {
+  id: string;
+  channelId: string;
+  tableMappingId: string;
+  mappingVersion: number;
+  sourceColumn: string;
+  sourceType?: string;
+  targetColumn: string;
+  targetType?: string;
+  isPrimaryKey: boolean;
+  nullable: boolean;
+  defaultValue?: string;
+  enabled: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ChannelColumnMappingInput {
+  id?: string;
+  sourceColumn: string;
+  sourceType?: string;
+  targetColumn: string;
+  targetType?: string;
+  isPrimaryKey?: boolean;
+  nullable?: boolean;
+  defaultValue?: string;
+  enabled?: boolean;
+}
+
+export interface ChannelTableMappingInput {
+  id?: string;
+  sourceSchema?: string;
+  sourceTable: string;
+  targetSchema?: string;
+  targetTable: string;
+  primaryKeys?: string[];
+  enabled?: boolean;
+  columns?: ChannelColumnMappingInput[];
+}
+
+export interface ChannelMappingsInput {
+  tables: ChannelTableMappingInput[];
+}
+
+export interface ChannelMappingsResponse {
+  channelId: string;
+  mappingVersion: number;
+  tables: ChannelTableMapping[];
+  columns: ChannelColumnMapping[];
+}
+
+export interface ChannelTask {
+  id: string;
+  channelId: string;
+  name: string;
+  type: ChannelTaskType;
+  status: ChannelTaskStatus;
+  enabled: boolean;
+  dependsOn: string[];
+  mappingVersion: number;
+  config: Record<string, string>;
+  lastRunId?: string;
+  lastRunStatus?: TaskRunStatus;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ChannelTaskInput {
+  name: string;
+  type: ChannelTaskType;
+  enabled?: boolean;
+  dependsOn?: string[];
+  config?: Record<string, string>;
+}
+
+export interface TaskRun {
+  id: string;
+  channelId: string;
+  taskId: string;
+  taskType: ChannelTaskType;
+  status: TaskRunStatus;
+  startedAt: string;
+  finishedAt?: string;
+  readRows: number;
+  writtenRows: number;
+  failedRows: number;
+  diffRows: number;
+  errorMessage?: string;
+  createdBy: string;
+}
+
+export interface TaskLog {
+  id: string;
+  channelId: string;
+  taskId?: string;
+  runId?: string;
+  level: "info" | "warn" | "error";
+  thread: string;
+  message: string;
+  createdAt: string;
+}
+
+export interface ChannelPrecheckItem {
+  key: string;
+  label: string;
+  success: boolean;
+  message: string;
+}
+
+export interface ChannelPrecheckResult {
+  success: boolean;
+  checkedAt: string;
+  items: ChannelPrecheckItem[];
+}
+
 export interface OperationLog {
   id: string;
   actor: string;
   action: string;
-  targetType: "datasource" | "auth" | "cluster_node" | "alert_rule" | string;
+  targetType: "datasource" | "auth" | "cluster_node" | "alert_rule" | "channel" | "channel_task" | string;
   targetId?: string;
   detail: string;
   createdAt: string;

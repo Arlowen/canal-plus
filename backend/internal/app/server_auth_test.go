@@ -1,6 +1,7 @@
 package app
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -40,6 +41,44 @@ func createTestDatasource(t *testing.T, store *Store) Datasource {
 		t.Fatalf("create test datasource: %v", err)
 	}
 	return datasource
+}
+
+func createNamedTestDatasource(t *testing.T, store *Store, name string, purpose DatasourcePurpose) Datasource {
+	t.Helper()
+	password, err := encryptText("test-password")
+	if err != nil {
+		t.Fatalf("encrypt test datasource password: %v", err)
+	}
+	datasource, err := store.CreateDatasource(Datasource{
+		Name:           name,
+		Type:           DatasourceTypeMySQL,
+		Purpose:        purpose,
+		Host:           "127.0.0.1",
+		Port:           3306,
+		Username:       "tester",
+		PasswordSecret: password,
+		DefaultSchema:  "testdb",
+	}, DatasourceTestResult{
+		Success:   true,
+		Status:    DatasourceAvailable,
+		Version:   "MySQL 8.0.44",
+		LatencyMS: 1,
+		TestedAt:  now(),
+		Message:   "Connection available",
+	})
+	if err != nil {
+		t.Fatalf("create test datasource %s: %v", name, err)
+	}
+	return datasource
+}
+
+func jsonBody(t *testing.T, value any) string {
+	t.Helper()
+	bytes, err := json.Marshal(value)
+	if err != nil {
+		t.Fatalf("marshal json body: %v", err)
+	}
+	return string(bytes)
 }
 
 func authRequest(method string, path string, token string, body string) *http.Request {
@@ -98,6 +137,11 @@ func TestOperatorCannotMutateConfigurationOrCluster(t *testing.T) {
 	alertResponse := serveTestRequest(server, authRequest(http.MethodPost, "/api/alert-rules", operatorToken, `{}`))
 	if alertResponse.Code != http.StatusForbidden {
 		t.Fatalf("operator create alert rule status = %d body = %s", alertResponse.Code, alertResponse.Body.String())
+	}
+
+	channelResponse := serveTestRequest(server, authRequest(http.MethodPost, "/api/channels", operatorToken, `{}`))
+	if channelResponse.Code != http.StatusForbidden {
+		t.Fatalf("operator create channel status = %d body = %s", channelResponse.Code, channelResponse.Body.String())
 	}
 }
 
@@ -303,6 +347,103 @@ func TestAdminCanMutateConfiguration(t *testing.T) {
 	))
 	if response.Code != http.StatusCreated {
 		t.Fatalf("admin create datasource status = %d body = %s", response.Code, response.Body.String())
+	}
+}
+
+func TestAdminCanManageChannelAndRunTask(t *testing.T) {
+	server := newTestServer(t)
+	adminToken := tokenFor("user-admin")
+	source := createNamedTestDatasource(t, server.store, "source", DatasourcePurposeSource)
+	target := createNamedTestDatasource(t, server.store, "target", DatasourcePurposeTarget)
+
+	channelResponse := serveTestRequest(server, authRequest(http.MethodPost, "/api/channels", adminToken, jsonBody(t, map[string]any{
+		"name":               "订单同步",
+		"sourceDatasourceId": source.ID,
+		"targetDatasourceId": target.ID,
+	})))
+	if channelResponse.Code != http.StatusCreated {
+		t.Fatalf("admin create channel status = %d body = %s", channelResponse.Code, channelResponse.Body.String())
+	}
+	var channel Channel
+	if err := json.NewDecoder(channelResponse.Body).Decode(&channel); err != nil {
+		t.Fatalf("decode channel: %v", err)
+	}
+
+	mappingResponse := serveTestRequest(server, authRequest(http.MethodPut, "/api/channels/"+channel.ID+"/mappings", adminToken, jsonBody(t, map[string]any{
+		"tables": []map[string]any{{
+			"sourceTable": "A",
+			"targetTable": "B",
+			"primaryKeys": []string{"a"},
+			"columns": []map[string]any{
+				{"sourceColumn": "a", "targetColumn": "A", "isPrimaryKey": true},
+				{"sourceColumn": "b", "targetColumn": "B"},
+			},
+		}},
+	})))
+	if mappingResponse.Code != http.StatusOK {
+		t.Fatalf("admin save mappings status = %d body = %s", mappingResponse.Code, mappingResponse.Body.String())
+	}
+
+	taskResponse := serveTestRequest(server, authRequest(http.MethodPost, "/api/channels/"+channel.ID+"/tasks", adminToken, jsonBody(t, map[string]any{
+		"name": "结构对比",
+		"type": "schema_compare",
+	})))
+	if taskResponse.Code != http.StatusCreated {
+		t.Fatalf("admin create task status = %d body = %s", taskResponse.Code, taskResponse.Body.String())
+	}
+	var task ChannelTask
+	if err := json.NewDecoder(taskResponse.Body).Decode(&task); err != nil {
+		t.Fatalf("decode task: %v", err)
+	}
+
+	startResponse := serveTestRequest(server, authRequest(http.MethodPost, "/api/channels/"+channel.ID+"/tasks/"+task.ID+"/start", adminToken, ""))
+	if startResponse.Code != http.StatusOK {
+		t.Fatalf("admin start task status = %d body = %s", startResponse.Code, startResponse.Body.String())
+	}
+}
+
+func TestOperatorCanRunChannelTaskButCannotEdit(t *testing.T) {
+	server := newTestServer(t)
+	operatorToken := tokenFor("user-operator")
+	source := createNamedTestDatasource(t, server.store, "source", DatasourcePurposeSource)
+	target := createNamedTestDatasource(t, server.store, "target", DatasourcePurposeTarget)
+	channel, err := server.store.CreateChannel(ChannelInput{
+		Name:               "订单同步",
+		SourceDatasourceID: source.ID,
+		TargetDatasourceID: target.ID,
+	}, "admin")
+	if err != nil {
+		t.Fatalf("create channel: %v", err)
+	}
+	if _, ok, err := server.store.SaveChannelMappings(channel.ID, ChannelMappingsInput{
+		Tables: []ChannelTableMappingInput{{
+			SourceTable: "A",
+			TargetTable: "B",
+			PrimaryKeys: []string{"a"},
+			Columns: []ChannelColumnMappingInput{
+				{SourceColumn: "a", TargetColumn: "A", IsPrimaryKey: true},
+				{SourceColumn: "b", TargetColumn: "B"},
+			},
+		}},
+	}, "admin"); err != nil || !ok {
+		t.Fatalf("save mappings ok=%v err=%v", ok, err)
+	}
+	task, ok, err := server.store.CreateChannelTask(channel.ID, ChannelTaskInput{Name: "结构对比", Type: ChannelTaskSchemaCompare}, "admin")
+	if err != nil || !ok {
+		t.Fatalf("create task ok=%v err=%v", ok, err)
+	}
+
+	editResponse := serveTestRequest(server, authRequest(http.MethodPut, "/api/channels/"+channel.ID+"/tasks/"+task.ID, operatorToken, jsonBody(t, map[string]any{
+		"name": "blocked",
+		"type": "schema_compare",
+	})))
+	if editResponse.Code != http.StatusForbidden {
+		t.Fatalf("operator edit task status = %d body = %s", editResponse.Code, editResponse.Body.String())
+	}
+
+	startResponse := serveTestRequest(server, authRequest(http.MethodPost, "/api/channels/"+channel.ID+"/tasks/"+task.ID+"/start", operatorToken, ""))
+	if startResponse.Code != http.StatusOK {
+		t.Fatalf("operator start task status = %d body = %s", startResponse.Code, startResponse.Body.String())
 	}
 }
 

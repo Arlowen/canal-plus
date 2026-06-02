@@ -34,6 +34,126 @@ type datasourceRow struct {
 	UpdatedAt         string            `json:"updatedAt" gorm:"size:64;index"`
 }
 
+type channelRow struct {
+	SortOrder          int           `json:"-" gorm:"not null;index"`
+	ID                 string        `json:"id" gorm:"primaryKey;size:64"`
+	Name               string        `json:"name" gorm:"size:255;not null"`
+	Description        string        `json:"description,omitempty" gorm:"type:text"`
+	SourceDatasourceID string        `json:"sourceDatasourceId" gorm:"size:64;not null;index"`
+	TargetDatasourceID string        `json:"targetDatasourceId" gorm:"size:64;not null;index"`
+	Status             ChannelStatus `json:"status" gorm:"size:32;not null;index"`
+	Owner              string        `json:"owner,omitempty" gorm:"size:255;index"`
+	Tags               []string      `json:"tags" gorm:"type:json;serializer:json"`
+	MappingVersion     int           `json:"mappingVersion" gorm:"not null"`
+	TaskCount          int           `json:"taskCount" gorm:"not null"`
+	RunningTaskCount   int           `json:"runningTaskCount" gorm:"not null"`
+	LastRunID          string        `json:"lastRunId,omitempty" gorm:"size:64;index"`
+	LastRunStatus      TaskRunStatus `json:"lastRunStatus,omitempty" gorm:"size:32;index"`
+	CreatedAt          string        `json:"createdAt" gorm:"size:64;index"`
+	UpdatedAt          string        `json:"updatedAt" gorm:"size:64;index"`
+	ArchivedAt         string        `json:"archivedAt,omitempty" gorm:"size:64;index"`
+}
+
+type channelTableMappingRow struct {
+	SortOrder      int      `json:"-" gorm:"not null;index"`
+	ID             string   `json:"id" gorm:"primaryKey;size:64"`
+	ChannelID      string   `json:"channelId" gorm:"size:64;not null;index"`
+	MappingVersion int      `json:"mappingVersion" gorm:"not null;index"`
+	SourceSchema   string   `json:"sourceSchema,omitempty" gorm:"size:255"`
+	SourceTable    string   `json:"sourceTable" gorm:"size:255;not null;index"`
+	TargetSchema   string   `json:"targetSchema,omitempty" gorm:"size:255"`
+	TargetTable    string   `json:"targetTable" gorm:"size:255;not null;index"`
+	PrimaryKeys    []string `json:"primaryKeys" gorm:"type:json;serializer:json"`
+	Enabled        bool     `json:"enabled" gorm:"not null;index"`
+	CreatedAt      string   `json:"createdAt" gorm:"size:64;index"`
+	UpdatedAt      string   `json:"updatedAt" gorm:"size:64;index"`
+}
+
+type channelColumnMappingRow struct {
+	SortOrder      int    `json:"-" gorm:"not null;index"`
+	ID             string `json:"id" gorm:"primaryKey;size:64"`
+	ChannelID      string `json:"channelId" gorm:"size:64;not null;index"`
+	TableMappingID string `json:"tableMappingId" gorm:"size:64;not null;index"`
+	MappingVersion int    `json:"mappingVersion" gorm:"not null;index"`
+	SourceColumn   string `json:"sourceColumn" gorm:"size:255;not null"`
+	SourceType     string `json:"sourceType,omitempty" gorm:"size:255"`
+	TargetColumn   string `json:"targetColumn" gorm:"size:255;not null"`
+	TargetType     string `json:"targetType,omitempty" gorm:"size:255"`
+	IsPrimaryKey   bool   `json:"isPrimaryKey" gorm:"not null;index"`
+	Nullable       bool   `json:"nullable" gorm:"not null"`
+	DefaultValue   string `json:"defaultValue,omitempty" gorm:"type:text"`
+	Enabled        bool   `json:"enabled" gorm:"not null;index"`
+	CreatedAt      string `json:"createdAt" gorm:"size:64;index"`
+	UpdatedAt      string `json:"updatedAt" gorm:"size:64;index"`
+}
+
+type channelTaskRow struct {
+	SortOrder      int               `json:"-" gorm:"not null;index"`
+	ID             string            `json:"id" gorm:"primaryKey;size:64"`
+	ChannelID      string            `json:"channelId" gorm:"size:64;not null;index"`
+	Name           string            `json:"name" gorm:"size:255;not null"`
+	Type           ChannelTaskType   `json:"type" gorm:"size:64;not null;index"`
+	Status         ChannelTaskStatus `json:"status" gorm:"size:32;not null;index"`
+	Enabled        bool              `json:"enabled" gorm:"not null;index"`
+	DependsOn      []string          `json:"dependsOn" gorm:"type:json;serializer:json"`
+	MappingVersion int               `json:"mappingVersion" gorm:"not null;index"`
+	Config         map[string]string `json:"config" gorm:"type:json;serializer:json"`
+	LastRunID      string            `json:"lastRunId,omitempty" gorm:"size:64;index"`
+	LastRunStatus  TaskRunStatus     `json:"lastRunStatus,omitempty" gorm:"size:32;index"`
+	CreatedAt      string            `json:"createdAt" gorm:"size:64;index"`
+	UpdatedAt      string            `json:"updatedAt" gorm:"size:64;index"`
+}
+
+type taskRunRow struct {
+	SortOrder    int             `json:"-" gorm:"not null;index"`
+	ID           string          `json:"id" gorm:"primaryKey;size:64"`
+	ChannelID    string          `json:"channelId" gorm:"size:64;not null;index"`
+	TaskID       string          `json:"taskId" gorm:"size:64;not null;index"`
+	TaskType     ChannelTaskType `json:"taskType" gorm:"size:64;not null;index"`
+	Status       TaskRunStatus   `json:"status" gorm:"size:32;not null;index"`
+	StartedAt    string          `json:"startedAt" gorm:"size:64;index"`
+	FinishedAt   string          `json:"finishedAt,omitempty" gorm:"size:64;index"`
+	ReadRows     int             `json:"readRows" gorm:"not null"`
+	WrittenRows  int             `json:"writtenRows" gorm:"not null"`
+	FailedRows   int             `json:"failedRows" gorm:"not null"`
+	DiffRows     int             `json:"diffRows" gorm:"not null"`
+	ErrorMessage string          `json:"errorMessage,omitempty" gorm:"type:text"`
+	CreatedBy    string          `json:"createdBy" gorm:"size:255;index"`
+}
+
+type taskLogRow struct {
+	SortOrder int    `json:"-" gorm:"not null;index"`
+	ID        string `json:"id" gorm:"primaryKey;size:64"`
+	ChannelID string `json:"channelId" gorm:"size:64;not null;index"`
+	TaskID    string `json:"taskId,omitempty" gorm:"size:64;index"`
+	RunID     string `json:"runId,omitempty" gorm:"size:64;index"`
+	Level     string `json:"level" gorm:"size:32;not null;index"`
+	Thread    string `json:"thread" gorm:"size:128;not null;index"`
+	Message   string `json:"message" gorm:"type:text"`
+	CreatedAt string `json:"createdAt" gorm:"size:64;index"`
+}
+
+type dataValidationDiffRow struct {
+	SortOrder        int    `json:"-" gorm:"not null;index"`
+	ID               string `json:"id" gorm:"primaryKey;size:64"`
+	ChannelID        string `json:"channelId" gorm:"size:64;not null;index"`
+	ValidationTaskID string `json:"validationTaskId" gorm:"size:64;not null;index"`
+	ValidationRunID  string `json:"validationRunId" gorm:"size:64;not null;index"`
+	TableMappingID   string `json:"tableMappingId" gorm:"size:64;not null;index"`
+	SourceTable      string `json:"sourceTable" gorm:"size:255;not null;index"`
+	TargetTable      string `json:"targetTable" gorm:"size:255;not null;index"`
+	PrimaryKeyJSON   string `json:"primaryKeyJson" gorm:"type:text"`
+	DiffType         string `json:"diffType" gorm:"size:64;not null;index"`
+	DiffColumnsJSON  string `json:"diffColumnsJson" gorm:"type:text"`
+	SourceDigest     string `json:"sourceDigest,omitempty" gorm:"type:text"`
+	TargetDigest     string `json:"targetDigest,omitempty" gorm:"type:text"`
+	CorrectionStatus string `json:"correctionStatus" gorm:"size:64;not null;index"`
+	CorrectionTaskID string `json:"correctionTaskId,omitempty" gorm:"size:64;index"`
+	CorrectionRunID  string `json:"correctionRunId,omitempty" gorm:"size:64;index"`
+	CreatedAt        string `json:"createdAt" gorm:"size:64;index"`
+	UpdatedAt        string `json:"updatedAt" gorm:"size:64;index"`
+}
+
 type operationLogRow struct {
 	SortOrder  int    `json:"-" gorm:"not null;index"`
 	ID         string `json:"id" gorm:"primaryKey;size:64"`
@@ -109,13 +229,20 @@ type clusterSettingsRow struct {
 }
 
 type snapshotRows struct {
-	Users           []userRow
-	Datasources     []datasourceRow
-	OperationLogs   []operationLogRow
-	AlertRules      []alertRuleRow
-	AlertEvents     []alertEventRow
-	Nodes           []clusterNodeRow
-	ClusterSettings []clusterSettingsRow
+	Users                 []userRow
+	Datasources           []datasourceRow
+	Channels              []channelRow
+	ChannelTableMappings  []channelTableMappingRow
+	ChannelColumnMappings []channelColumnMappingRow
+	ChannelTasks          []channelTaskRow
+	TaskRuns              []taskRunRow
+	TaskLogs              []taskLogRow
+	DataValidationDiffs   []dataValidationDiffRow
+	OperationLogs         []operationLogRow
+	AlertRules            []alertRuleRow
+	AlertEvents           []alertEventRow
+	Nodes                 []clusterNodeRow
+	ClusterSettings       []clusterSettingsRow
 }
 
 func snapshotRowsFromDatabaseShape(data DatabaseShape) snapshotRows {
@@ -126,13 +253,20 @@ func snapshotRowsFromDatabaseShape(data DatabaseShape) snapshotRows {
 		settingsRows = append(settingsRows, settingsRow)
 	}
 	return snapshotRows{
-		Users:           toRows[User, userRow](data.Users, func(row *userRow, order int) { row.SortOrder = order }),
-		Datasources:     toRows[Datasource, datasourceRow](data.Datasources, func(row *datasourceRow, order int) { row.SortOrder = order }),
-		OperationLogs:   toRows[OperationLog, operationLogRow](data.OperationLogs, func(row *operationLogRow, order int) { row.SortOrder = order }),
-		AlertRules:      toRows[AlertRule, alertRuleRow](data.AlertRules, func(row *alertRuleRow, order int) { row.SortOrder = order }),
-		AlertEvents:     toRows[AlertEvent, alertEventRow](data.AlertEvents, func(row *alertEventRow, order int) { row.SortOrder = order }),
-		Nodes:           toRows[ClusterNode, clusterNodeRow](data.Nodes, func(row *clusterNodeRow, order int) { row.SortOrder = order }),
-		ClusterSettings: settingsRows,
+		Users:                 toRows[User, userRow](data.Users, func(row *userRow, order int) { row.SortOrder = order }),
+		Datasources:           toRows[Datasource, datasourceRow](data.Datasources, func(row *datasourceRow, order int) { row.SortOrder = order }),
+		Channels:              toRows[Channel, channelRow](data.Channels, func(row *channelRow, order int) { row.SortOrder = order }),
+		ChannelTableMappings:  toRows[ChannelTableMapping, channelTableMappingRow](data.ChannelTableMappings, func(row *channelTableMappingRow, order int) { row.SortOrder = order }),
+		ChannelColumnMappings: toRows[ChannelColumnMapping, channelColumnMappingRow](data.ChannelColumnMappings, func(row *channelColumnMappingRow, order int) { row.SortOrder = order }),
+		ChannelTasks:          toRows[ChannelTask, channelTaskRow](data.ChannelTasks, func(row *channelTaskRow, order int) { row.SortOrder = order }),
+		TaskRuns:              toRows[TaskRun, taskRunRow](data.TaskRuns, func(row *taskRunRow, order int) { row.SortOrder = order }),
+		TaskLogs:              toRows[TaskLog, taskLogRow](data.TaskLogs, func(row *taskLogRow, order int) { row.SortOrder = order }),
+		DataValidationDiffs:   toRows[DataValidationDiff, dataValidationDiffRow](data.DataValidationDiffs, func(row *dataValidationDiffRow, order int) { row.SortOrder = order }),
+		OperationLogs:         toRows[OperationLog, operationLogRow](data.OperationLogs, func(row *operationLogRow, order int) { row.SortOrder = order }),
+		AlertRules:            toRows[AlertRule, alertRuleRow](data.AlertRules, func(row *alertRuleRow, order int) { row.SortOrder = order }),
+		AlertEvents:           toRows[AlertEvent, alertEventRow](data.AlertEvents, func(row *alertEventRow, order int) { row.SortOrder = order }),
+		Nodes:                 toRows[ClusterNode, clusterNodeRow](data.Nodes, func(row *clusterNodeRow, order int) { row.SortOrder = order }),
+		ClusterSettings:       settingsRows,
 	}
 }
 
@@ -142,19 +276,33 @@ func (s snapshotRows) toDatabaseShape() DatabaseShape {
 		settings = convertJSON[ClusterSettings](s.ClusterSettings[0])
 	}
 	return DatabaseShape{
-		Users:           fromRows[User, userRow](s.Users),
-		Datasources:     fromRows[Datasource, datasourceRow](s.Datasources),
-		OperationLogs:   fromRows[OperationLog, operationLogRow](s.OperationLogs),
-		AlertRules:      fromRows[AlertRule, alertRuleRow](s.AlertRules),
-		AlertEvents:     fromRows[AlertEvent, alertEventRow](s.AlertEvents),
-		Nodes:           fromRows[ClusterNode, clusterNodeRow](s.Nodes),
-		ClusterSettings: settings,
+		Users:                 fromRows[User, userRow](s.Users),
+		Datasources:           fromRows[Datasource, datasourceRow](s.Datasources),
+		Channels:              fromRows[Channel, channelRow](s.Channels),
+		ChannelTableMappings:  fromRows[ChannelTableMapping, channelTableMappingRow](s.ChannelTableMappings),
+		ChannelColumnMappings: fromRows[ChannelColumnMapping, channelColumnMappingRow](s.ChannelColumnMappings),
+		ChannelTasks:          fromRows[ChannelTask, channelTaskRow](s.ChannelTasks),
+		TaskRuns:              fromRows[TaskRun, taskRunRow](s.TaskRuns),
+		TaskLogs:              fromRows[TaskLog, taskLogRow](s.TaskLogs),
+		DataValidationDiffs:   fromRows[DataValidationDiff, dataValidationDiffRow](s.DataValidationDiffs),
+		OperationLogs:         fromRows[OperationLog, operationLogRow](s.OperationLogs),
+		AlertRules:            fromRows[AlertRule, alertRuleRow](s.AlertRules),
+		AlertEvents:           fromRows[AlertEvent, alertEventRow](s.AlertEvents),
+		Nodes:                 fromRows[ClusterNode, clusterNodeRow](s.Nodes),
+		ClusterSettings:       settings,
 	}
 }
 
 func (s snapshotRows) empty() bool {
 	return len(s.Users) == 0 &&
 		len(s.Datasources) == 0 &&
+		len(s.Channels) == 0 &&
+		len(s.ChannelTableMappings) == 0 &&
+		len(s.ChannelColumnMappings) == 0 &&
+		len(s.ChannelTasks) == 0 &&
+		len(s.TaskRuns) == 0 &&
+		len(s.TaskLogs) == 0 &&
+		len(s.DataValidationDiffs) == 0 &&
 		len(s.OperationLogs) == 0 &&
 		len(s.AlertRules) == 0 &&
 		len(s.AlertEvents) == 0 &&

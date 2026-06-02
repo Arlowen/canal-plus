@@ -138,6 +138,13 @@ func (p *mySQLStorePersistence) autoMigrate() error {
 	}{
 		{suffix: "users", model: &userRow{}},
 		{suffix: "datasources", model: &datasourceRow{}},
+		{suffix: "channels", model: &channelRow{}},
+		{suffix: "channel_table_mappings", model: &channelTableMappingRow{}},
+		{suffix: "channel_column_mappings", model: &channelColumnMappingRow{}},
+		{suffix: "channel_tasks", model: &channelTaskRow{}},
+		{suffix: "task_runs", model: &taskRunRow{}},
+		{suffix: "task_logs", model: &taskLogRow{}},
+		{suffix: "data_validation_diffs", model: &dataValidationDiffRow{}},
 		{suffix: "operation_logs", model: &operationLogRow{}},
 		{suffix: "alert_rules", model: &alertRuleRow{}},
 		{suffix: "alert_events", model: &alertEventRow{}},
@@ -170,7 +177,6 @@ func (p *mySQLStorePersistence) autoMigrate() error {
 	for _, suffix := range []string{
 		"sync_tasks",
 		"runtime_states",
-		"task_logs",
 		"error_events",
 		"capability_jobs",
 		"task_leases",
