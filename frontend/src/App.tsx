@@ -6235,7 +6235,7 @@ function nodeOptionsForWizard(nodes: ClusterNode[]) {
   return nodes.map((node) => ({
     value: node.id,
     label: node.name,
-    description: `${node.endpoint} · ${node.capacity}G`
+    description: node.endpoint
   }));
 }
 
