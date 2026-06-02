@@ -83,6 +83,8 @@ func defaultLocalClusterNode(timestamp string) ClusterNode {
 		Role:            NodeRoleMaster,
 		CPUPercent:      0,
 		MemoryPercent:   0,
+		DiskPercent:     0,
+		NetworkMBps:     0,
 		Capacity:        input.Capacity,
 		LastHeartbeatAt: timestamp,
 		StartedAt:       timestamp,

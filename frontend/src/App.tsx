@@ -12,7 +12,6 @@ import {
 import {
   ArrowsClockwise,
   ArrowRight,
-  CaretDown,
   CaretLeft,
   CaretRight,
   CheckCircle,
@@ -56,6 +55,9 @@ import type {
   DatasourceInput,
   DatasourcePurpose,
   DatasourceTestResult,
+  NodeMetricHistoryResponse,
+  NodeMetricRange,
+  NodeMetricSample,
   User
 } from "./types/api";
 
@@ -128,6 +130,26 @@ const datasourceAuthOptions: Array<{ value: DatasourceAuthType; label: string }>
 ];
 
 const emptyNodes: ClusterNode[] = [];
+
+const nodeMetricRangeOptions: Array<{ value: NodeMetricRange; label: string }> = [
+  { value: "3h", label: "最近 3 小时" },
+  { value: "6h", label: "最近 6 小时" },
+  { value: "12h", label: "最近 12 小时" },
+  { value: "1d", label: "最近一天" },
+  { value: "3d", label: "最近 3 天" },
+  { value: "1w", label: "最近一周" },
+  { value: "1mo", label: "最近一月" }
+];
+
+const nodeMetricRangeDurations: Record<NodeMetricRange, number> = {
+  "3h": 3 * 60 * 60 * 1000,
+  "6h": 6 * 60 * 60 * 1000,
+  "12h": 12 * 60 * 60 * 1000,
+  "1d": 24 * 60 * 60 * 1000,
+  "3d": 3 * 24 * 60 * 60 * 1000,
+  "1w": 7 * 24 * 60 * 60 * 1000,
+  "1mo": 30 * 24 * 60 * 60 * 1000
+};
 
 const focusableSelector = [
   "a[href]",
@@ -2573,6 +2595,41 @@ function NodeMonitorPage({
 }) {
   const nodes = cluster?.nodes ?? emptyNodes;
   const selected = nodeId ? nodes.find((item) => item.id === nodeId) || null : nodes[0] || null;
+  const [metricRange, setMetricRange] = useState<NodeMetricRange>("3h");
+  const [metricHistory, setMetricHistory] = useState<NodeMetricHistoryResponse | null>(null);
+  const [metricsLoading, setMetricsLoading] = useState(false);
+  const [metricsError, setMetricsError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!selected) {
+      setMetricHistory(null);
+      setMetricsError(null);
+      setMetricsLoading(false);
+      return;
+    }
+    let ignored = false;
+    setMetricsLoading(true);
+    setMetricsError(null);
+    api.nodeMetrics(selected.id, metricRange)
+      .then((history) => {
+        if (ignored) return;
+        setMetricHistory(history);
+      })
+      .catch((error: unknown) => {
+        if (ignored) return;
+        const message = error instanceof Error ? error.message : "指标加载失败";
+        setMetricsError(message);
+        setMetricHistory(null);
+      })
+      .finally(() => {
+        if (!ignored) {
+          setMetricsLoading(false);
+        }
+      });
+    return () => {
+      ignored = true;
+    };
+  }, [selected, metricRange]);
 
   if (!selected) {
     return (
@@ -2590,7 +2647,8 @@ function NodeMonitorPage({
   }
 
   const selectedRole = effectiveNodeRole(selected, nodes);
-  const monitor = buildNodeMonitorData(selected);
+  const activeMetricHistory = metricHistory?.nodeId === selected.id && metricHistory.range === metricRange ? metricHistory : null;
+  const monitor = buildNodeMonitorData(selected, activeMetricHistory, metricRange);
   const heartbeatAge = formatNodeHeartbeatAge(selected.lastHeartbeatAt);
   const recentExceptions = selected.status === "online" ? 0 : 1;
 
@@ -2628,7 +2686,13 @@ function NodeMonitorPage({
       </div>
 
       <div className="mt-5">
-        <ResourceTrendPanel monitor={monitor} />
+        <ResourceTrendPanel
+          monitor={monitor}
+          range={metricRange}
+          loading={metricsLoading}
+          error={metricsError}
+          onRangeChange={setMetricRange}
+        />
       </div>
     </section>
   );
@@ -2748,17 +2812,36 @@ function Sparkline({
   );
 }
 
-function ResourceTrendPanel({ monitor }: { monitor: NodeMonitorData }) {
+function ResourceTrendPanel({
+  monitor,
+  range,
+  loading,
+  error,
+  onRangeChange
+}: {
+  monitor: NodeMonitorData;
+  range: NodeMetricRange;
+  loading: boolean;
+  error: string | null;
+  onRangeChange: (range: NodeMetricRange) => void;
+}) {
   const chart = buildResourceTrendPaths(monitor);
 
   return (
     <div className="rounded-lg border border-line bg-white p-5 shadow-[0_18px_48px_-42px_rgba(37,99,235,0.25)]">
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-        <h3 className="text-lg font-semibold tracking-tight text-coal">资源趋势</h3>
-        <Button type="button" className="btn-secondary h-10 px-4">
-          最近 1 小时
-          <CaretDown size={16} />
-        </Button>
+        <div className="flex items-center gap-3">
+          <h3 className="text-lg font-semibold tracking-tight text-coal">资源趋势</h3>
+          {loading && <ArrowsClockwise size={16} className="animate-spin text-accent" />}
+          {error && <span className="text-sm font-medium text-red-600">{error}</span>}
+        </div>
+        <DropdownSelect
+          ariaLabel="趋势时间范围"
+          value={range}
+          options={nodeMetricRangeOptions}
+          onChange={(value) => onRangeChange(value as NodeMetricRange)}
+          className="h-10 min-h-10 w-[150px] px-3 py-2"
+        />
       </div>
       <div className="mt-4 flex flex-wrap justify-center gap-8 text-sm font-medium text-slate-600">
         <TrendLegend color="#2563eb" label="CPU 使用率 (%)" />
@@ -2783,7 +2866,7 @@ function ResourceTrendPanel({ monitor }: { monitor: NodeMonitorData }) {
           <path d={chart.diskPath} fill="none" stroke="#f97316" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.6" />
           {monitor.labels.map((label, index) => {
             const x = 58 + (680 / Math.max(1, monitor.labels.length - 1)) * index;
-            return <text key={label} x={x} y="306" textAnchor="middle" className="fill-slate-600 text-[13px]">{label}</text>;
+            return <text key={`${label}-${index}`} x={x} y="306" textAnchor="middle" className="fill-slate-600 text-[13px]">{label}</text>;
           })}
         </svg>
       </div>
@@ -2852,16 +2935,26 @@ function OverviewCell({
   );
 }
 
-function buildNodeMonitorData(node: ClusterNode): NodeMonitorData {
-  const seed = hashText(`${node.id}:${node.name}:${node.endpoint}`);
-  const cpuValue = clampPercent(node.cpuPercent);
-  const memoryValue = clampPercent(node.memoryPercent);
-  const diskValue = clampPercent(46 + (seed % 25) + Math.floor(Math.max(0, node.capacity) / 2));
-  const networkValue = Number((8 + ((seed % 80) / 10) + Math.min(8, Math.max(0, node.capacity) * 0.35)).toFixed(1));
-  const cpuSeries = makePercentSeries(cpuValue, seed + 7, 48);
-  const memorySeries = makePercentSeries(memoryValue, seed + 17, 48);
-  const diskSeries = makePercentSeries(diskValue, seed + 29, 48);
-  const networkSeries = makeNetworkSeries(networkValue, seed + 41, 48);
+function buildNodeMonitorData(
+  node: ClusterNode,
+  history: NodeMetricHistoryResponse | null,
+  range: NodeMetricRange
+): NodeMonitorData {
+  const samples = normalizeMetricSamples(node, history);
+  const current = samples[samples.length - 1] ?? nodeMetricSampleFromNode(node);
+  const compare = findCompareMetricSample(samples, current, 5 * 60 * 1000);
+  const cpuValue = clampPercent(current.cpuPercent);
+  const memoryValue = clampPercent(current.memoryPercent);
+  const diskValue = clampPercent(current.diskPercent);
+  const networkValue = normalizeNetworkValue(current.networkThroughputMBps);
+  const cpuCompare = clampPercent(compare.cpuPercent);
+  const memoryCompare = clampPercent(compare.memoryPercent);
+  const diskCompare = clampPercent(compare.diskPercent);
+  const networkCompare = normalizeNetworkValue(compare.networkThroughputMBps);
+  const cpuSeries = samples.map((sample) => clampPercent(sample.cpuPercent));
+  const memorySeries = samples.map((sample) => clampPercent(sample.memoryPercent));
+  const diskSeries = samples.map((sample) => clampPercent(sample.diskPercent));
+  const networkSeries = samples.map((sample) => normalizeNetworkValue(sample.networkThroughputMBps));
 
   return {
     metrics: [
@@ -2872,7 +2965,7 @@ function buildNodeMonitorData(node: ClusterNode): NodeMonitorData {
         unit: "%",
         color: "#2563eb",
         series: cpuSeries,
-        compareValue: cpuSeries[Math.max(0, cpuSeries.length - 7)] ?? cpuValue,
+        compareValue: cpuCompare,
         ringValue: cpuValue
       },
       {
@@ -2882,7 +2975,7 @@ function buildNodeMonitorData(node: ClusterNode): NodeMonitorData {
         unit: "%",
         color: "#2563eb",
         series: memorySeries,
-        compareValue: memorySeries[Math.max(0, memorySeries.length - 7)] ?? memoryValue,
+        compareValue: memoryCompare,
         ringValue: memoryValue
       },
       {
@@ -2892,7 +2985,7 @@ function buildNodeMonitorData(node: ClusterNode): NodeMonitorData {
         unit: "%",
         color: "#2563eb",
         series: diskSeries,
-        compareValue: diskSeries[Math.max(0, diskSeries.length - 7)] ?? diskValue,
+        compareValue: diskCompare,
         ringValue: diskValue
       },
       {
@@ -2902,33 +2995,75 @@ function buildNodeMonitorData(node: ClusterNode): NodeMonitorData {
         unit: "MB/s",
         color: "#10b981",
         series: networkSeries,
-        compareValue: networkSeries[Math.max(0, networkSeries.length - 7)] ?? networkValue,
+        compareValue: networkCompare,
         precision: 1
       }
     ],
     cpuSeries,
     memorySeries,
     diskSeries,
-    labels: buildTrendLabels(node.lastHeartbeatAt)
+    labels: buildTrendLabels(samples, range)
   };
 }
 
-function makePercentSeries(baseValue: number, seed: number, length: number) {
-  return Array.from({ length }, (_, index) => {
-    const wave = Math.sin((index + (seed % 17)) * 0.42) * 2.4;
-    const wobble = ((seed + index * 13) % 9) - 4;
-    const drift = (index / Math.max(1, length - 1) - 0.5) * ((seed % 7) - 3);
-    return clampPercent(baseValue + wave + wobble * 0.65 + drift);
-  });
+function normalizeMetricSamples(node: ClusterNode, history: NodeMetricHistoryResponse | null) {
+  const samples = (history?.samples ?? [])
+    .map((sample) => ({
+      ...sample,
+      cpuPercent: clampPercent(sample.cpuPercent),
+      memoryPercent: clampPercent(sample.memoryPercent),
+      diskPercent: clampPercent(sample.diskPercent),
+      networkThroughputMBps: normalizeNetworkValue(sample.networkThroughputMBps)
+    }))
+    .filter((sample) => sample.nodeId === node.id)
+    .sort((left, right) => metricTime(left.collectedAt) - metricTime(right.collectedAt));
+  if (samples.length > 0) {
+    return samples;
+  }
+  return [nodeMetricSampleFromNode(node)];
 }
 
-function makeNetworkSeries(baseValue: number, seed: number, length: number) {
-  return Array.from({ length }, (_, index) => {
-    const wave = Math.sin((index + (seed % 19)) * 0.55) * 1.25;
-    const pulse = ((seed + index * 11) % 8) * 0.18;
-    const trend = index > length - 10 ? (index - (length - 10)) * 0.12 : 0;
-    return Number(Math.max(0.2, baseValue + wave + pulse + trend - 0.8).toFixed(1));
-  });
+function nodeMetricSampleFromNode(node: ClusterNode): NodeMetricSample {
+  return {
+    nodeId: node.id,
+    collectedAt: node.lastHeartbeatAt || new Date().toISOString(),
+    cpuPercent: clampPercent(node.cpuPercent),
+    memoryPercent: clampPercent(node.memoryPercent),
+    diskPercent: clampPercent(node.diskPercent ?? 0),
+    networkThroughputMBps: normalizeNetworkValue(node.networkThroughputMBps ?? 0)
+  };
+}
+
+function findCompareMetricSample(samples: NodeMetricSample[], current: NodeMetricSample, offsetMs: number) {
+  if (samples.length <= 1) {
+    return current;
+  }
+  const currentTime = metricTime(current.collectedAt);
+  if (!Number.isFinite(currentTime)) {
+    return samples[Math.max(0, samples.length - 2)] ?? current;
+  }
+  const targetTime = currentTime - offsetMs;
+  let closest = samples[0];
+  let closestDistance = Number.POSITIVE_INFINITY;
+  for (const sample of samples) {
+    const sampleTime = metricTime(sample.collectedAt);
+    if (!Number.isFinite(sampleTime) || sampleTime > currentTime) {
+      continue;
+    }
+    const distance = Math.abs(sampleTime - targetTime);
+    if (distance < closestDistance) {
+      closest = sample;
+      closestDistance = distance;
+    }
+  }
+  return closest;
+}
+
+function normalizeNetworkValue(value: number) {
+  if (!Number.isFinite(value) || value < 0) {
+    return 0;
+  }
+  return Number(value.toFixed(1));
 }
 
 function buildResourceTrendPaths(monitor: NodeMonitorData) {
@@ -2937,11 +3072,17 @@ function buildResourceTrendPaths(monitor: NodeMonitorData) {
   const left = 58;
   const top = 22;
   const yFor = (value: number) => top + height - clampPercent(value) / 100 * height;
-  const pathFor = (values: number[]) => values.map((value, index) => {
-    const x = left + (width / Math.max(1, values.length - 1)) * index;
-    const y = yFor(value);
-    return `${index === 0 ? "M" : "L"}${x.toFixed(2)},${y.toFixed(2)}`;
-  }).join(" ");
+  const pathFor = (values: number[]) => {
+    if (values.length === 1) {
+      const y = yFor(values[0]);
+      return `M${left.toFixed(2)},${y.toFixed(2)} L${(left + width).toFixed(2)},${y.toFixed(2)}`;
+    }
+    return values.map((value, index) => {
+      const x = left + (width / Math.max(1, values.length - 1)) * index;
+      const y = yFor(value);
+      return `${index === 0 ? "M" : "L"}${x.toFixed(2)},${y.toFixed(2)}`;
+    }).join(" ");
+  };
 
   return {
     yFor,
@@ -2973,37 +3114,62 @@ function buildChartPoints(values: number[], width: number, height: number, paddi
   const min = minValue ?? fallbackMin;
   const max = maxValue ?? fallbackMax;
   const range = Math.max(1, max - min);
+  const yFor = (value: number) => padding + (1 - (value - min) / range) * (height - padding * 2);
+  if (values.length === 1) {
+    const y = yFor(values[0]);
+    return [
+      { x: padding, y },
+      { x: width - padding, y }
+    ];
+  }
   return values.map((value, index) => ({
     x: padding + ((width - padding * 2) / Math.max(1, values.length - 1)) * index,
-    y: padding + (1 - (value - min) / range) * (height - padding * 2)
+    y: yFor(value)
   }));
 }
 
-function buildTrendLabels(value?: string) {
-  const endTime = value ? new Date(value).getTime() : Date.now();
-  const normalizedEndTime = Number.isNaN(endTime) ? Date.now() : endTime;
-  const start = normalizedEndTime - 60 * 60 * 1000;
-  return Array.from({ length: 7 }, (_, index) => formatTimeLabel(new Date(start + index * 10 * 60 * 1000)));
+function buildTrendLabels(samples: NodeMetricSample[], range: NodeMetricRange) {
+  const latestTime = metricTime(samples[samples.length - 1]?.collectedAt);
+  const endTime = Number.isFinite(latestTime) ? latestTime : Date.now();
+  const startTime = endTime - nodeMetricRangeDurations[range];
+  return Array.from({ length: 7 }, (_, index) => {
+    const tickTime = startTime + (nodeMetricRangeDurations[range] / 6) * index;
+    return formatTrendTimeLabel(new Date(tickTime), range);
+  });
 }
 
-function formatTimeLabel(value: Date) {
+function formatTrendTimeLabel(value: Date, range: NodeMetricRange) {
+  if (range === "3h" || range === "6h" || range === "12h") {
+    return new Intl.DateTimeFormat("zh-CN", {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false
+    }).format(value);
+  }
+  if (range === "1d" || range === "3d") {
+    return new Intl.DateTimeFormat("zh-CN", {
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      hour12: false
+    }).format(value);
+  }
   return new Intl.DateTimeFormat("zh-CN", {
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false
+    month: "2-digit",
+    day: "2-digit"
   }).format(value);
+}
+
+function metricTime(value?: string) {
+  if (!value) {
+    return Number.NaN;
+  }
+  const parsed = new Date(value).getTime();
+  return Number.isNaN(parsed) ? Number.NaN : parsed;
 }
 
 function formatMetricValue(value: number, precision = 0) {
   return precision > 0 ? value.toFixed(precision) : String(Math.round(value));
-}
-
-function hashText(value: string) {
-  let hash = 0;
-  for (let index = 0; index < value.length; index += 1) {
-    hash = (hash * 31 + value.charCodeAt(index)) >>> 0;
-  }
-  return hash;
 }
 
 function SettingsPage({

@@ -10,9 +10,10 @@ import (
 )
 
 type Store struct {
-	persistence storePersistence
-	mu          sync.Mutex
-	data        DatabaseShape
+	persistence   storePersistence
+	mu            sync.Mutex
+	data          DatabaseShape
+	metricHistory map[string][]NodeMetricSample
 }
 
 func NewStore() (*Store, error) {
@@ -428,6 +429,8 @@ func (s *Store) registerNode(input ClusterNodeInput, actor string, action string
 		node.Capacity = normalizeNodeCapacity(input.Capacity)
 		node.CPUPercent = clampPercent(input.CPUPercent)
 		node.MemoryPercent = clampPercent(input.MemoryPercent)
+		node.DiskPercent = clampPercent(input.DiskPercent)
+		node.NetworkMBps = normalizeNodeNetworkMBps(input.NetworkMBps)
 		node.Status = NodeOnline
 		node.LastHeartbeatAt = timestamp
 		node.UpdatedAt = timestamp
@@ -454,6 +457,8 @@ func (s *Store) registerNode(input ClusterNodeInput, actor string, action string
 		Role:            valueOr(normalizeNodeRole(input.Role), NodeRoleStandby),
 		CPUPercent:      clampPercent(input.CPUPercent),
 		MemoryPercent:   clampPercent(input.MemoryPercent),
+		DiskPercent:     clampPercent(input.DiskPercent),
+		NetworkMBps:     normalizeNodeNetworkMBps(input.NetworkMBps),
 		Capacity:        normalizeNodeCapacity(input.Capacity),
 		LastHeartbeatAt: timestamp,
 		StartedAt:       timestamp,
@@ -687,7 +692,70 @@ func (s *Store) RefreshNodeHeartbeat(nodeID string) error {
 	return s.saveLocked()
 }
 
+func (s *Store) RefreshNodeHeartbeatWithMetrics(nodeID string, sample NodeMetricSample) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	timestamp := now()
+	if strings.TrimSpace(sample.CollectedAt) == "" {
+		sample.CollectedAt = timestamp
+	}
+	sample.NodeID = nodeID
+	sample.CPUPercent = clampPercent(sample.CPUPercent)
+	sample.MemoryPercent = clampPercent(sample.MemoryPercent)
+	sample.DiskPercent = clampPercent(sample.DiskPercent)
+	sample.NetworkMBps = normalizeNodeNetworkMBps(sample.NetworkMBps)
+
+	changed := false
+	for index := range s.data.Nodes {
+		if s.data.Nodes[index].ID != nodeID {
+			continue
+		}
+		s.data.Nodes[index].Status = NodeOnline
+		s.data.Nodes[index].CPUPercent = sample.CPUPercent
+		s.data.Nodes[index].MemoryPercent = sample.MemoryPercent
+		s.data.Nodes[index].DiskPercent = sample.DiskPercent
+		s.data.Nodes[index].NetworkMBps = sample.NetworkMBps
+		s.data.Nodes[index].LastHeartbeatAt = sample.CollectedAt
+		s.data.Nodes[index].UpdatedAt = timestamp
+		changed = true
+		break
+	}
+	if !changed {
+		return nil
+	}
+	s.appendMetricSampleLocked(sample)
+	s.reconcileClusterLocked()
+	return s.saveLocked()
+}
+
+func (s *Store) NodeMetricHistory(nodeID string, rangeKey string) (NodeMetricHistoryResponse, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.ensureClusterLocked()
+	node := s.getNodeLocked(nodeID)
+	if node == nil {
+		return NodeMetricHistoryResponse{}, false
+	}
+	normalizedRange, duration := normalizeNodeMetricRange(rangeKey)
+	generatedAt := now()
+	cutoff := time.Now().UTC().Add(-duration)
+	samples := s.filteredMetricSamplesLocked(nodeID, cutoff)
+	if len(samples) == 0 {
+		samples = []NodeMetricSample{nodeMetricSampleFromNode(*node)}
+	}
+	return NodeMetricHistoryResponse{
+		NodeID:      nodeID,
+		Range:       normalizedRange,
+		GeneratedAt: generatedAt,
+		Samples:     downsampleMetricSamples(samples, 240),
+	}, true
+}
+
 func (s *Store) StartEmbeddedNodeHeartbeat(nodeID string, interval time.Duration) func() {
+	return s.StartEmbeddedNodeMetrics(nodeID, interval, nil)
+}
+
+func (s *Store) StartEmbeddedNodeMetrics(nodeID string, interval time.Duration, collect func(string) (NodeMetricSample, error)) func() {
 	if interval <= 0 {
 		return func() {}
 	}
@@ -702,7 +770,16 @@ func (s *Store) StartEmbeddedNodeHeartbeat(nodeID string, interval time.Duration
 		for {
 			select {
 			case <-ticker.C:
-				_ = s.RefreshNodeHeartbeat(nodeID)
+				if collect == nil {
+					_ = s.RefreshNodeHeartbeat(nodeID)
+					continue
+				}
+				sample, err := collect(nodeID)
+				if err != nil {
+					_ = s.RefreshNodeHeartbeat(nodeID)
+					continue
+				}
+				_ = s.RefreshNodeHeartbeatWithMetrics(nodeID, sample)
 			case <-done:
 				return
 			}
@@ -714,6 +791,43 @@ func (s *Store) StartEmbeddedNodeHeartbeat(nodeID string, interval time.Duration
 			stopped.Wait()
 		})
 	}
+}
+
+func (s *Store) appendMetricSampleLocked(sample NodeMetricSample) {
+	if s.metricHistory == nil {
+		s.metricHistory = map[string][]NodeMetricSample{}
+	}
+	history := append(s.metricHistory[sample.NodeID], cloneJSON(sample))
+	cutoff := time.Now().UTC().Add(-31 * 24 * time.Hour)
+	writeIndex := 0
+	for _, item := range history {
+		parsed, err := time.Parse(time.RFC3339Nano, item.CollectedAt)
+		if err != nil || parsed.Before(cutoff) {
+			continue
+		}
+		history[writeIndex] = item
+		writeIndex++
+	}
+	s.metricHistory[sample.NodeID] = history[:writeIndex]
+}
+
+func (s *Store) filteredMetricSamplesLocked(nodeID string, cutoff time.Time) []NodeMetricSample {
+	if s.metricHistory == nil {
+		return nil
+	}
+	history := s.metricHistory[nodeID]
+	samples := make([]NodeMetricSample, 0, len(history))
+	for _, sample := range history {
+		parsed, err := time.Parse(time.RFC3339Nano, sample.CollectedAt)
+		if err != nil || parsed.Before(cutoff) {
+			continue
+		}
+		samples = append(samples, cloneJSON(sample))
+	}
+	sort.Slice(samples, func(left int, right int) bool {
+		return samples[left].CollectedAt < samples[right].CollectedAt
+	})
+	return samples
 }
 
 func (s *Store) StartClusterSupervisor(interval time.Duration) func() {
@@ -1015,6 +1129,67 @@ func normalizeNodeCapacity(capacity int) int {
 		return 4
 	}
 	return capacity
+}
+
+func normalizeNodeNetworkMBps(value float64) float64 {
+	if value < 0 {
+		return 0
+	}
+	return value
+}
+
+func normalizeNodeMetricRange(value string) (string, time.Duration) {
+	switch strings.TrimSpace(value) {
+	case "6h":
+		return "6h", 6 * time.Hour
+	case "12h":
+		return "12h", 12 * time.Hour
+	case "1d":
+		return "1d", 24 * time.Hour
+	case "3d":
+		return "3d", 3 * 24 * time.Hour
+	case "1w":
+		return "1w", 7 * 24 * time.Hour
+	case "1mo":
+		return "1mo", 30 * 24 * time.Hour
+	default:
+		return "3h", 3 * time.Hour
+	}
+}
+
+func nodeMetricSampleFromNode(node ClusterNode) NodeMetricSample {
+	collectedAt := node.LastHeartbeatAt
+	if strings.TrimSpace(collectedAt) == "" {
+		collectedAt = now()
+	}
+	return NodeMetricSample{
+		NodeID:        node.ID,
+		CollectedAt:   collectedAt,
+		CPUPercent:    clampPercent(node.CPUPercent),
+		MemoryPercent: clampPercent(node.MemoryPercent),
+		DiskPercent:   clampPercent(node.DiskPercent),
+		NetworkMBps:   normalizeNodeNetworkMBps(node.NetworkMBps),
+	}
+}
+
+func downsampleMetricSamples(samples []NodeMetricSample, maxSamples int) []NodeMetricSample {
+	if maxSamples <= 0 || len(samples) <= maxSamples {
+		return cloneJSON(samples)
+	}
+	step := (len(samples) + maxSamples - 1) / maxSamples
+	result := make([]NodeMetricSample, 0, maxSamples)
+	for index := 0; index < len(samples); index += step {
+		result = append(result, samples[index])
+	}
+	last := samples[len(samples)-1]
+	if len(result) == 0 || result[len(result)-1].CollectedAt != last.CollectedAt {
+		if len(result) >= maxSamples {
+			result[len(result)-1] = last
+		} else {
+			result = append(result, last)
+		}
+	}
+	return cloneJSON(result)
 }
 
 func normalizeMasterNodeCount(count int, totalNodes int) int {

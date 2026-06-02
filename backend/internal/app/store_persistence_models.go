@@ -83,6 +83,8 @@ type clusterNodeRow struct {
 	Role            string       `json:"role" gorm:"size:64;not null"`
 	CPUPercent      int          `json:"cpuPercent" gorm:"not null"`
 	MemoryPercent   int          `json:"memoryPercent" gorm:"not null"`
+	DiskPercent     int          `json:"diskPercent" gorm:"not null"`
+	NetworkMBps     float64      `json:"networkThroughputMBps" gorm:"not null"`
 	Capacity        int          `json:"capacity" gorm:"not null"`
 	LastHeartbeatAt string       `json:"lastHeartbeatAt" gorm:"size:64;index"`
 	StartedAt       string       `json:"startedAt" gorm:"size:64;index"`

@@ -215,6 +215,8 @@ type ClusterNode struct {
 	Role            string       `json:"role"`
 	CPUPercent      int          `json:"cpuPercent"`
 	MemoryPercent   int          `json:"memoryPercent"`
+	DiskPercent     int          `json:"diskPercent"`
+	NetworkMBps     float64      `json:"networkThroughputMBps"`
 	Capacity        int          `json:"capacity"`
 	LastHeartbeatAt string       `json:"lastHeartbeatAt"`
 	StartedAt       string       `json:"startedAt"`
@@ -222,21 +224,39 @@ type ClusterNode struct {
 }
 
 type ClusterNodeInput struct {
-	ID            string `json:"id,omitempty"`
-	Name          string `json:"name"`
-	Endpoint      string `json:"endpoint"`
-	SSHPort       int    `json:"sshPort,omitempty"`
-	SSHUser       string `json:"sshUser,omitempty"`
-	AuthMode      string `json:"authMode,omitempty"`
-	Password      string `json:"password,omitempty"`
-	PrivateKey    string `json:"privateKey,omitempty"`
-	InstallDir    string `json:"installDir,omitempty"`
-	Version       string `json:"version,omitempty"`
-	Zone          string `json:"zone,omitempty"`
-	Role          string `json:"role,omitempty"`
-	Capacity      int    `json:"capacity,omitempty"`
-	CPUPercent    int    `json:"cpuPercent,omitempty"`
-	MemoryPercent int    `json:"memoryPercent,omitempty"`
+	ID            string  `json:"id,omitempty"`
+	Name          string  `json:"name"`
+	Endpoint      string  `json:"endpoint"`
+	SSHPort       int     `json:"sshPort,omitempty"`
+	SSHUser       string  `json:"sshUser,omitempty"`
+	AuthMode      string  `json:"authMode,omitempty"`
+	Password      string  `json:"password,omitempty"`
+	PrivateKey    string  `json:"privateKey,omitempty"`
+	InstallDir    string  `json:"installDir,omitempty"`
+	Version       string  `json:"version,omitempty"`
+	Zone          string  `json:"zone,omitempty"`
+	Role          string  `json:"role,omitempty"`
+	Capacity      int     `json:"capacity,omitempty"`
+	CPUPercent    int     `json:"cpuPercent,omitempty"`
+	MemoryPercent int     `json:"memoryPercent,omitempty"`
+	DiskPercent   int     `json:"diskPercent,omitempty"`
+	NetworkMBps   float64 `json:"networkThroughputMBps,omitempty"`
+}
+
+type NodeMetricSample struct {
+	NodeID        string  `json:"nodeId"`
+	CollectedAt   string  `json:"collectedAt"`
+	CPUPercent    int     `json:"cpuPercent"`
+	MemoryPercent int     `json:"memoryPercent"`
+	DiskPercent   int     `json:"diskPercent"`
+	NetworkMBps   float64 `json:"networkThroughputMBps"`
+}
+
+type NodeMetricHistoryResponse struct {
+	NodeID      string             `json:"nodeId"`
+	Range       string             `json:"range"`
+	GeneratedAt string             `json:"generatedAt"`
+	Samples     []NodeMetricSample `json:"samples"`
 }
 
 type ClusterNodeNameInput struct {

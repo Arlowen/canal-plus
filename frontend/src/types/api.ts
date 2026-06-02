@@ -121,10 +121,30 @@ export interface ClusterNode {
   role: NodeRole | string;
   cpuPercent: number;
   memoryPercent: number;
+  diskPercent: number;
+  networkThroughputMBps: number;
   capacity: number;
   lastHeartbeatAt: string;
   startedAt: string;
   updatedAt: string;
+}
+
+export type NodeMetricRange = "3h" | "6h" | "12h" | "1d" | "3d" | "1w" | "1mo";
+
+export interface NodeMetricSample {
+  nodeId: string;
+  collectedAt: string;
+  cpuPercent: number;
+  memoryPercent: number;
+  diskPercent: number;
+  networkThroughputMBps: number;
+}
+
+export interface NodeMetricHistoryResponse {
+  nodeId: string;
+  range: NodeMetricRange;
+  generatedAt: string;
+  samples: NodeMetricSample[];
 }
 
 export interface NodeOperationStep {

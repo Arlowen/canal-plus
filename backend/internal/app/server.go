@@ -37,6 +37,10 @@ func NewServer() (*Server, error) {
 		return nil, err
 	}
 	localNodeID := localNode.ID
+	metricCollector := NewNodeMetricCollector()
+	if sample, err := metricCollector.Collect(localNodeID); err == nil {
+		_ = store.RefreshNodeHeartbeatWithMetrics(localNodeID, sample)
+	}
 	clusterSupervisorEnabled := os.Getenv("CANAL_PLUS_CLUSTER_SUPERVISOR") != "false"
 	clusterSupervisorInterval := envDurationSeconds("CANAL_PLUS_CLUSTER_SUPERVISOR_INTERVAL_SECONDS", 5*time.Second)
 	if clusterSupervisorEnabled {
@@ -45,7 +49,7 @@ func NewServer() (*Server, error) {
 	embeddedHeartbeatEnabled := os.Getenv("CANAL_PLUS_EMBEDDED_NODE_HEARTBEAT") != "false"
 	embeddedHeartbeatInterval := envDurationSeconds("CANAL_PLUS_EMBEDDED_NODE_HEARTBEAT_INTERVAL_SECONDS", 10*time.Second)
 	if embeddedHeartbeatEnabled {
-		store.StartEmbeddedNodeHeartbeat(localNodeID, embeddedHeartbeatInterval)
+		store.StartEmbeddedNodeMetrics(localNodeID, embeddedHeartbeatInterval, metricCollector.Collect)
 	}
 
 	frontendOrigin := os.Getenv("FRONTEND_ORIGIN")
@@ -651,6 +655,13 @@ func (s *Server) handleCluster(response http.ResponseWriter, request *http.Reque
 		writeJSON(response, http.StatusOK, s.clusterResponse())
 	case len(parts) == 2 && parts[1] == "nodes" && request.Method == http.MethodGet:
 		writeJSON(response, http.StatusOK, s.clusterResponse().Nodes)
+	case len(parts) == 4 && parts[1] == "nodes" && parts[3] == "metrics" && request.Method == http.MethodGet:
+		history, ok := s.store.NodeMetricHistory(parts[2], request.URL.Query().Get("range"))
+		if !ok {
+			writeError(response, http.StatusNotFound, "节点不存在")
+			return
+		}
+		writeJSON(response, http.StatusOK, history)
 	case len(parts) == 3 && parts[1] == "nodes" && request.Method == http.MethodPut:
 		var input ClusterNodeNameInput
 		if err := decodeJSON(request, &input); err != nil {

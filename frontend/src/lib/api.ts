@@ -9,6 +9,8 @@ import type {
   DatasourceInput,
   DatasourceTestResult,
   LoginResponse,
+  NodeMetricHistoryResponse,
+  NodeMetricRange,
   OperationLog,
   User
 } from "../types/api";
@@ -226,6 +228,9 @@ export const api = {
   },
   cluster() {
     return request<ClusterSnapshot>("/cluster");
+  },
+  nodeMetrics(id: string, range: NodeMetricRange) {
+    return request<NodeMetricHistoryResponse>(`/cluster/nodes/${id}/metrics?range=${encodeURIComponent(range)}`);
   },
   updateMasterNodeCount(masterNodeCount: number) {
     return request<ClusterSnapshot>("/cluster/master-node-count", {
