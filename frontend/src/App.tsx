@@ -2041,9 +2041,15 @@ function ChannelCreateWizardPage({
                         <Field label="数据源" required>
                           <DropdownSelect value={form.sourceDatasourceId} ariaLabel="源端数据源" options={sourceOptions} onChange={updateSourceDatasource} />
                         </Field>
-                        <Button type="button" onClick={() => void testDatasourceConnection("source")} disabled={!form.sourceDatasourceId || !form.runNodeId || form.sourceTestState === "testing"} className="btn-secondary justify-center">
+                        <Button
+                          type="button"
+                          aria-label={form.sourceTestState === "testing" ? "源端测试中" : "测试源端"}
+                          title={form.sourceTestState === "testing" ? "源端测试中" : "测试源端"}
+                          onClick={() => void testDatasourceConnection("source")}
+                          disabled={!form.sourceDatasourceId || !form.runNodeId || form.sourceTestState === "testing"}
+                          className="btn-secondary btn-icon justify-self-start"
+                        >
                           {form.sourceTestState === "testing" ? <ArrowsClockwise size={16} className="animate-spin" /> : <ShieldCheck size={16} />}
-                          测试
                         </Button>
                         {form.sourceTestMessage && <div className="text-sm text-slate-500">{form.sourceTestMessage}</div>}
                       </div>
@@ -2073,9 +2079,15 @@ function ChannelCreateWizardPage({
                         <Field label="数据源" required>
                           <DropdownSelect value={form.targetDatasourceId} ariaLabel="目标端数据源" options={targetOptions} onChange={updateTargetDatasource} />
                         </Field>
-                        <Button type="button" onClick={() => void testDatasourceConnection("target")} disabled={!form.targetDatasourceId || !form.runNodeId || form.targetTestState === "testing"} className="btn-secondary justify-center">
+                        <Button
+                          type="button"
+                          aria-label={form.targetTestState === "testing" ? "目标端测试中" : "测试目标端"}
+                          title={form.targetTestState === "testing" ? "目标端测试中" : "测试目标端"}
+                          onClick={() => void testDatasourceConnection("target")}
+                          disabled={!form.targetDatasourceId || !form.runNodeId || form.targetTestState === "testing"}
+                          className="btn-secondary btn-icon justify-self-start"
+                        >
                           {form.targetTestState === "testing" ? <ArrowsClockwise size={16} className="animate-spin" /> : <ShieldCheck size={16} />}
-                          测试
                         </Button>
                         {form.targetTestMessage && <div className="text-sm text-slate-500">{form.targetTestMessage}</div>}
                       </div>
