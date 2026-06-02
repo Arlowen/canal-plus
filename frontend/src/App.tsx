@@ -1970,9 +1970,9 @@ function ChannelCreateWizardPage({
         {!canManage ? (
           <PermissionNotice description="当前账号不能创建 Channel。" />
         ) : (
-          <div className="grid gap-6 xl:grid-cols-[260px_minmax(0,1fr)]">
-            <aside className="rounded-lg border border-line bg-white p-3">
-              <div className="grid gap-2">
+          <div className="grid gap-6">
+            <nav className="overflow-x-auto rounded-lg border border-line bg-white p-3" aria-label="Channel 创建步骤">
+              <div className="grid min-w-[680px] grid-cols-4 gap-3">
                 {channelWizardSteps.map((wizardStep, index) => (
                   <Button
                     key={wizardStep}
@@ -1980,7 +1980,7 @@ function ChannelCreateWizardPage({
                     disabled={index > maxReachableStepIndex}
                     onClick={() => setStep(wizardStep)}
                     className={cx(
-                      "flex min-h-12 items-center justify-start gap-3 rounded-lg px-3 text-left text-sm font-semibold transition",
+                      "flex min-h-14 items-center justify-center gap-3 rounded-lg px-4 text-sm font-semibold transition",
                       step === wizardStep
                         ? "border border-blue-100 bg-blue-50 text-accent"
                         : "border border-transparent bg-white text-slate-600 hover:border-line hover:bg-slate-50",
@@ -1997,7 +1997,7 @@ function ChannelCreateWizardPage({
                   </Button>
                 ))}
               </div>
-            </aside>
+            </nav>
 
             <div className="min-w-0 rounded-lg border border-line bg-white">
               {step === "connections" && (
