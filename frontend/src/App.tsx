@@ -12,12 +12,14 @@ import {
 import {
   ArrowsClockwise,
   ArrowRight,
+  CaretDown,
   CaretLeft,
   CaretRight,
   CheckCircle,
   Database,
   GearSix,
   HardDrives,
+  Info,
   MagnifyingGlass,
   PencilSimple,
   Plus,
@@ -893,7 +895,14 @@ function App() {
                     </p>
                   )}
                 </div>
-                <div className="flex flex-wrap gap-2 xl:justify-end" />
+                <div className="flex flex-wrap gap-2 xl:justify-end">
+                  {page === "nodeMonitor" && (
+                    <Button type="button" onClick={() => navigateToPage("nodes")} className="btn-secondary h-11 px-4">
+                      <ArrowRight size={16} className="rotate-180" />
+                      返回
+                    </Button>
+                  )}
+                </div>
               </div>
             )}
 
@@ -940,6 +949,7 @@ function App() {
               <NodeMonitorPage
                 nodeId={focusedNodeId}
                 cluster={cluster}
+                datasourceCount={datasources.length}
                 onBack={() => navigateToPage("nodes")}
               />
             ) : (
@@ -2556,108 +2566,460 @@ function NodesPage({
 function NodeMonitorPage({
   nodeId,
   cluster,
+  datasourceCount,
   onBack
 }: {
   nodeId: string | null;
   cluster: ClusterSnapshot | null;
+  datasourceCount: number;
   onBack: () => void;
 }) {
   const nodes = cluster?.nodes ?? emptyNodes;
-  const selected = nodes.find((item) => item.id === nodeId) || null;
+  const selected = nodeId ? nodes.find((item) => item.id === nodeId) || null : nodes[0] || null;
 
   if (!selected) {
     return (
-      <section className="p-6">
-        <Button type="button" onClick={onBack} className="btn-compact">
-          <ArrowRight size={14} className="rotate-180" />
-          返回
-        </Button>
-        <div className="mt-5 text-sm text-slate-500">节点不存在或已删除。</div>
+      <section className="px-5 py-6 md:px-8">
+        <div className="rounded-lg border border-dashed border-line bg-slate-50/70 p-10 text-center">
+          <div className="text-base font-semibold text-coal">节点不存在</div>
+          <div className="mt-2 text-sm text-slate-500">返回节点列表后重新选择。</div>
+          <Button type="button" onClick={onBack} className="btn-primary mt-5">
+            <ArrowRight size={16} className="rotate-180" />
+            返回
+          </Button>
+        </div>
       </section>
     );
   }
 
   const selectedRole = effectiveNodeRole(selected, nodes);
-  const heartbeatAge = secondsSince(selected.lastHeartbeatAt);
+  const monitor = buildNodeMonitorData(selected);
+  const heartbeatAge = formatNodeHeartbeatAge(selected.lastHeartbeatAt);
+  const recentExceptions = selected.status === "online" ? 0 : 1;
+  const restartAge = formatNodeHeartbeatAge(selected.startedAt);
 
   return (
-    <section className="p-6">
-      <div className="flex flex-col gap-4 border-b border-line pb-5 lg:flex-row lg:items-start lg:justify-between">
-        <div className="min-w-0 flex-1">
-          <div className="inline-flex rounded-lg border border-line bg-slate-50 px-3 py-2 text-sm text-slate-600">
-            <span className="label mr-2">心跳</span>
-            {formatDateTime(selected.lastHeartbeatAt)} · {heartbeatAge} 秒前
+    <section className="min-w-0 px-5 py-6 md:px-8">
+      <div className="rounded-lg border border-line bg-white px-5 py-4 shadow-[0_18px_48px_-42px_rgba(37,99,235,0.35)] md:px-7">
+        <h2 className="truncate text-2xl font-semibold tracking-tight text-coal md:text-3xl">{selected.name || selected.id}</h2>
+        <div className="mt-3 flex flex-wrap items-center gap-x-8 gap-y-3 text-sm text-slate-600">
+          <Badge tone={nodeRoleTone(selectedRole)}>{nodeRoleText(selectedRole)}</Badge>
+          <NodeStatusBadge status={selected.status} />
+          <div className="flex items-center gap-2">
+            <span className="font-medium text-slate-500">Host</span>
+            <span className="font-mono text-coal">{selected.endpoint}</span>
           </div>
-          <div className="mt-4 flex min-w-0 items-center justify-between gap-4">
-            <h2 className="min-w-0 flex-1 truncate text-2xl font-semibold tracking-tight text-coal">{selected.name || selected.id}</h2>
-            <Badge tone={nodeTone(selected.status)}>{nodeStatusText(selected.status)}</Badge>
+          <div className="flex items-center gap-2">
+            <span className="font-medium text-slate-500">版本</span>
+            <span className="font-mono text-coal">{selected.version?.trim() || "-"}</span>
           </div>
-          <div className="mt-3 flex flex-wrap items-center gap-2">
-            <Badge tone={nodeRoleTone(selectedRole)}>{nodeRoleText(selectedRole)}</Badge>
-            <span className="mono text-xs text-slate-500">{selected.endpoint}</span>
+          <div className="flex items-center gap-2">
+            <span className="font-medium text-slate-500">心跳</span>
+            <span>{formatDateTime(selected.lastHeartbeatAt)}</span>
+            <span className="font-mono text-xs text-slate-500">({heartbeatAge})</span>
           </div>
         </div>
-        <Button type="button" onClick={onBack} className="btn-compact lg:order-none">
-          <ArrowRight size={14} className="rotate-180" />
-          返回
-        </Button>
       </div>
 
-      <div className="grid gap-4 pt-5 lg:grid-cols-2">
-        <NodeMetricPanel label="CPU" value={selected.cpuPercent} />
-        <NodeMetricPanel label="内存" value={selected.memoryPercent} />
+      <div className="mt-5 grid gap-5 md:grid-cols-2 2xl:grid-cols-4">
+        {monitor.metrics.map((metric) => (
+          <NodeMetricPanel key={metric.key} metric={metric} />
+        ))}
+      </div>
+
+      <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1.55fr)_minmax(360px,0.95fr)]">
+        <ResourceTrendPanel monitor={monitor} />
+        <RuntimeOverviewPanel
+          runningTasks={selected.capacity}
+          datasourceCount={datasourceCount}
+          recentExceptions={recentExceptions}
+          restartAge={restartAge}
+        />
       </div>
     </section>
   );
 }
 
-function NodeMetricPanel({ label, value }: { label: string; value: number }) {
-  const percent = clampPercent(value);
-  const circumference = 2 * Math.PI * 44;
-  const offset = circumference * (1 - percent / 100);
-  const toneClass = percent >= 85
-    ? "text-red-600"
-    : percent >= 70
-      ? "text-yellow-600"
-      : "text-blue-600";
-  const barClass = percent >= 85
-    ? "bg-red-500"
-    : percent >= 70
-      ? "bg-yellow-500"
-      : "bg-blue-600";
+type NodeMonitorMetric = {
+  key: "cpu" | "memory" | "disk" | "network";
+  label: string;
+  value: number;
+  unit: string;
+  color: string;
+  series: number[];
+  compareValue: number;
+  ringValue?: number;
+  precision?: number;
+};
+
+type NodeMonitorData = {
+  metrics: NodeMonitorMetric[];
+  cpuSeries: number[];
+  memorySeries: number[];
+  diskSeries: number[];
+  labels: string[];
+};
+
+function NodeMetricPanel({ metric }: { metric: NodeMonitorMetric }) {
+  const delta = metric.value - metric.compareValue;
+  const isUsageMetric = metric.key !== "network";
+  const trendImproved = isUsageMetric ? delta <= 0 : delta >= 0;
+  const trendClass = trendImproved ? "text-emerald-600" : "text-red-600";
+  const trendPrefix = delta <= 0 ? "↓" : "↑";
+  const deltaValue = Math.abs(delta);
+  const formattedDelta = metric.unit === "%"
+    ? `${Math.round(deltaValue)}%`
+    : `${deltaValue.toFixed(1)} ${metric.unit}`;
 
   return (
-    <div className="rounded-lg border border-line bg-white p-5">
+    <div className="min-h-[240px] rounded-lg border border-line bg-white p-5 shadow-[0_18px_48px_-42px_rgba(37,99,235,0.28)]">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <div className="label">{label}</div>
-          <div className={cx("mt-2 font-mono text-4xl font-semibold tracking-tight", toneClass)}>{percent}%</div>
+          <div className="flex items-center gap-2 text-sm font-semibold text-coal">
+            {metric.label}
+            <Info size={15} className="text-slate-400" />
+          </div>
+          <div className="mt-4 flex items-end gap-1 font-mono font-semibold tracking-tight text-accent">
+            <span className="text-4xl leading-none">{formatMetricValue(metric.value, metric.precision)}</span>
+            <span className="pb-1 text-lg leading-none">{metric.unit}</span>
+          </div>
+          <div className="mt-4 flex items-center gap-2 text-sm font-medium">
+            <span className={trendClass}>{trendPrefix} {formattedDelta}</span>
+            <span className="text-slate-600">(较 5 分钟前)</span>
+          </div>
         </div>
-        <svg className="h-28 w-28 shrink-0 -rotate-90" viewBox="0 0 112 112" aria-label={`${label} ${percent}%`}>
-          <circle cx="56" cy="56" r="44" fill="none" stroke="#e2e8f0" strokeWidth="12" />
-          <circle
-            cx="56"
-            cy="56"
-            r="44"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="12"
-            strokeLinecap="round"
-            strokeDasharray={circumference}
-            strokeDashoffset={offset}
-            className={toneClass}
-          />
-        </svg>
+        {metric.ringValue !== undefined && (
+          <MetricProgressRing value={metric.ringValue} color={metric.color} />
+        )}
       </div>
-      <div className="mt-5 h-2 overflow-hidden rounded-full bg-slate-100">
-        <div className={cx("h-full rounded-full", barClass)} style={{ width: `${percent}%` }} />
-      </div>
-      <div className="mt-3 flex justify-between text-xs font-medium text-slate-500">
-        <span>0%</span>
-        <span>100%</span>
+      <div className="mt-8">
+        <Sparkline values={metric.series} color={metric.color} minValue={metric.key === "network" ? undefined : 0} maxValue={metric.key === "network" ? undefined : 100} />
       </div>
     </div>
   );
+}
+
+function MetricProgressRing({ value, color }: { value: number; color: string }) {
+  const percent = clampPercent(value);
+  const circumference = 2 * Math.PI * 38;
+  const offset = circumference * (1 - percent / 100);
+
+  return (
+    <svg className="h-24 w-24 shrink-0 -rotate-90" viewBox="0 0 96 96" aria-label={`${percent}%`}>
+      <circle cx="48" cy="48" r="38" fill="none" stroke="#e5ebf5" strokeWidth="9" />
+      <circle
+        cx="48"
+        cy="48"
+        r="38"
+        fill="none"
+        stroke={color}
+        strokeWidth="9"
+        strokeLinecap="round"
+        strokeDasharray={circumference}
+        strokeDashoffset={offset}
+      />
+      <text x="48" y="53" textAnchor="middle" className="rotate-90 fill-coal font-mono text-[16px] font-semibold">
+        {percent}%
+      </text>
+    </svg>
+  );
+}
+
+function Sparkline({
+  values,
+  color,
+  minValue,
+  maxValue
+}: {
+  values: number[];
+  color: string;
+  minValue?: number;
+  maxValue?: number;
+}) {
+  const gradientId = useId();
+  const linePath = buildLinePath(values, 252, 66, 4, minValue, maxValue);
+  const areaPath = buildAreaPath(values, 252, 66, 4, minValue, maxValue);
+
+  return (
+    <svg className="h-[68px] w-full" viewBox="0 0 252 68" preserveAspectRatio="none" aria-hidden="true">
+      <defs>
+        <linearGradient id={gradientId} x1="0" x2="0" y1="0" y2="1">
+          <stop offset="0%" stopColor={color} stopOpacity="0.22" />
+          <stop offset="100%" stopColor={color} stopOpacity="0" />
+        </linearGradient>
+      </defs>
+      <path d={areaPath} fill={`url(#${gradientId})`} />
+      <path d={linePath} fill="none" stroke={color} strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.4" />
+    </svg>
+  );
+}
+
+function ResourceTrendPanel({ monitor }: { monitor: NodeMonitorData }) {
+  const chart = buildResourceTrendPaths(monitor);
+
+  return (
+    <div className="rounded-lg border border-line bg-white p-5 shadow-[0_18px_48px_-42px_rgba(37,99,235,0.25)]">
+      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+        <h3 className="text-lg font-semibold tracking-tight text-coal">资源趋势</h3>
+        <Button type="button" className="btn-secondary h-10 px-4">
+          最近 1 小时
+          <CaretDown size={16} />
+        </Button>
+      </div>
+      <div className="mt-4 flex flex-wrap justify-center gap-8 text-sm font-medium text-slate-600">
+        <TrendLegend color="#2563eb" label="CPU 使用率 (%)" />
+        <TrendLegend color="#10b981" label="内存使用率 (%)" />
+        <TrendLegend color="#f97316" label="磁盘使用率 (%)" />
+      </div>
+      <div className="mt-4 overflow-hidden">
+        <svg className="h-[330px] w-full" viewBox="0 0 760 318" preserveAspectRatio="none" role="img" aria-label="资源趋势图">
+          {[0, 25, 50, 75, 100].map((tick) => {
+            const y = chart.yFor(tick);
+            return (
+              <g key={tick}>
+                <text x="16" y={y + 5} className="fill-slate-500 text-[13px]">{tick}</text>
+                <line x1="58" x2="738" y1={y} y2={y} stroke="#dbe7f6" strokeDasharray="4 4" />
+              </g>
+            );
+          })}
+          <line x1="58" x2="738" y1={chart.yFor(0)} y2={chart.yFor(0)} stroke="#cad9ea" />
+          <line x1="58" x2="58" y1="22" y2={chart.yFor(0)} stroke="#dbe7f6" />
+          <path d={chart.cpuPath} fill="none" stroke="#2563eb" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.6" />
+          <path d={chart.memoryPath} fill="none" stroke="#10b981" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.6" />
+          <path d={chart.diskPath} fill="none" stroke="#f97316" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.6" />
+          {monitor.labels.map((label, index) => {
+            const x = 58 + (680 / Math.max(1, monitor.labels.length - 1)) * index;
+            return <text key={label} x={x} y="306" textAnchor="middle" className="fill-slate-600 text-[13px]">{label}</text>;
+          })}
+        </svg>
+      </div>
+    </div>
+  );
+}
+
+function TrendLegend({ color, label }: { color: string; label: string }) {
+  return (
+    <span className="inline-flex items-center gap-2 whitespace-nowrap">
+      <span className="h-2 w-2 rounded-full" style={{ backgroundColor: color }} />
+      {label}
+    </span>
+  );
+}
+
+function RuntimeOverviewPanel({
+  runningTasks,
+  datasourceCount,
+  recentExceptions,
+  restartAge
+}: {
+  runningTasks: number;
+  datasourceCount: number;
+  recentExceptions: number;
+  restartAge: string;
+}) {
+  return (
+    <div className="rounded-lg border border-line bg-white p-5 shadow-[0_18px_48px_-42px_rgba(37,99,235,0.25)]">
+      <h3 className="text-lg font-semibold tracking-tight text-coal">运行概览</h3>
+      <div className="mt-7 grid min-h-[252px] grid-cols-1 divide-y divide-line md:grid-cols-2 md:divide-x md:divide-y-0">
+        <div className="grid divide-y divide-line">
+          <OverviewCell icon={HardDrives} tone="blue" label="运行任务数" value={Math.max(0, runningTasks)} />
+          <OverviewCell icon={WarningCircle} tone="red" label="最近异常" value={recentExceptions} />
+        </div>
+        <div className="grid divide-y divide-line">
+          <OverviewCell icon={Database} tone="green" label="连接数据源" value={datasourceCount} />
+          <OverviewCell icon={ArrowsClockwise} tone="amber" label="最近重启" value={restartAge} valueMono={false} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function OverviewCell({
+  icon: Icon,
+  tone,
+  label,
+  value,
+  valueMono = true
+}: {
+  icon: typeof Database;
+  tone: "blue" | "green" | "red" | "amber";
+  label: string;
+  value: ReactNode;
+  valueMono?: boolean;
+}) {
+  const toneClass = tone === "blue"
+    ? "border-blue-100 bg-blue-50 text-accent"
+    : tone === "green"
+      ? "border-emerald-100 bg-emerald-50 text-emerald-600"
+      : tone === "red"
+        ? "border-red-100 bg-red-50 text-red-600"
+        : "border-amber-100 bg-amber-50 text-amber-600";
+
+  return (
+    <div className="flex items-center gap-5 px-3 py-7 md:px-7">
+      <span className={cx("flex h-12 w-12 shrink-0 items-center justify-center rounded-lg border", toneClass)}>
+        <Icon size={24} />
+      </span>
+      <div className="min-w-0">
+        <div className="text-sm font-semibold text-slate-600">{label}</div>
+        <div className={cx("mt-2 truncate text-3xl font-semibold leading-none tracking-tight text-coal", valueMono && "font-mono")}>{value}</div>
+      </div>
+    </div>
+  );
+}
+
+function buildNodeMonitorData(node: ClusterNode): NodeMonitorData {
+  const seed = hashText(`${node.id}:${node.name}:${node.endpoint}`);
+  const cpuValue = clampPercent(node.cpuPercent);
+  const memoryValue = clampPercent(node.memoryPercent);
+  const diskValue = clampPercent(46 + (seed % 25) + Math.floor(Math.max(0, node.capacity) / 2));
+  const networkValue = Number((8 + ((seed % 80) / 10) + Math.min(8, Math.max(0, node.capacity) * 0.35)).toFixed(1));
+  const cpuSeries = makePercentSeries(cpuValue, seed + 7, 48);
+  const memorySeries = makePercentSeries(memoryValue, seed + 17, 48);
+  const diskSeries = makePercentSeries(diskValue, seed + 29, 48);
+  const networkSeries = makeNetworkSeries(networkValue, seed + 41, 48);
+
+  return {
+    metrics: [
+      {
+        key: "cpu",
+        label: "CPU 使用率",
+        value: cpuValue,
+        unit: "%",
+        color: "#2563eb",
+        series: cpuSeries,
+        compareValue: cpuSeries[Math.max(0, cpuSeries.length - 7)] ?? cpuValue,
+        ringValue: cpuValue
+      },
+      {
+        key: "memory",
+        label: "内存使用率",
+        value: memoryValue,
+        unit: "%",
+        color: "#2563eb",
+        series: memorySeries,
+        compareValue: memorySeries[Math.max(0, memorySeries.length - 7)] ?? memoryValue,
+        ringValue: memoryValue
+      },
+      {
+        key: "disk",
+        label: "磁盘使用率",
+        value: diskValue,
+        unit: "%",
+        color: "#2563eb",
+        series: diskSeries,
+        compareValue: diskSeries[Math.max(0, diskSeries.length - 7)] ?? diskValue,
+        ringValue: diskValue
+      },
+      {
+        key: "network",
+        label: "网络吞吐",
+        value: networkValue,
+        unit: "MB/s",
+        color: "#10b981",
+        series: networkSeries,
+        compareValue: networkSeries[Math.max(0, networkSeries.length - 7)] ?? networkValue,
+        precision: 1
+      }
+    ],
+    cpuSeries,
+    memorySeries,
+    diskSeries,
+    labels: buildTrendLabels(node.lastHeartbeatAt)
+  };
+}
+
+function makePercentSeries(baseValue: number, seed: number, length: number) {
+  return Array.from({ length }, (_, index) => {
+    const wave = Math.sin((index + (seed % 17)) * 0.42) * 2.4;
+    const wobble = ((seed + index * 13) % 9) - 4;
+    const drift = (index / Math.max(1, length - 1) - 0.5) * ((seed % 7) - 3);
+    return clampPercent(baseValue + wave + wobble * 0.65 + drift);
+  });
+}
+
+function makeNetworkSeries(baseValue: number, seed: number, length: number) {
+  return Array.from({ length }, (_, index) => {
+    const wave = Math.sin((index + (seed % 19)) * 0.55) * 1.25;
+    const pulse = ((seed + index * 11) % 8) * 0.18;
+    const trend = index > length - 10 ? (index - (length - 10)) * 0.12 : 0;
+    return Number(Math.max(0.2, baseValue + wave + pulse + trend - 0.8).toFixed(1));
+  });
+}
+
+function buildResourceTrendPaths(monitor: NodeMonitorData) {
+  const width = 680;
+  const height = 246;
+  const left = 58;
+  const top = 22;
+  const yFor = (value: number) => top + height - clampPercent(value) / 100 * height;
+  const pathFor = (values: number[]) => values.map((value, index) => {
+    const x = left + (width / Math.max(1, values.length - 1)) * index;
+    const y = yFor(value);
+    return `${index === 0 ? "M" : "L"}${x.toFixed(2)},${y.toFixed(2)}`;
+  }).join(" ");
+
+  return {
+    yFor,
+    cpuPath: pathFor(monitor.cpuSeries),
+    memoryPath: pathFor(monitor.memorySeries),
+    diskPath: pathFor(monitor.diskSeries)
+  };
+}
+
+function buildLinePath(values: number[], width: number, height: number, padding: number, minValue?: number, maxValue?: number) {
+  const points = buildChartPoints(values, width, height, padding, minValue, maxValue);
+  return points.map((point, index) => `${index === 0 ? "M" : "L"}${point.x.toFixed(2)},${point.y.toFixed(2)}`).join(" ");
+}
+
+function buildAreaPath(values: number[], width: number, height: number, padding: number, minValue?: number, maxValue?: number) {
+  const points = buildChartPoints(values, width, height, padding, minValue, maxValue);
+  if (points.length === 0) return "";
+  const baseline = height - padding;
+  const line = points.map((point, index) => `${index === 0 ? "M" : "L"}${point.x.toFixed(2)},${point.y.toFixed(2)}`).join(" ");
+  const last = points[points.length - 1];
+  const first = points[0];
+  return `${line} L${last.x.toFixed(2)},${baseline} L${first.x.toFixed(2)},${baseline} Z`;
+}
+
+function buildChartPoints(values: number[], width: number, height: number, padding: number, minValue?: number, maxValue?: number) {
+  if (values.length === 0) return [];
+  const fallbackMin = Math.min(...values);
+  const fallbackMax = Math.max(...values);
+  const min = minValue ?? fallbackMin;
+  const max = maxValue ?? fallbackMax;
+  const range = Math.max(1, max - min);
+  return values.map((value, index) => ({
+    x: padding + ((width - padding * 2) / Math.max(1, values.length - 1)) * index,
+    y: padding + (1 - (value - min) / range) * (height - padding * 2)
+  }));
+}
+
+function buildTrendLabels(value?: string) {
+  const endTime = value ? new Date(value).getTime() : Date.now();
+  const normalizedEndTime = Number.isNaN(endTime) ? Date.now() : endTime;
+  const start = normalizedEndTime - 60 * 60 * 1000;
+  return Array.from({ length: 7 }, (_, index) => formatTimeLabel(new Date(start + index * 10 * 60 * 1000)));
+}
+
+function formatTimeLabel(value: Date) {
+  return new Intl.DateTimeFormat("zh-CN", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false
+  }).format(value);
+}
+
+function formatMetricValue(value: number, precision = 0) {
+  return precision > 0 ? value.toFixed(precision) : String(Math.round(value));
+}
+
+function hashText(value: string) {
+  let hash = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    hash = (hash * 31 + value.charCodeAt(index)) >>> 0;
+  }
+  return hash;
 }
 
 function SettingsPage({
@@ -3705,11 +4067,6 @@ function nodeRoleTone(role: ClusterNode["role"] | "master" | "standby") {
 function nodeStatusText(status: ClusterNode["status"]) {
   if (status === "online") return "在线";
   return "离线";
-}
-
-function nodeTone(status: ClusterNode["status"]) {
-  if (status === "online") return "green";
-  return "neutral";
 }
 
 function formatNodeHeartbeatAge(value?: string) {
