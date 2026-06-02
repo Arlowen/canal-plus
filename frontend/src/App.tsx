@@ -15,7 +15,6 @@ import {
   CaretLeft,
   CaretRight,
   CheckCircle,
-  Clock,
   Database,
   GearSix,
   HardDrives,
@@ -2610,7 +2609,6 @@ function NodeMonitorPage({
   const selected = nodeId ? nodes.find((item) => item.id === nodeId) || null : nodes[0] || null;
   const [metricRange, setMetricRange] = useState<NodeMetricRange>("3h");
   const [metricHistory, setMetricHistory] = useState<NodeMetricHistoryResponse | null>(null);
-  const [overviewHistory, setOverviewHistory] = useState<NodeMetricHistoryResponse | null>(null);
   const [metricsLoading, setMetricsLoading] = useState(false);
   const [metricsError, setMetricsError] = useState<string | null>(null);
 
@@ -2645,28 +2643,6 @@ function NodeMonitorPage({
     };
   }, [selected, metricRange]);
 
-  useEffect(() => {
-    if (!selected) {
-      setOverviewHistory(null);
-      return;
-    }
-    let ignored = false;
-    api.nodeMetrics(selected.id, "1h")
-      .then((history) => {
-        if (!ignored) {
-          setOverviewHistory(history);
-        }
-      })
-      .catch(() => {
-        if (!ignored) {
-          setOverviewHistory(null);
-        }
-      });
-    return () => {
-      ignored = true;
-    };
-  }, [selected]);
-
   if (!selected) {
     return (
       <section className="px-5 py-6 md:px-8">
@@ -2684,9 +2660,7 @@ function NodeMonitorPage({
 
   const selectedRole = effectiveNodeRole(selected, nodes);
   const activeMetricHistory = metricHistory?.nodeId === selected.id && metricHistory.range === metricRange ? metricHistory : null;
-  const activeOverviewHistory = overviewHistory?.nodeId === selected.id ? overviewHistory : null;
   const monitor = buildNodeMonitorData(selected, activeMetricHistory, metricRange);
-  const overview = buildRuntimeOverviewData(activeOverviewHistory);
   const heartbeatAge = formatNodeHeartbeatAge(selected.lastHeartbeatAt);
   const recentExceptions = selected.status === "online" ? 0 : 1;
 
@@ -2717,8 +2691,6 @@ function NodeMonitorPage({
         <RuntimeOverviewPanel
           runningTasks={selected.capacity}
           recentExceptions={recentExceptions}
-          recent30MinuteSamples={overview.recent30MinuteSamples}
-          recentHourSamples={overview.recentHourSamples}
         />
         {monitor.metrics.map((metric) => (
           <NodeMetricPanel key={metric.key} metric={metric} />
@@ -2905,40 +2877,19 @@ function resourceTrendPercent(value: number, total: number) {
   return total === 0 ? 0 : value / total * 100;
 }
 
-function buildRuntimeOverviewData(history: NodeMetricHistoryResponse | null) {
-  const samples = history?.samples ?? [];
-  const sampleTimes = samples.map((sample) => metricTime(sample.collectedAt)).filter((time) => Number.isFinite(time));
-  const latestTime = sampleTimes.length > 0 ? Math.max(...sampleTimes) : Date.now();
-  return {
-    recent30MinuteSamples: countSamplesWithin(sampleTimes, latestTime, nodeMetricRangeDurations["30m"]),
-    recentHourSamples: countSamplesWithin(sampleTimes, latestTime, nodeMetricRangeDurations["1h"])
-  };
-}
-
-function countSamplesWithin(sampleTimes: number[], latestTime: number, duration: number) {
-  const startTime = latestTime - duration;
-  return sampleTimes.filter((time) => time >= startTime && time <= latestTime).length;
-}
-
 function RuntimeOverviewPanel({
   runningTasks,
-  recentExceptions,
-  recent30MinuteSamples,
-  recentHourSamples
+  recentExceptions
 }: {
   runningTasks: number;
   recentExceptions: number;
-  recent30MinuteSamples: number;
-  recentHourSamples: number;
 }) {
   return (
-    <div className="min-h-[240px] rounded-lg border border-line bg-white p-5 shadow-[0_18px_48px_-42px_rgba(37,99,235,0.25)]">
+    <div className="min-h-[168px] rounded-lg border border-line bg-white p-5 shadow-[0_18px_48px_-42px_rgba(37,99,235,0.25)]">
       <h3 className="text-lg font-semibold tracking-tight text-coal">运行概览</h3>
       <div className="mt-5 grid grid-cols-2 border-t border-line">
-        <OverviewCell icon={HardDrives} tone="blue" label="运行任务数" value={Math.max(0, runningTasks)} className="border-b border-r border-line" compact />
-        <OverviewCell icon={WarningCircle} tone="red" label="最近异常" value={recentExceptions} className="border-b border-line pl-4" compact />
-        <OverviewCell icon={Clock} tone="green" label="最近 30 分钟" value={`${recent30MinuteSamples} 点`} valueMono={false} className="border-r border-line" compact />
-        <OverviewCell icon={Clock} tone="amber" label="最近 1 小时" value={`${recentHourSamples} 点`} valueMono={false} className="pl-4" compact />
+        <OverviewCell icon={HardDrives} tone="blue" label="运行任务数" value={Math.max(0, runningTasks)} className="border-r border-line" compact />
+        <OverviewCell icon={WarningCircle} tone="red" label="最近异常" value={recentExceptions} className="pl-4" compact />
       </div>
     </div>
   );
