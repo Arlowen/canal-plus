@@ -15,6 +15,7 @@ import {
   CaretLeft,
   CaretRight,
   CheckCircle,
+  Clock,
   Database,
   GearSix,
   HardDrives,
@@ -132,6 +133,8 @@ const datasourceAuthOptions: Array<{ value: DatasourceAuthType; label: string }>
 const emptyNodes: ClusterNode[] = [];
 
 const nodeMetricRangeOptions: Array<{ value: NodeMetricRange; label: string }> = [
+  { value: "30m", label: "最近 30 分钟" },
+  { value: "1h", label: "最近 1 小时" },
   { value: "3h", label: "最近 3 小时" },
   { value: "6h", label: "最近 6 小时" },
   { value: "12h", label: "最近 12 小时" },
@@ -142,6 +145,8 @@ const nodeMetricRangeOptions: Array<{ value: NodeMetricRange; label: string }> =
 ];
 
 const nodeMetricRangeDurations: Record<NodeMetricRange, number> = {
+  "30m": 30 * 60 * 1000,
+  "1h": 60 * 60 * 1000,
   "3h": 3 * 60 * 60 * 1000,
   "6h": 6 * 60 * 60 * 1000,
   "12h": 12 * 60 * 60 * 1000,
@@ -2597,6 +2602,7 @@ function NodeMonitorPage({
   const selected = nodeId ? nodes.find((item) => item.id === nodeId) || null : nodes[0] || null;
   const [metricRange, setMetricRange] = useState<NodeMetricRange>("3h");
   const [metricHistory, setMetricHistory] = useState<NodeMetricHistoryResponse | null>(null);
+  const [overviewHistory, setOverviewHistory] = useState<NodeMetricHistoryResponse | null>(null);
   const [metricsLoading, setMetricsLoading] = useState(false);
   const [metricsError, setMetricsError] = useState<string | null>(null);
 
@@ -2631,6 +2637,28 @@ function NodeMonitorPage({
     };
   }, [selected, metricRange]);
 
+  useEffect(() => {
+    if (!selected) {
+      setOverviewHistory(null);
+      return;
+    }
+    let ignored = false;
+    api.nodeMetrics(selected.id, "1h")
+      .then((history) => {
+        if (!ignored) {
+          setOverviewHistory(history);
+        }
+      })
+      .catch(() => {
+        if (!ignored) {
+          setOverviewHistory(null);
+        }
+      });
+    return () => {
+      ignored = true;
+    };
+  }, [selected]);
+
   if (!selected) {
     return (
       <section className="px-5 py-6 md:px-8">
@@ -2648,7 +2676,9 @@ function NodeMonitorPage({
 
   const selectedRole = effectiveNodeRole(selected, nodes);
   const activeMetricHistory = metricHistory?.nodeId === selected.id && metricHistory.range === metricRange ? metricHistory : null;
+  const activeOverviewHistory = overviewHistory?.nodeId === selected.id ? overviewHistory : null;
   const monitor = buildNodeMonitorData(selected, activeMetricHistory, metricRange);
+  const overview = buildRuntimeOverviewData(activeOverviewHistory);
   const heartbeatAge = formatNodeHeartbeatAge(selected.lastHeartbeatAt);
   const recentExceptions = selected.status === "online" ? 0 : 1;
 
@@ -2679,6 +2709,8 @@ function NodeMonitorPage({
         <RuntimeOverviewPanel
           runningTasks={selected.capacity}
           recentExceptions={recentExceptions}
+          recent30MinuteSamples={overview.recent30MinuteSamples}
+          recentHourSamples={overview.recentHourSamples}
         />
         {monitor.metrics.map((metric) => (
           <NodeMetricPanel key={metric.key} metric={metric} />
@@ -2745,7 +2777,6 @@ function NodeMetricPanel({ metric }: { metric: NodeMonitorMetric }) {
           </div>
           <div className="mt-4 flex items-center gap-2 text-sm font-medium">
             <span className={trendClass}>{trendPrefix} {formattedDelta}</span>
-            <span className="text-slate-600">(较 5 分钟前)</span>
           </div>
         </div>
         {metric.ringValue !== undefined && (
@@ -2885,19 +2916,40 @@ function TrendLegend({ color, label }: { color: string; label: string }) {
   );
 }
 
+function buildRuntimeOverviewData(history: NodeMetricHistoryResponse | null) {
+  const samples = history?.samples ?? [];
+  const sampleTimes = samples.map((sample) => metricTime(sample.collectedAt)).filter((time) => Number.isFinite(time));
+  const latestTime = sampleTimes.length > 0 ? Math.max(...sampleTimes) : Date.now();
+  return {
+    recent30MinuteSamples: countSamplesWithin(sampleTimes, latestTime, nodeMetricRangeDurations["30m"]),
+    recentHourSamples: countSamplesWithin(sampleTimes, latestTime, nodeMetricRangeDurations["1h"])
+  };
+}
+
+function countSamplesWithin(sampleTimes: number[], latestTime: number, duration: number) {
+  const startTime = latestTime - duration;
+  return sampleTimes.filter((time) => time >= startTime && time <= latestTime).length;
+}
+
 function RuntimeOverviewPanel({
   runningTasks,
-  recentExceptions
+  recentExceptions,
+  recent30MinuteSamples,
+  recentHourSamples
 }: {
   runningTasks: number;
   recentExceptions: number;
+  recent30MinuteSamples: number;
+  recentHourSamples: number;
 }) {
   return (
     <div className="min-h-[240px] rounded-lg border border-line bg-white p-5 shadow-[0_18px_48px_-42px_rgba(37,99,235,0.25)]">
       <h3 className="text-lg font-semibold tracking-tight text-coal">运行概览</h3>
-      <div className="mt-5 grid divide-y divide-line">
-        <OverviewCell icon={HardDrives} tone="blue" label="运行任务数" value={Math.max(0, runningTasks)} />
-        <OverviewCell icon={WarningCircle} tone="red" label="最近异常" value={recentExceptions} />
+      <div className="mt-5 grid grid-cols-2 border-t border-line">
+        <OverviewCell icon={HardDrives} tone="blue" label="运行任务数" value={Math.max(0, runningTasks)} className="border-b border-r border-line" compact />
+        <OverviewCell icon={WarningCircle} tone="red" label="最近异常" value={recentExceptions} className="border-b border-line pl-4" compact />
+        <OverviewCell icon={Clock} tone="green" label="最近 30 分钟" value={`${recent30MinuteSamples} 点`} valueMono={false} className="border-r border-line" compact />
+        <OverviewCell icon={Clock} tone="amber" label="最近 1 小时" value={`${recentHourSamples} 点`} valueMono={false} className="pl-4" compact />
       </div>
     </div>
   );
@@ -2908,13 +2960,17 @@ function OverviewCell({
   tone,
   label,
   value,
-  valueMono = true
+  valueMono = true,
+  className,
+  compact
 }: {
   icon: typeof Database;
   tone: "blue" | "green" | "red" | "amber";
   label: string;
   value: ReactNode;
   valueMono?: boolean;
+  className?: string;
+  compact?: boolean;
 }) {
   const toneClass = tone === "blue"
     ? "border-blue-100 bg-blue-50 text-accent"
@@ -2925,13 +2981,13 @@ function OverviewCell({
         : "border-amber-100 bg-amber-50 text-amber-600";
 
   return (
-    <div className="flex items-center gap-4 py-5">
-      <span className={cx("flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border", toneClass)}>
-        <Icon size={21} />
+    <div className={cx("flex items-center gap-4 py-5", compact && "gap-3 py-3.5", className)}>
+      <span className={cx("flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border", compact && "h-9 w-9", toneClass)}>
+        <Icon size={compact ? 19 : 21} />
       </span>
       <div className="min-w-0">
         <div className="text-sm font-semibold text-slate-600">{label}</div>
-        <div className={cx("mt-1.5 truncate text-2xl font-semibold leading-none tracking-tight text-coal", valueMono && "font-mono")}>{value}</div>
+        <div className={cx("mt-1.5 truncate font-semibold leading-none tracking-tight text-coal", compact ? "text-xl" : "text-2xl", valueMono && "font-mono")}>{value}</div>
       </div>
     </div>
   );
@@ -3156,7 +3212,7 @@ function buildTrendLabels(samples: NodeMetricSample[], range: NodeMetricRange) {
 }
 
 function formatTrendTimeLabel(value: Date, range: NodeMetricRange) {
-  if (range === "3h" || range === "6h" || range === "12h") {
+  if (range === "30m" || range === "1h" || range === "3h" || range === "6h" || range === "12h") {
     return new Intl.DateTimeFormat("zh-CN", {
       hour: "2-digit",
       minute: "2-digit",

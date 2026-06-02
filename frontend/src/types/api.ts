@@ -129,7 +129,7 @@ export interface ClusterNode {
   updatedAt: string;
 }
 
-export type NodeMetricRange = "3h" | "6h" | "12h" | "1d" | "3d" | "1w" | "1mo";
+export type NodeMetricRange = "30m" | "1h" | "3h" | "6h" | "12h" | "1d" | "3d" | "1w" | "1mo";
 
 export interface NodeMetricSample {
   nodeId: string;

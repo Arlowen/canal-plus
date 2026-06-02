@@ -1165,6 +1165,10 @@ func normalizeNodeNetworkMBps(value float64) float64 {
 
 func normalizeNodeMetricRange(value string) (string, time.Duration) {
 	switch strings.TrimSpace(value) {
+	case "30m":
+		return "30m", 30 * time.Minute
+	case "1h":
+		return "1h", time.Hour
 	case "6h":
 		return "6h", 6 * time.Hour
 	case "12h":
