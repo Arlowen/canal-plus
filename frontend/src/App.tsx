@@ -1455,7 +1455,7 @@ function datasourceTestNodeOptions(nodes: ClusterNode[], loading: boolean) {
   if (nodes.length === 0) {
     return [{ value: "", label: "无节点", disabled: true }];
   }
-  return nodes.map((node) => ({ value: node.id, label: node.name || node.id }));
+  return nodes.map((node) => ({ value: node.id, label: node.name || node.id, icon: <HardDrives size={18} /> }));
 }
 
 function datasourceTestFingerprint(connectionFingerprint: string, nodeId: string) {

@@ -11,6 +11,7 @@ import {
   type CSSProperties,
   type InputHTMLAttributes,
   type KeyboardEvent,
+  type ReactNode,
   type TextareaHTMLAttributes
 } from "react";
 import { createPortal } from "react-dom";
@@ -24,6 +25,7 @@ type CheckboxInputProps = Omit<InputHTMLAttributes<HTMLInputElement>, "type">;
 type DropdownOption = {
   value: string;
   label: string;
+  icon?: ReactNode;
   disabled?: boolean;
 };
 
@@ -188,7 +190,10 @@ export function DropdownSelect({
           className
         )}
       >
-        <span className="min-w-0 truncate">{selectedOption?.label ?? "-"}</span>
+        <span className="flex min-w-0 items-center gap-2">
+          {selectedOption?.icon && <span className="shrink-0 text-slate-500">{selectedOption.icon}</span>}
+          <span className="min-w-0 truncate">{selectedOption?.label ?? "-"}</span>
+        </span>
         <CaretDown className={cx("shrink-0 text-slate-400 transition", open && "rotate-180 text-accent")} size={16} />
       </button>
       {open && position && createPortal(
@@ -220,6 +225,7 @@ export function DropdownSelect({
                 )}
               >
                 <Check className={cx("shrink-0", selected ? "opacity-100" : "opacity-0")} size={17} weight="bold" />
+                {option.icon && <span className="shrink-0">{option.icon}</span>}
                 <span className="min-w-0 truncate">{option.label}</span>
               </button>
             );
