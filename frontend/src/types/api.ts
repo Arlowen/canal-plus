@@ -34,6 +34,7 @@ export interface Datasource {
 
 export interface DatasourceInput {
   id?: string;
+  nodeId?: string;
   name: string;
   type: DatasourceType;
   purpose?: DatasourcePurpose;

@@ -306,6 +306,20 @@ func TestAdminCanMutateConfiguration(t *testing.T) {
 	}
 }
 
+func TestAdminDatasourceInputTestRejectsMissingNode(t *testing.T) {
+	server := newTestServer(t)
+	adminToken := tokenFor("user-admin")
+	payload := `{"nodeId":"missing-node","name":"节点校验数据源","type":"mysql","purpose":"general","authType":"none","host":"127.0.0.1","port":3306}`
+
+	response := serveTestRequest(server, authRequest(http.MethodPost, "/api/datasources/test", adminToken, payload))
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("test datasource input with missing node status = %d body = %s", response.Code, response.Body.String())
+	}
+	if !strings.Contains(response.Body.String(), "节点不存在") {
+		t.Fatalf("missing node response should explain failure: %s", response.Body.String())
+	}
+}
+
 func TestAdminCanCreateDatasourceWithoutAccountPassword(t *testing.T) {
 	server := newTestServer(t)
 	adminToken := tokenFor("user-admin")

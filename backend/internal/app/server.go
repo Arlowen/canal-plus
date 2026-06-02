@@ -354,6 +354,10 @@ func (s *Server) testDatasourceInput(response http.ResponseWriter, request *http
 		writeError(response, http.StatusBadRequest, "请求体格式错误")
 		return
 	}
+	if err := s.ensureDatasourceTestNode(input.NodeID); err != nil {
+		writeError(response, http.StatusBadRequest, err.Error())
+		return
+	}
 	var existing *Datasource
 	if strings.TrimSpace(input.ID) != "" {
 		datasource, ok := s.store.GetDatasource(strings.TrimSpace(input.ID))

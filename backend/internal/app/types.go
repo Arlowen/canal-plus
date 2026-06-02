@@ -98,6 +98,7 @@ type PublicDatasource struct {
 
 type DatasourceInput struct {
 	ID            string             `json:"id,omitempty"`
+	NodeID        string             `json:"nodeId,omitempty"`
 	Name          string             `json:"name"`
 	Type          DatasourceType     `json:"type"`
 	Purpose       DatasourcePurpose  `json:"purpose,omitempty"`

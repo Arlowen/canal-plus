@@ -956,6 +956,7 @@ function App() {
             ) : page === "datasourceCreate" ? (
               <DatasourceCreatePage
                 datasources={datasources}
+                cluster={cluster}
                 canManage={canManage}
                 onBack={closeDatasourceCreate}
                 onChanged={refresh}
@@ -966,6 +967,7 @@ function App() {
                 key={focusedDatasourceId ?? "missing"}
                 datasourceId={focusedDatasourceId}
                 datasources={datasources}
+                cluster={cluster}
                 canManage={canManage}
                 onBack={closeDatasourceEdit}
                 onChanged={refresh}
@@ -1422,14 +1424,54 @@ function DatasourcePage({
   );
 }
 
+function useDatasourceTestNodeSelection(cluster: ClusterSnapshot | null) {
+  const availableNodes = useMemo(() => (cluster?.nodes ?? []).filter((node) => node.status === "online"), [cluster?.nodes]);
+  const nodesLoading = cluster === null;
+  const defaultNodeId = useMemo(() => {
+    const localNode = availableNodes.find((node) => node.id === cluster?.localNodeId);
+    return localNode?.id ?? availableNodes[0]?.id ?? "";
+  }, [availableNodes, cluster?.localNodeId]);
+  const [selectedNodeId, setSelectedNodeId] = useState(defaultNodeId);
+
+  useEffect(() => {
+    if (nodesLoading) return;
+    setSelectedNodeId((current) => availableNodes.some((node) => node.id === current) ? current : defaultNodeId);
+  }, [availableNodes, defaultNodeId, nodesLoading]);
+
+  const selectedValue = availableNodes.some((node) => node.id === selectedNodeId) ? selectedNodeId : "";
+  return {
+    selectedNodeId: selectedValue,
+    setSelectedNodeId,
+    nodeOptions: datasourceTestNodeOptions(availableNodes, nodesLoading),
+    nodesLoading,
+    hasNodes: availableNodes.length > 0
+  };
+}
+
+function datasourceTestNodeOptions(nodes: ClusterNode[], loading: boolean) {
+  if (loading) {
+    return [{ value: "", label: "加载中", disabled: true }];
+  }
+  if (nodes.length === 0) {
+    return [{ value: "", label: "无节点", disabled: true }];
+  }
+  return nodes.map((node) => ({ value: node.id, label: node.name || node.id }));
+}
+
+function datasourceTestFingerprint(connectionFingerprint: string, nodeId: string) {
+  return `${connectionFingerprint}::node:${nodeId}`;
+}
+
 function DatasourceCreatePage({
   datasources,
+  cluster,
   canManage,
   onBack,
   onChanged,
   pushNotice
 }: {
   datasources: Datasource[];
+  cluster: ClusterSnapshot | null;
   canManage: boolean;
   onBack: () => void;
   onChanged: (quiet?: boolean) => Promise<void>;
@@ -1444,9 +1486,18 @@ function DatasourceCreatePage({
   const [showFieldErrors, setShowFieldErrors] = useState(false);
   const [confirmation, setConfirmation] = useState<ConfirmationDialogState | null>(null);
   const nameManuallyEditedRef = useRef(false);
+  const testNodeSelection = useDatasourceTestNodeSelection(cluster);
+  const {
+    selectedNodeId: selectedTestNodeId,
+    setSelectedNodeId: setSelectedTestNodeId,
+    nodeOptions: testNodeOptions,
+    nodesLoading,
+    hasNodes
+  } = testNodeSelection;
 
   const hasTypes = datasourceTypeOptions.length > 0;
-  const currentFingerprint = selectedType ? datasourceFormConnectionFingerprint(form) : "";
+  const connectionFingerprint = selectedType ? datasourceFormConnectionFingerprint(form) : "";
+  const currentFingerprint = selectedType && selectedTestNodeId ? datasourceTestFingerprint(connectionFingerprint, selectedTestNodeId) : "";
   const freshTestResult = selectedType && testedFingerprint === currentFingerprint ? testResult : null;
   const displayedTestResult = freshTestResult ?? testResult;
   const validationError = selectedType ? validateDatasourceForm(form, true) : "请选择类型";
@@ -1459,9 +1510,11 @@ function DatasourceCreatePage({
       ? "同名"
       : validationError
         ? "请填写必填项"
-        : !freshTestResult?.success
-          ? "请先测试"
-          : null;
+        : !selectedTestNodeId
+          ? "无节点"
+          : !freshTestResult?.success
+            ? "请先测试"
+            : null;
 
   const applyType = (type: DatasourceFormState["type"]) => {
     nameManuallyEditedRef.current = false;
@@ -1521,19 +1574,29 @@ function DatasourceCreatePage({
     updateForm((currentForm) => authType === "none" ? { ...currentForm, authType, username: "", password: "" } : { ...currentForm, authType });
   };
 
+  const updateTestNode = (nodeId: string) => {
+    setSelectedTestNodeId(nodeId);
+    setTestedFingerprint(null);
+    setTestResult(null);
+  };
+
   const testConnection = async () => {
     if (!selectedType) {
       pushNotice({ tone: "warning", message: "请选择类型" });
+      return;
+    }
+    if (!selectedTestNodeId) {
+      pushNotice({ tone: "warning", message: nodesLoading ? "节点加载中" : "无节点" });
       return;
     }
     if (validateDatasourceForm(form, true)) {
       setShowFieldErrors(true);
       return;
     }
-    const fingerprint = datasourceFormConnectionFingerprint(form);
+    const fingerprint = datasourceTestFingerprint(datasourceFormConnectionFingerprint(form), selectedTestNodeId);
     setTesting(true);
     try {
-      const result = await api.testDatasourceInput(datasourceFormPayload(form));
+      const result = await api.testDatasourceInput({ ...datasourceFormPayload(form), nodeId: selectedTestNodeId });
       setTestedFingerprint(fingerprint);
       setTestResult(result);
     } catch (requestError) {
@@ -1684,7 +1747,15 @@ function DatasourceCreatePage({
         <div className="flex flex-col gap-3 border-t border-line p-4 sm:flex-row sm:items-center sm:justify-between">
           {selectedType && (
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-              <Button type="button" onClick={() => void testConnection()} disabled={testing} className="btn-secondary">
+              <DropdownSelect
+                value={selectedTestNodeId}
+                ariaLabel="测试节点"
+                disabled={testing || nodesLoading || !hasNodes}
+                options={testNodeOptions}
+                onChange={updateTestNode}
+                className="h-10 min-h-10 w-full sm:w-[220px]"
+              />
+              <Button type="button" onClick={() => void testConnection()} disabled={testing || nodesLoading || !selectedTestNodeId} className="btn-secondary">
                 {testing ? <ArrowsClockwise size={16} className="animate-spin" /> : <ShieldCheck size={16} />}
                 {testing ? "测试中" : "测试连接"}
               </Button>
@@ -1726,6 +1797,7 @@ function DatasourceCreatePage({
 function DatasourceEditPage({
   datasourceId,
   datasources,
+  cluster,
   canManage,
   onBack,
   onChanged,
@@ -1733,6 +1805,7 @@ function DatasourceEditPage({
 }: {
   datasourceId: string | null;
   datasources: Datasource[];
+  cluster: ClusterSnapshot | null;
   canManage: boolean;
   onBack: () => void;
   onChanged: (quiet?: boolean) => Promise<void>;
@@ -1749,9 +1822,18 @@ function DatasourceEditPage({
   const [submitting, setSubmitting] = useState(false);
   const [showFieldErrors, setShowFieldErrors] = useState(false);
   const [confirmation, setConfirmation] = useState<ConfirmationDialogState | null>(null);
+  const testNodeSelection = useDatasourceTestNodeSelection(cluster);
+  const {
+    selectedNodeId: selectedTestNodeId,
+    setSelectedNodeId: setSelectedTestNodeId,
+    nodeOptions: testNodeOptions,
+    nodesLoading,
+    hasNodes
+  } = testNodeSelection;
 
-  const currentFingerprint = datasource ? datasourceFormConnectionFingerprint(form) : "";
-  const connectionChanged = datasource ? currentFingerprint !== initialConnectionFingerprint : false;
+  const connectionFingerprint = datasource ? datasourceFormConnectionFingerprint(form) : "";
+  const currentFingerprint = datasource && selectedTestNodeId ? datasourceTestFingerprint(connectionFingerprint, selectedTestNodeId) : "";
+  const connectionChanged = datasource ? connectionFingerprint !== initialConnectionFingerprint : false;
   const freshTestResult = testedFingerprint === currentFingerprint ? testResult : null;
   const displayedTestResult = freshTestResult ?? testResult;
   const passwordRequired = !datasource?.hasPassword;
@@ -1765,14 +1847,22 @@ function DatasourceEditPage({
       ? "同名"
       : validationError
         ? "请填写必填项"
-        : needsFreshTest && !freshTestResult?.success
-          ? "请先测试"
-          : null;
+        : needsFreshTest && !selectedTestNodeId
+          ? "无节点"
+          : needsFreshTest && !freshTestResult?.success
+            ? "请先测试"
+            : null;
   const dirty = datasource ? isDatasourceFormDirty(form, initialForm) || Boolean(testResult) : false;
   const datasourceTypeLabel = datasourceTypeOptions.find((option) => option.value === form.type)?.label ?? form.type;
 
   const updateAuthType = (authType: DatasourceAuthType) => {
     setForm(authType === "none" ? { ...form, authType, username: "", password: "" } : { ...form, authType });
+  };
+
+  const updateTestNode = (nodeId: string) => {
+    setSelectedTestNodeId(nodeId);
+    setTestedFingerprint(null);
+    setTestResult(null);
   };
 
   const requestBack = () => {
@@ -1794,14 +1884,18 @@ function DatasourceEditPage({
       pushNotice({ tone: "error", message: "数据源不存在" });
       return;
     }
+    if (!selectedTestNodeId) {
+      pushNotice({ tone: "warning", message: nodesLoading ? "节点加载中" : "无节点" });
+      return;
+    }
     if (validateDatasourceForm(form, passwordRequired)) {
       setShowFieldErrors(true);
       return;
     }
-    const fingerprint = datasourceFormConnectionFingerprint(form);
+    const fingerprint = datasourceTestFingerprint(datasourceFormConnectionFingerprint(form), selectedTestNodeId);
     setTesting(true);
     try {
-      const result = await api.testDatasourceInput(datasourceFormPayload(form, datasource.id));
+      const result = await api.testDatasourceInput({ ...datasourceFormPayload(form, datasource.id), nodeId: selectedTestNodeId });
       setTestedFingerprint(fingerprint);
       setTestResult(result);
     } catch (requestError) {
@@ -1948,7 +2042,15 @@ function DatasourceEditPage({
 
         <div className="flex flex-col gap-3 border-t border-line p-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-            <Button type="button" onClick={() => void testConnection()} disabled={testing} className="btn-secondary">
+            <DropdownSelect
+              value={selectedTestNodeId}
+              ariaLabel="测试节点"
+              disabled={testing || nodesLoading || !hasNodes}
+              options={testNodeOptions}
+              onChange={updateTestNode}
+              className="h-10 min-h-10 w-full sm:w-[220px]"
+            />
+            <Button type="button" onClick={() => void testConnection()} disabled={testing || nodesLoading || !selectedTestNodeId} className="btn-secondary">
               {testing ? <ArrowsClockwise size={16} className="animate-spin" /> : <ShieldCheck size={16} />}
               {testing ? "测试中" : "测试连接"}
             </Button>
