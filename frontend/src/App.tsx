@@ -2081,10 +2081,6 @@ function ChannelCreateWizardPage({
                       </div>
                     </div>
                   </div>
-
-                  <Field label="描述">
-                    <TextareaInput className="textarea" maxLength={300} value={form.description} onChange={(event) => patchForm({ description: event.target.value })} />
-                  </Field>
                 </div>
               )}
 
