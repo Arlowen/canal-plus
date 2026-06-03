@@ -54,6 +54,7 @@ import type {
   ChannelColumnMappingInput,
   ChannelInput,
   ChannelMappingsResponse,
+  ChannelPrecheckItem,
   ChannelPrecheckResult,
   ChannelTableMappingInput,
   ChannelTask,
@@ -83,6 +84,23 @@ type NoticeTone = NoticeToastTone;
 type Notice = {
   tone: NoticeTone;
   message: string;
+};
+
+type BadgeTone = "blue" | "green" | "yellow" | "red" | "purple" | "neutral";
+
+type ChannelDetailSummary = {
+  healthLabel: string;
+  healthTone: BadgeTone;
+  healthDetail: string;
+  startLabel: string;
+  startTone: BadgeTone;
+  startDetail: string;
+  latestRunLabel: string;
+  latestRunTone: BadgeTone;
+  latestRunDetail: string;
+  nextAction: string;
+  nextTone: BadgeTone;
+  nextDetail: string;
 };
 
 type ConfirmationDialogState = {
@@ -2672,6 +2690,7 @@ function ChannelDetailPage({
 
   const source = datasourceById(datasources, channel.sourceDatasourceId);
   const target = datasourceById(datasources, channel.targetDatasourceId);
+  const detailSummary = channelDetailSummary(channel, tasks, runs, precheck);
 
   const saveMappings = async () => {
     if (!canManage) {
@@ -2799,6 +2818,8 @@ function ChannelDetailPage({
       </div>
 
       <div className="px-5 py-6 md:px-8">
+        <ChannelDetailSummaryPanel summary={detailSummary} />
+
         <div className="grid gap-4 md:grid-cols-4">
           <MetricTile label="任务" value={`${channel.runningTaskCount}/${channel.taskCount}`} />
           <MetricTile label="映射" value={`v${channel.mappingVersion}`} />
@@ -2915,6 +2936,39 @@ function ChannelOverview({
           <div className="border-y border-dashed border-line bg-slate-50/60 px-4 py-6 text-sm text-slate-500">未预检</div>
         )}
       </div>
+    </div>
+  );
+}
+
+function ChannelDetailSummaryPanel({ summary }: { summary: ChannelDetailSummary }) {
+  return (
+    <div className="mb-4 grid gap-4 md:grid-cols-4">
+      <ChannelDetailSummaryTile label="健康" value={summary.healthLabel} tone={summary.healthTone} detail={summary.healthDetail} />
+      <ChannelDetailSummaryTile label="启动" value={summary.startLabel} tone={summary.startTone} detail={summary.startDetail} />
+      <ChannelDetailSummaryTile label="最近" value={summary.latestRunLabel} tone={summary.latestRunTone} detail={summary.latestRunDetail} />
+      <ChannelDetailSummaryTile label="下一步" value={summary.nextAction} tone={summary.nextTone} detail={summary.nextDetail} />
+    </div>
+  );
+}
+
+function ChannelDetailSummaryTile({
+  label,
+  value,
+  tone,
+  detail
+}: {
+  label: string;
+  value: string;
+  tone: BadgeTone;
+  detail: string;
+}) {
+  return (
+    <div className="rounded-lg border border-line bg-white p-4">
+      <div className="flex items-center justify-between gap-3">
+        <div className="text-sm font-medium text-slate-500">{label}</div>
+        <Badge tone={tone}>{value}</Badge>
+      </div>
+      <div className="mt-3 truncate text-sm font-medium text-coal" title={detail}>{detail}</div>
     </div>
   );
 }
@@ -6005,7 +6059,7 @@ function BackendUnavailableScreen({
   );
 }
 
-function Badge({ tone, children }: { tone: "blue" | "green" | "yellow" | "red" | "purple" | "neutral"; children: ReactNode }) {
+function Badge({ tone, children }: { tone: BadgeTone; children: ReactNode }) {
   const className = tone === "blue"
     ? "border-blue-200 bg-blue-50 text-blue-700"
     : tone === "green"
@@ -6319,6 +6373,112 @@ function channelStatusText(status: Channel["status"]) {
     archived: "已归档"
   };
   return labels[status] || status;
+}
+
+function channelDetailSummary(
+  channel: Channel,
+  tasks: ChannelTask[],
+  runs: TaskRun[],
+  precheck: ChannelPrecheckResult | null
+): ChannelDetailSummary {
+  const blockers = channelPrecheckItemsBySeverity(precheck, "blocker");
+  const warnings = channelPrecheckItemsBySeverity(precheck, "warning");
+  const runningTasks = tasks.filter((task) => task.status === "running");
+  const enabledTasks = tasks.filter((task) => task.enabled && task.status !== "disabled");
+  const runnableTask = enabledTasks.find((task) => task.status !== "running");
+  const latestRun = latestTaskRun(runs);
+  const health = channelDetailHealth(channel, precheck, blockers.length, warnings.length, runningTasks.length);
+  const start = channelDetailStartState(precheck, blockers.length, tasks, enabledTasks, runningTasks.length);
+  const latest = channelDetailLatestRunState(latestRun);
+  const next = channelDetailNextAction(blockers, warnings, tasks, runnableTask, runningTasks.length, latestRun);
+
+  return {
+    healthLabel: health.label,
+    healthTone: health.tone,
+    healthDetail: health.detail,
+    startLabel: start.label,
+    startTone: start.tone,
+    startDetail: start.detail,
+    latestRunLabel: latest.label,
+    latestRunTone: latest.tone,
+    latestRunDetail: latest.detail,
+    nextAction: next.label,
+    nextTone: next.tone,
+    nextDetail: next.detail
+  };
+}
+
+function channelDetailHealth(
+  channel: Channel,
+  precheck: ChannelPrecheckResult | null,
+  blockerCount: number,
+  warningCount: number,
+  runningTaskCount: number
+) {
+  if (channel.status === "archived") return { label: "归档", tone: "neutral" as BadgeTone, detail: "已归档" };
+  if (channel.status === "failed") return { label: "失败", tone: "red" as BadgeTone, detail: "查看日志" };
+  if (blockerCount > 0) return { label: "阻断", tone: "red" as BadgeTone, detail: `${blockerCount} 项阻断` };
+  if (warningCount > 0) return { label: "关注", tone: "yellow" as BadgeTone, detail: `${warningCount} 项警告` };
+  if (runningTaskCount > 0 || channel.status === "running") return { label: "运行中", tone: "blue" as BadgeTone, detail: `${runningTaskCount || channel.runningTaskCount} 个运行中` };
+  if (!precheck) return { label: "未知", tone: "neutral" as BadgeTone, detail: "未预检" };
+  return { label: "正常", tone: "green" as BadgeTone, detail: "预检通过" };
+}
+
+function channelDetailStartState(
+  precheck: ChannelPrecheckResult | null,
+  blockerCount: number,
+  tasks: ChannelTask[],
+  enabledTasks: ChannelTask[],
+  runningTaskCount: number
+) {
+  if (runningTaskCount > 0) return { label: "运行中", tone: "blue" as BadgeTone, detail: "可停止或查看运行" };
+  if (!precheck) return { label: "未知", tone: "neutral" as BadgeTone, detail: "先预检" };
+  if (blockerCount > 0) return { label: "不可启动", tone: "red" as BadgeTone, detail: "处理阻断项" };
+  if (tasks.length === 0) return { label: "无任务", tone: "neutral" as BadgeTone, detail: "新增任务" };
+  if (enabledTasks.length === 0) return { label: "无启用", tone: "neutral" as BadgeTone, detail: "启用任务" };
+  return { label: "可启动", tone: "green" as BadgeTone, detail: `${enabledTasks.length} 个可用任务` };
+}
+
+function channelDetailLatestRunState(run: TaskRun | null) {
+  if (!run) return { label: "无运行", tone: "neutral" as BadgeTone, detail: "暂无 Run" };
+  const detail = `${channelTaskTypeText(run.taskType)} · ${formatDate(run.startedAt)}`;
+  if (run.status === "success") return { label: "成功", tone: "green" as BadgeTone, detail };
+  if (run.status === "running") return { label: "运行中", tone: "blue" as BadgeTone, detail };
+  if (run.status === "failed") return { label: "失败", tone: "red" as BadgeTone, detail };
+  if (run.status === "stopped") return { label: "停止", tone: "purple" as BadgeTone, detail };
+  return { label: taskRunStatusText(run.status), tone: "neutral" as BadgeTone, detail };
+}
+
+function channelDetailNextAction(
+  blockers: ChannelPrecheckItem[],
+  warnings: ChannelPrecheckItem[],
+  tasks: ChannelTask[],
+  runnableTask: ChannelTask | undefined,
+  runningTaskCount: number,
+  latestRun: TaskRun | null
+) {
+  if (blockers.length > 0) return { label: "处理阻断", tone: "red" as BadgeTone, detail: blockers[0].label };
+  if (latestRun?.status === "failed") return { label: "查看日志", tone: "red" as BadgeTone, detail: channelTaskTypeText(latestRun.taskType) };
+  if (runningTaskCount > 0) return { label: "查看运行", tone: "blue" as BadgeTone, detail: `${runningTaskCount} 个运行中` };
+  if (tasks.length === 0) return { label: "新增任务", tone: "neutral" as BadgeTone, detail: "进入任务" };
+  if (warnings.length > 0) return { label: "确认警告", tone: "yellow" as BadgeTone, detail: warnings[0].label };
+  if (runnableTask) return { label: "启动任务", tone: "green" as BadgeTone, detail: runnableTask.name };
+  return { label: "查看任务", tone: "neutral" as BadgeTone, detail: "任务列表" };
+}
+
+function channelPrecheckItemsBySeverity(precheck: ChannelPrecheckResult | null, severity: "warning" | "blocker") {
+  if (!precheck) return [];
+  return precheck.items.filter((item) => {
+    const itemSeverity = item.severity || (item.success ? "pass" : "blocker");
+    return itemSeverity === severity;
+  });
+}
+
+function latestTaskRun(runs: TaskRun[]) {
+  return runs.reduce<TaskRun | null>((latest, run) => {
+    if (!latest) return run;
+    return run.startedAt > latest.startedAt ? run : latest;
+  }, null);
 }
 
 function ChannelStatusBadge({ status }: { status: Channel["status"] }) {
