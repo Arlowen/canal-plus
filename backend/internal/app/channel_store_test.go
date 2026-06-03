@@ -101,8 +101,46 @@ func TestDataCorrectionRequiresSuccessfulValidationRun(t *testing.T) {
 	if _, ok, err := store.StartChannelTask(channel.ID, validation.ID, "admin"); err != nil || !ok {
 		t.Fatalf("start validation ok=%v err=%v", ok, err)
 	}
+	diffs, ok := store.ChannelDiffs(channel.ID)
+	if !ok {
+		t.Fatal("channel diffs missing")
+	}
+	if len(diffs) != 1 {
+		t.Fatalf("diff count = %d, want 1: %#v", len(diffs), diffs)
+	}
+	if diffs[0].ValidationTaskID != validation.ID || diffs[0].CorrectionStatus != "pending" {
+		t.Fatalf("validation diff not pending: %#v", diffs[0])
+	}
+	runs, ok := store.ChannelRuns(channel.ID)
+	if !ok || len(runs) == 0 || runs[0].TaskType != ChannelTaskDataValidation || runs[0].DiffRows != 1 {
+		t.Fatalf("validation run missing diff rows ok=%v runs=%#v", ok, runs)
+	}
 	if _, ok, err := store.StartChannelTask(channel.ID, correction.ID, "admin"); err != nil || !ok {
 		t.Fatalf("start correction after validation ok=%v err=%v", ok, err)
+	}
+	diffs, ok = store.ChannelDiffs(channel.ID)
+	if !ok || len(diffs) != 1 {
+		t.Fatalf("diffs after correction ok=%v diffs=%#v", ok, diffs)
+	}
+	if diffs[0].CorrectionStatus != "corrected" || diffs[0].CorrectionTaskID != correction.ID || diffs[0].CorrectionRunID == "" {
+		t.Fatalf("validation diff not corrected: %#v", diffs[0])
+	}
+	if ok, err := store.DeleteChannelTask(channel.ID, correction.ID, "admin"); err != nil || !ok {
+		t.Fatalf("delete correction ok=%v err=%v", ok, err)
+	}
+	diffs, ok = store.ChannelDiffs(channel.ID)
+	if !ok || len(diffs) != 1 {
+		t.Fatalf("diffs after deleting correction ok=%v diffs=%#v", ok, diffs)
+	}
+	if diffs[0].CorrectionStatus != "pending" || diffs[0].CorrectionTaskID != "" || diffs[0].CorrectionRunID != "" {
+		t.Fatalf("correction link not cleared: %#v", diffs[0])
+	}
+	if ok, err := store.DeleteChannelTask(channel.ID, validation.ID, "admin"); err != nil || !ok {
+		t.Fatalf("delete validation ok=%v err=%v", ok, err)
+	}
+	diffs, ok = store.ChannelDiffs(channel.ID)
+	if !ok || len(diffs) != 0 {
+		t.Fatalf("diffs after deleting validation ok=%v diffs=%#v", ok, diffs)
 	}
 }
 

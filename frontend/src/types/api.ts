@@ -255,6 +255,26 @@ export interface ChannelPrecheckResult {
   items: ChannelPrecheckItem[];
 }
 
+export interface DataValidationDiff {
+  id: string;
+  channelId: string;
+  validationTaskId: string;
+  validationRunId: string;
+  tableMappingId: string;
+  sourceTable: string;
+  targetTable: string;
+  primaryKeyJson: string;
+  diffType: string;
+  diffColumnsJson: string;
+  sourceDigest?: string;
+  targetDigest?: string;
+  correctionStatus: "pending" | "corrected" | string;
+  correctionTaskId?: string;
+  correctionRunId?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface OperationLog {
   id: string;
   actor: string;

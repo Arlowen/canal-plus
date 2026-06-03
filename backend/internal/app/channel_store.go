@@ -1,6 +1,7 @@
 package app
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
@@ -273,6 +274,24 @@ func (s *Store) PrecheckChannel(channelID string) (ChannelPrecheckResult, bool) 
 	return cloneJSON(result), true
 }
 
+func (s *Store) ChannelDiffs(channelID string) ([]DataValidationDiff, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.channelIndexLocked(channelID) < 0 {
+		return nil, false
+	}
+	diffs := make([]DataValidationDiff, 0)
+	for _, diff := range s.data.DataValidationDiffs {
+		if diff.ChannelID == channelID {
+			diffs = append(diffs, diff)
+		}
+	}
+	sort.SliceStable(diffs, func(left, right int) bool {
+		return diffs[left].CreatedAt > diffs[right].CreatedAt
+	})
+	return cloneJSON(diffs), true
+}
+
 func (s *Store) ChannelTasks(channelID string) ([]ChannelTask, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -414,6 +433,7 @@ func (s *Store) DeleteChannelTask(channelID string, taskID string, actor string)
 	s.data.ChannelTasks = append(s.data.ChannelTasks[:taskIndex], s.data.ChannelTasks[taskIndex+1:]...)
 	s.data.TaskRuns = filterTaskRunsNotTask(s.data.TaskRuns, taskID)
 	s.data.TaskLogs = filterTaskLogsNotTask(s.data.TaskLogs, taskID)
+	s.data.DataValidationDiffs = updateDiffsForDeletedTask(s.data.DataValidationDiffs, task, now())
 	for index := range s.data.ChannelTasks {
 		if s.data.ChannelTasks[index].ChannelID != channelID {
 			continue
@@ -580,6 +600,21 @@ func (s *Store) runChannelTask(channelID string, taskID string, actor string, re
 		FailedRows:  0,
 		DiffRows:    0,
 		CreatedBy:   actor,
+	}
+	if task.Type == ChannelTaskDataValidation && runStatus == TaskRunSuccess {
+		diffs := s.createDataValidationDiffsLocked(channelID, task.ID, run.ID, task.MappingVersion, timestamp)
+		run.DiffRows = len(diffs)
+		if len(diffs) > 0 {
+			s.data.DataValidationDiffs = append(diffs, s.data.DataValidationDiffs...)
+			s.appendTaskLogLocked(channelID, task.ID, run.ID, "warn", "data-validation", fmt.Sprintf("Data validation produced %d diffs", len(diffs)))
+		}
+	}
+	if task.Type == ChannelTaskDataCorrection && runStatus == TaskRunSuccess {
+		corrected := s.markValidationDiffsCorrectedLocked(channelID, task.ID, run.ID, timestamp)
+		run.WrittenRows = corrected
+		if corrected > 0 {
+			s.appendTaskLogLocked(channelID, task.ID, run.ID, "info", "data-correction", fmt.Sprintf("Data correction marked %d diffs", corrected))
+		}
 	}
 	s.data.TaskRuns = append([]TaskRun{run}, s.data.TaskRuns...)
 	task.Status = taskStatus
@@ -965,6 +1000,83 @@ func (s *Store) hasSuccessfulDataValidationRunLocked(channelID string) bool {
 	return false
 }
 
+func (s *Store) createDataValidationDiffsLocked(channelID string, taskID string, runID string, mappingVersion int, timestamp string) []DataValidationDiff {
+	diffs := []DataValidationDiff{}
+	for _, table := range s.data.ChannelTableMappings {
+		if table.ChannelID != channelID || table.MappingVersion != mappingVersion || !table.Enabled || len(table.PrimaryKeys) == 0 {
+			continue
+		}
+		diffColumn := firstComparableColumnLocked(s.data.ChannelColumnMappings, table.ID, table.PrimaryKeys)
+		if diffColumn == "" {
+			continue
+		}
+		sourceTable := table.SourceTable
+		targetTable := table.TargetTable
+		primaryKey := table.PrimaryKeys[0]
+		primaryKeyJSON := jsonString(map[string]string{primaryKey: fmt.Sprintf("%s-%s", table.SourceTable, primaryKey)})
+		diffColumnsJSON := jsonString([]map[string]string{{
+			"column": diffColumn,
+			"source": "source-sample",
+			"target": "target-sample",
+		}})
+		diffs = append(diffs, DataValidationDiff{
+			ID:               newID(),
+			ChannelID:        channelID,
+			ValidationTaskID: taskID,
+			ValidationRunID:  runID,
+			TableMappingID:   table.ID,
+			SourceTable:      sourceTable,
+			TargetTable:      targetTable,
+			PrimaryKeyJSON:   primaryKeyJSON,
+			DiffType:         "value_mismatch",
+			DiffColumnsJSON:  diffColumnsJSON,
+			SourceDigest:     "source-sample",
+			TargetDigest:     "target-sample",
+			CorrectionStatus: "pending",
+			CreatedAt:        timestamp,
+			UpdatedAt:        timestamp,
+		})
+	}
+	return diffs
+}
+
+func (s *Store) markValidationDiffsCorrectedLocked(channelID string, taskID string, runID string, timestamp string) int {
+	corrected := 0
+	for index := range s.data.DataValidationDiffs {
+		diff := &s.data.DataValidationDiffs[index]
+		if diff.ChannelID != channelID || diff.CorrectionStatus == "corrected" {
+			continue
+		}
+		diff.CorrectionStatus = "corrected"
+		diff.CorrectionTaskID = taskID
+		diff.CorrectionRunID = runID
+		diff.UpdatedAt = timestamp
+		corrected++
+	}
+	return corrected
+}
+
+func firstComparableColumnLocked(columns []ChannelColumnMapping, tableID string, primaryKeys []string) string {
+	for _, column := range columns {
+		if column.TableMappingID != tableID || !column.Enabled {
+			continue
+		}
+		if column.IsPrimaryKey || containsString(primaryKeys, column.SourceColumn) || containsString(primaryKeys, column.TargetColumn) {
+			continue
+		}
+		return column.SourceColumn
+	}
+	return ""
+}
+
+func jsonString(value any) string {
+	data, err := json.Marshal(value)
+	if err != nil {
+		return "{}"
+	}
+	return string(data)
+}
+
 func (s *Store) refreshChannelDerivedLocked(index int) {
 	if index < 0 || index >= len(s.data.Channels) {
 		return
@@ -1200,6 +1312,23 @@ func filterDiffsNotChannel(items []DataValidationDiff, channelID string) []DataV
 	for _, item := range items {
 		if item.ChannelID == channelID {
 			continue
+		}
+		filtered = append(filtered, item)
+	}
+	return filtered
+}
+
+func updateDiffsForDeletedTask(items []DataValidationDiff, task ChannelTask, timestamp string) []DataValidationDiff {
+	filtered := items[:0]
+	for _, item := range items {
+		if task.Type == ChannelTaskDataValidation && item.ValidationTaskID == task.ID {
+			continue
+		}
+		if task.Type == ChannelTaskDataCorrection && item.CorrectionTaskID == task.ID {
+			item.CorrectionStatus = "pending"
+			item.CorrectionTaskID = ""
+			item.CorrectionRunID = ""
+			item.UpdatedAt = timestamp
 		}
 		filtered = append(filtered, item)
 	}

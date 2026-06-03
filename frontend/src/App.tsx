@@ -62,6 +62,7 @@ import type {
   ChannelTaskType,
   ClusterNode,
   ClusterSnapshot,
+  DataValidationDiff,
   Datasource,
   DatasourceAuthType,
   DatasourceColumn,
@@ -200,7 +201,7 @@ type DatasourceFieldErrors = Partial<Record<"name" | "host" | "port" | "username
 type DatasourceTypeFilter = "all" | "mysql";
 type NodeTypeFilter = "all" | "master" | "standby";
 type ChannelStatusFilter = "all" | Channel["status"];
-type ChannelDetailTab = "overview" | "mappings" | "tasks" | "runs" | "logs";
+type ChannelDetailTab = "overview" | "mappings" | "tasks" | "runs" | "logs" | "diffs";
 
 const navItems: Array<{ id: MainPage; label: string; icon: typeof Database }> = [
   { id: "channels", label: "Canal", icon: ArrowRight },
@@ -2639,6 +2640,7 @@ function ChannelDetailPage({
   const [tasks, setTasks] = useState<ChannelTask[]>([]);
   const [runs, setRuns] = useState<TaskRun[]>([]);
   const [logs, setLogs] = useState<TaskLog[]>([]);
+  const [diffs, setDiffs] = useState<DataValidationDiff[]>([]);
   const [precheck, setPrecheck] = useState<ChannelPrecheckResult | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailBusy, setDetailBusy] = useState(false);
@@ -2648,17 +2650,19 @@ function ChannelDetailPage({
     if (!channelId) return;
     setDetailLoading(true);
     try {
-      const [nextMappings, nextTasks, nextRuns, nextLogs, nextPrecheck] = await Promise.all([
+      const [nextMappings, nextTasks, nextRuns, nextLogs, nextDiffs, nextPrecheck] = await Promise.all([
         api.channelMappings(channelId),
         api.channelTasks(channelId),
         api.channelRuns(channelId),
         api.channelLogs(channelId),
+        api.channelDiffs(channelId),
         api.precheckChannel(channelId)
       ]);
       setMappingDraft(mappingDraftFromResponse(nextMappings));
       setTasks(nextTasks);
       setRuns(nextRuns);
       setLogs(nextLogs);
+      setDiffs(nextDiffs);
       setPrecheck(nextPrecheck);
     } catch (requestError) {
       pushNotice({ tone: "error", message: requestError instanceof Error ? requestError.message : "加载失败" });
@@ -2828,7 +2832,7 @@ function ChannelDetailPage({
         </div>
 
         <div className="mt-6 flex flex-wrap items-center gap-2 border-b border-line pb-4">
-          {(["overview", "mappings", "tasks", "runs", "logs"] as ChannelDetailTab[]).map((tab) => (
+          {(["overview", "mappings", "tasks", "runs", "logs", "diffs"] as ChannelDetailTab[]).map((tab) => (
             <Button
               key={tab}
               type="button"
@@ -2876,8 +2880,10 @@ function ChannelDetailPage({
           />
         ) : activeTab === "runs" ? (
           <ChannelRunsPanel runs={runs} tasks={tasks} />
-        ) : (
+        ) : activeTab === "logs" ? (
           <ChannelLogsPanel logs={logs} />
+        ) : (
+          <ChannelDiffsPanel diffs={diffs} tasks={tasks} runs={runs} />
         )}
       </div>
     </section>
@@ -3264,6 +3270,64 @@ function ChannelLogsPanel({ logs }: { logs: TaskLog[] }) {
             [{formatDateTime(log.createdAt)}][{log.level}][{log.thread}]{log.message}
           </div>
         ))}
+      </div>
+    </div>
+  );
+}
+
+function ChannelDiffsPanel({
+  diffs,
+  tasks,
+  runs
+}: {
+  diffs: DataValidationDiff[];
+  tasks: ChannelTask[];
+  runs: TaskRun[];
+}) {
+  return (
+    <div className="pt-5">
+      <SectionHeader title="差异" />
+      <div className="mt-5 overflow-x-auto rounded-lg border border-line bg-white">
+        <table className="w-full min-w-[1200px] table-fixed text-left">
+          <colgroup>
+            <col className="w-[180px]" />
+            <col className="w-[180px]" />
+            <col className="w-[170px]" />
+            <col className="w-[210px]" />
+            <col className="w-[140px]" />
+            <col className="w-[150px]" />
+            <col className="w-[210px]" />
+          </colgroup>
+          <thead className="bg-slate-50/70 text-sm font-semibold text-slate-500">
+            <tr className="border-b border-line">
+              <th className="px-5 py-4">源表</th>
+              <th className="px-5 py-4">目标表</th>
+              <th className="px-5 py-4">主键</th>
+              <th className="px-5 py-4">差异列</th>
+              <th className="px-5 py-4">类型</th>
+              <th className="px-5 py-4">订正</th>
+              <th className="px-5 py-4">来源</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-line">
+            {diffs.length === 0 ? (
+              <tr><td colSpan={7} className="px-5 py-12 text-center text-sm text-slate-500">暂无差异</td></tr>
+            ) : diffs.map((diff) => (
+              <tr key={diff.id}>
+                <td className="px-5 py-4 text-sm font-medium text-coal">{diff.sourceTable}</td>
+                <td className="px-5 py-4 text-sm text-coal">{diff.targetTable}</td>
+                <td className="px-5 py-4 font-mono text-xs text-slate-600" title={diff.primaryKeyJson}>{compactJSONText(diff.primaryKeyJson)}</td>
+                <td className="px-5 py-4 font-mono text-xs text-slate-600" title={diff.diffColumnsJson}>{compactJSONText(diff.diffColumnsJson)}</td>
+                <td className="px-5 py-4"><Badge tone="yellow">{dataValidationDiffTypeText(diff.diffType)}</Badge></td>
+                <td className="px-5 py-4"><Badge tone={diff.correctionStatus === "corrected" ? "green" : "neutral"}>{dataValidationCorrectionStatusText(diff.correctionStatus)}</Badge></td>
+                <td className="px-5 py-4 text-xs text-slate-500">
+                  <div className="truncate">{tasks.find((task) => task.id === diff.validationTaskId)?.name || "数据校验"}</div>
+                  <div className="mt-1 truncate font-mono">{runs.find((run) => run.id === diff.validationRunId)?.id || diff.validationRunId}</div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
     </div>
   );
@@ -6632,9 +6696,37 @@ function channelTabText(tab: ChannelDetailTab) {
     mappings: "映射",
     tasks: "任务",
     runs: "运行",
-    logs: "日志"
+    logs: "日志",
+    diffs: "差异"
   };
   return labels[tab];
+}
+
+function dataValidationDiffTypeText(type: string) {
+  const labels: Record<string, string> = {
+    value_mismatch: "值不一致",
+    missing_source: "源缺失",
+    missing_target: "目标缺失"
+  };
+  return labels[type] || type;
+}
+
+function dataValidationCorrectionStatusText(status: string) {
+  const labels: Record<string, string> = {
+    pending: "待订正",
+    corrected: "已订正",
+    failed: "失败"
+  };
+  return labels[status] || status;
+}
+
+function compactJSONText(value: string) {
+  try {
+    const parsed = JSON.parse(value);
+    return JSON.stringify(parsed);
+  } catch {
+    return value || "-";
+  }
 }
 
 function datasourceSelectOptions(datasources: Datasource[], purpose: DatasourcePurpose) {

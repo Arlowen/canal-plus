@@ -12,6 +12,7 @@ import type {
   ChannelTaskInput,
   ClusterSnapshot,
   ClusterNode,
+  DataValidationDiff,
   Datasource,
   DatasourceColumnsResponse,
   DatasourceDatabasesResponse,
@@ -297,6 +298,9 @@ export const api = {
   },
   channelLogs(id: string) {
     return request<TaskLog[]>(`/canals/${id}/logs`);
+  },
+  channelDiffs(id: string) {
+    return request<DataValidationDiff[]>(`/canals/${id}/diffs`);
   },
   logs() {
     return request<OperationLog[]>("/operation-logs");

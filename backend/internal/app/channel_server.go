@@ -81,6 +81,8 @@ func (s *Server) handleChannels(response http.ResponseWriter, request *http.Requ
 		s.handleChannelRuns(response, request, parts)
 	case len(parts) >= 3 && parts[2] == "logs":
 		s.handleChannelLogs(response, request, parts)
+	case len(parts) >= 3 && parts[2] == "diffs":
+		s.handleChannelDiffs(response, request, parts)
 	default:
 		writeError(response, http.StatusNotFound, "not found")
 	}
@@ -268,6 +270,20 @@ func (s *Server) handleChannelLogs(response http.ResponseWriter, request *http.R
 		return
 	}
 	writeJSON(response, http.StatusOK, logs)
+}
+
+func (s *Server) handleChannelDiffs(response http.ResponseWriter, request *http.Request, parts []string) {
+	channelID := parts[1]
+	if len(parts) != 3 || request.Method != http.MethodGet {
+		writeError(response, http.StatusNotFound, "not found")
+		return
+	}
+	diffs, ok := s.store.ChannelDiffs(channelID)
+	if !ok {
+		writeError(response, http.StatusNotFound, "Channel 不存在")
+		return
+	}
+	writeJSON(response, http.StatusOK, firstN(diffs, 100))
 }
 
 func requestActor(user User) string {
