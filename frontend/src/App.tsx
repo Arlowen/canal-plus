@@ -773,6 +773,13 @@ function App() {
     }
   }, []);
 
+  useEffect(() => {
+    const canonicalPath = canonicalCanalPathname(window.location.pathname);
+    if (!canonicalPath) return;
+    const nextPage = pageFromPathname(canonicalPath);
+    window.history.replaceState({ page: nextPage, resourceId: channelDetailIdFromPathname(canonicalPath) ?? undefined }, "", canonicalPath);
+  }, []);
+
   const pushNotice = useCallback((next: Notice) => {
     setNotice(next);
   }, []);
@@ -6735,8 +6742,8 @@ function datasourceAuthTypeFromItem(item: Datasource): DatasourceAuthType {
 }
 
 function pageFromPathname(pathname: string): Page {
-  if (pathname === "/" || pathname === "/channels") return "channels";
-  if (pathname === "/channels/create") return "channelCreate";
+  if (pathname === "/" || pathname === "/canals" || pathname === "/channels") return "channels";
+  if (pathname === "/canals/create" || pathname === "/channels/create") return "channelCreate";
   if (channelDetailIdFromPathname(pathname)) return "channelDetail";
   if (pathname === "/datasources") return "datasources";
   if (pathname === "/datasource/create") return "datasourceCreate";
@@ -6747,9 +6754,9 @@ function pageFromPathname(pathname: string): Page {
 }
 
 function pathForPage(page: Page, resourceId?: string) {
-  if (page === "channels") return "/channels";
-  if (page === "channelCreate") return "/channels/create";
-  if (page === "channelDetail" && resourceId) return `/channels/${encodeURIComponent(resourceId)}`;
+  if (page === "channels") return "/canals";
+  if (page === "channelCreate") return "/canals/create";
+  if (page === "channelDetail" && resourceId) return `/canals/${encodeURIComponent(resourceId)}`;
   if (page === "datasources") return "/datasources";
   if (page === "datasourceCreate") return "/datasource/create";
   if (page === "datasourceEdit" && resourceId) return `/datasource/${encodeURIComponent(resourceId)}/edit`;
@@ -6792,7 +6799,7 @@ function pageDescription(page: Page) {
 }
 
 function channelDetailIdFromPathname(pathname: string) {
-  const match = pathname.match(/^\/channels\/([^/]+)$/);
+  const match = pathname.match(/^\/(?:canals|channels)\/([^/]+)$/);
   if (!match) return null;
   if (match[1] === "create") return null;
   try {
@@ -6800,6 +6807,16 @@ function channelDetailIdFromPathname(pathname: string) {
   } catch {
     return match[1];
   }
+}
+
+function canonicalCanalPathname(pathname: string) {
+  if (pathname === "/channels") return "/canals";
+  if (pathname === "/channels/create") return "/canals/create";
+  const channelId = channelDetailIdFromPathname(pathname);
+  if (channelId && pathname.startsWith("/channels/")) {
+    return `/canals/${encodeURIComponent(channelId)}`;
+  }
+  return null;
 }
 
 function datasourceEditIdFromPathname(pathname: string) {

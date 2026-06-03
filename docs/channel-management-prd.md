@@ -1004,55 +1004,55 @@ Tabs：
 ### 16.1 Channel
 
 ```http
-GET /api/channels
-POST /api/channels
-GET /api/channels/{channelId}
-PUT /api/channels/{channelId}
-DELETE /api/channels/{channelId}
-POST /api/channels/{channelId}/archive
-POST /api/channels/{channelId}/precheck
+GET /api/canals
+POST /api/canals
+GET /api/canals/{channelId}
+PUT /api/canals/{channelId}
+DELETE /api/canals/{channelId}
+POST /api/canals/{channelId}/archive
+POST /api/canals/{channelId}/precheck
 ```
 
 ### 16.2 Mapping
 
 ```http
-GET /api/channels/{channelId}/mappings
-PUT /api/channels/{channelId}/mappings
-POST /api/channels/{channelId}/mappings/scan
-POST /api/channels/{channelId}/mappings/import
-GET /api/channels/{channelId}/mappings/export
-POST /api/channels/{channelId}/mappings/precheck
+GET /api/canals/{channelId}/mappings
+PUT /api/canals/{channelId}/mappings
+POST /api/canals/{channelId}/mappings/scan
+POST /api/canals/{channelId}/mappings/import
+GET /api/canals/{channelId}/mappings/export
+POST /api/canals/{channelId}/mappings/precheck
 ```
 
 ### 16.3 Task
 
 ```http
-GET /api/channels/{channelId}/tasks
-POST /api/channels/{channelId}/tasks
-GET /api/channels/{channelId}/tasks/{taskId}
-PUT /api/channels/{channelId}/tasks/{taskId}
-DELETE /api/channels/{channelId}/tasks/{taskId}
-POST /api/channels/{channelId}/tasks/{taskId}/start
-POST /api/channels/{channelId}/tasks/{taskId}/stop
-POST /api/channels/{channelId}/tasks/{taskId}/rerun
+GET /api/canals/{channelId}/tasks
+POST /api/canals/{channelId}/tasks
+GET /api/canals/{channelId}/tasks/{taskId}
+PUT /api/canals/{channelId}/tasks/{taskId}
+DELETE /api/canals/{channelId}/tasks/{taskId}
+POST /api/canals/{channelId}/tasks/{taskId}/start
+POST /api/canals/{channelId}/tasks/{taskId}/stop
+POST /api/canals/{channelId}/tasks/{taskId}/rerun
 ```
 
 ### 16.4 Run
 
 ```http
-GET /api/channels/{channelId}/runs
-GET /api/channels/{channelId}/tasks/{taskId}/runs
-GET /api/channels/{channelId}/runs/{runId}
-GET /api/channels/{channelId}/runs/{runId}/logs
+GET /api/canals/{channelId}/runs
+GET /api/canals/{channelId}/tasks/{taskId}/runs
+GET /api/canals/{channelId}/runs/{runId}
+GET /api/canals/{channelId}/runs/{runId}/logs
 ```
 
 ### 16.5 Diff
 
 ```http
-GET /api/channels/{channelId}/diffs
-GET /api/channels/{channelId}/diffs/{diffId}
-POST /api/channels/{channelId}/diffs/{diffId}/ignore
-POST /api/channels/{channelId}/tasks/{taskId}/correct
+GET /api/canals/{channelId}/diffs
+GET /api/canals/{channelId}/diffs/{diffId}
+POST /api/canals/{channelId}/diffs/{diffId}/ignore
+POST /api/canals/{channelId}/tasks/{taskId}/correct
 ```
 
 ## 17. 权限规则

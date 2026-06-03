@@ -222,73 +222,73 @@ export const api = {
     return request<DatasourceTablesResponse>(`/datasources/${id}/tables?${params.toString()}`);
   },
   channels() {
-    return request<Channel[]>("/channels");
+    return request<Channel[]>("/canals");
   },
   channel(id: string) {
-    return request<Channel>(`/channels/${id}`);
+    return request<Channel>(`/canals/${id}`);
   },
   createChannel(input: ChannelInput) {
-    return request<Channel>("/channels", {
+    return request<Channel>("/canals", {
       method: "POST",
       body: JSON.stringify(input)
     });
   },
   updateChannel(id: string, input: ChannelInput) {
-    return request<Channel>(`/channels/${id}`, {
+    return request<Channel>(`/canals/${id}`, {
       method: "PUT",
       body: JSON.stringify(input)
     });
   },
   deleteChannel(id: string) {
-    return request<void>(`/channels/${id}`, { method: "DELETE" });
+    return request<void>(`/canals/${id}`, { method: "DELETE" });
   },
   archiveChannel(id: string) {
-    return request<Channel>(`/channels/${id}/archive`, { method: "POST" });
+    return request<Channel>(`/canals/${id}/archive`, { method: "POST" });
   },
   precheckChannel(id: string) {
-    return request<ChannelPrecheckResult>(`/channels/${id}/precheck`, { method: "POST" });
+    return request<ChannelPrecheckResult>(`/canals/${id}/precheck`, { method: "POST" });
   },
   channelMappings(id: string) {
-    return request<ChannelMappingsResponse>(`/channels/${id}/mappings`);
+    return request<ChannelMappingsResponse>(`/canals/${id}/mappings`);
   },
   saveChannelMappings(id: string, input: ChannelMappingsInput) {
-    return request<ChannelMappingsResponse>(`/channels/${id}/mappings`, {
+    return request<ChannelMappingsResponse>(`/canals/${id}/mappings`, {
       method: "PUT",
       body: JSON.stringify(input)
     });
   },
   channelTasks(id: string) {
-    return request<ChannelTask[]>(`/channels/${id}/tasks`);
+    return request<ChannelTask[]>(`/canals/${id}/tasks`);
   },
   createChannelTask(id: string, input: ChannelTaskInput) {
-    return request<ChannelTask>(`/channels/${id}/tasks`, {
+    return request<ChannelTask>(`/canals/${id}/tasks`, {
       method: "POST",
       body: JSON.stringify(input)
     });
   },
   updateChannelTask(channelId: string, taskId: string, input: ChannelTaskInput) {
-    return request<ChannelTask>(`/channels/${channelId}/tasks/${taskId}`, {
+    return request<ChannelTask>(`/canals/${channelId}/tasks/${taskId}`, {
       method: "PUT",
       body: JSON.stringify(input)
     });
   },
   deleteChannelTask(channelId: string, taskId: string) {
-    return request<void>(`/channels/${channelId}/tasks/${taskId}`, { method: "DELETE" });
+    return request<void>(`/canals/${channelId}/tasks/${taskId}`, { method: "DELETE" });
   },
   startChannelTask(channelId: string, taskId: string) {
-    return request<ChannelTask>(`/channels/${channelId}/tasks/${taskId}/start`, { method: "POST" });
+    return request<ChannelTask>(`/canals/${channelId}/tasks/${taskId}/start`, { method: "POST" });
   },
   stopChannelTask(channelId: string, taskId: string) {
-    return request<ChannelTask>(`/channels/${channelId}/tasks/${taskId}/stop`, { method: "POST" });
+    return request<ChannelTask>(`/canals/${channelId}/tasks/${taskId}/stop`, { method: "POST" });
   },
   rerunChannelTask(channelId: string, taskId: string) {
-    return request<ChannelTask>(`/channels/${channelId}/tasks/${taskId}/rerun`, { method: "POST" });
+    return request<ChannelTask>(`/canals/${channelId}/tasks/${taskId}/rerun`, { method: "POST" });
   },
   channelRuns(id: string) {
-    return request<TaskRun[]>(`/channels/${id}/runs`);
+    return request<TaskRun[]>(`/canals/${id}/runs`);
   },
   channelLogs(id: string) {
-    return request<TaskLog[]>(`/channels/${id}/logs`);
+    return request<TaskLog[]>(`/canals/${id}/logs`);
   },
   logs() {
     return request<OperationLog[]>("/operation-logs");
