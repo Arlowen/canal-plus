@@ -358,6 +358,12 @@ type TaskLog struct {
 	CreatedAt string `json:"createdAt"`
 }
 
+type ChannelTaskLogFilter struct {
+	TaskID string
+	RunID  string
+	Level  string
+}
+
 type ChannelPrecheckSeverity string
 
 const (

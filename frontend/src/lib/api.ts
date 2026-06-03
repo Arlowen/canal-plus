@@ -296,8 +296,13 @@ export const api = {
   channelRuns(id: string) {
     return request<TaskRun[]>(`/canals/${id}/runs`);
   },
-  channelLogs(id: string) {
-    return request<TaskLog[]>(`/canals/${id}/logs`);
+  channelLogs(id: string, filters: { taskId?: string; runId?: string; level?: TaskLog["level"] | "" } = {}) {
+    const params = new URLSearchParams();
+    if (filters.taskId) params.set("taskId", filters.taskId);
+    if (filters.runId) params.set("runId", filters.runId);
+    if (filters.level) params.set("level", filters.level);
+    const query = params.toString();
+    return request<TaskLog[]>(`/canals/${id}/logs${query ? `?${query}` : ""}`);
   },
   channelDiffs(id: string) {
     return request<DataValidationDiff[]>(`/canals/${id}/diffs`);

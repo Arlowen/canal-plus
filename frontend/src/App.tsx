@@ -202,6 +202,11 @@ type DatasourceTypeFilter = "all" | "mysql";
 type NodeTypeFilter = "all" | "master" | "standby";
 type ChannelStatusFilter = "all" | Channel["status"];
 type ChannelDetailTab = "overview" | "mappings" | "tasks" | "runs" | "logs" | "diffs";
+type ChannelLogFilters = {
+  taskId: string;
+  runId: string;
+  level: "" | TaskLog["level"];
+};
 
 const navItems: Array<{ id: MainPage; label: string; icon: typeof Database }> = [
   { id: "channels", label: "Canal", icon: ArrowRight },
@@ -2640,6 +2645,7 @@ function ChannelDetailPage({
   const [tasks, setTasks] = useState<ChannelTask[]>([]);
   const [runs, setRuns] = useState<TaskRun[]>([]);
   const [logs, setLogs] = useState<TaskLog[]>([]);
+  const [logFilters, setLogFilters] = useState<ChannelLogFilters>({ taskId: "", runId: "", level: "" });
   const [diffs, setDiffs] = useState<DataValidationDiff[]>([]);
   const [precheck, setPrecheck] = useState<ChannelPrecheckResult | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -2654,7 +2660,7 @@ function ChannelDetailPage({
         api.channelMappings(channelId),
         api.channelTasks(channelId),
         api.channelRuns(channelId),
-        api.channelLogs(channelId),
+        api.channelLogs(channelId, logFilters),
         api.channelDiffs(channelId),
         api.precheckChannel(channelId)
       ]);
@@ -2669,7 +2675,11 @@ function ChannelDetailPage({
     } finally {
       setDetailLoading(false);
     }
-  }, [channelId, pushNotice]);
+  }, [channelId, logFilters, pushNotice]);
+
+  useEffect(() => {
+    setLogFilters((current) => current.taskId || current.runId || current.level ? { taskId: "", runId: "", level: "" } : current);
+  }, [channelId]);
 
   useEffect(() => {
     void loadDetail();
@@ -2881,7 +2891,7 @@ function ChannelDetailPage({
         ) : activeTab === "runs" ? (
           <ChannelRunsPanel runs={runs} tasks={tasks} />
         ) : activeTab === "logs" ? (
-          <ChannelLogsPanel logs={logs} />
+          <ChannelLogsPanel logs={logs} tasks={tasks} runs={runs} filters={logFilters} onFiltersChange={setLogFilters} />
         ) : (
           <ChannelDiffsPanel diffs={diffs} tasks={tasks} runs={runs} />
         )}
@@ -3258,16 +3268,64 @@ function ChannelRunsPanel({ runs, tasks }: { runs: TaskRun[]; tasks: ChannelTask
   );
 }
 
-function ChannelLogsPanel({ logs }: { logs: TaskLog[] }) {
+function ChannelLogsPanel({
+  logs,
+  tasks,
+  runs,
+  filters,
+  onFiltersChange
+}: {
+  logs: TaskLog[];
+  tasks: ChannelTask[];
+  runs: TaskRun[];
+  filters: ChannelLogFilters;
+  onFiltersChange: (filters: ChannelLogFilters) => void;
+}) {
+  const taskOptions = [
+    { value: "", label: "全部任务" },
+    ...tasks.map((task) => ({ value: task.id, label: task.name, description: channelTaskTypeText(task.type) }))
+  ];
+  const visibleRuns = filters.taskId ? runs.filter((run) => run.taskId === filters.taskId) : runs;
+  const runOptions = [
+    { value: "", label: "全部 Run" },
+    ...visibleRuns.map((run) => ({
+      value: run.id,
+      label: run.id.slice(0, 8),
+      description: tasks.find((task) => task.id === run.taskId)?.name || channelTaskTypeText(run.taskType)
+    }))
+  ];
+  const levelOptions = [
+    { value: "", label: "全部级别" },
+    { value: "info", label: "info" },
+    { value: "warn", label: "warn" },
+    { value: "error", label: "error" }
+  ];
+  const updateTaskFilter = (taskId: string) => {
+    const runStillVisible = !filters.runId || runs.some((run) => run.id === filters.runId && (!taskId || run.taskId === taskId));
+    onFiltersChange({ ...filters, taskId, runId: runStillVisible ? filters.runId : "" });
+  };
+
   return (
     <div className="pt-5">
       <SectionHeader title="日志" />
-      <div className="mt-5 overflow-hidden rounded-lg border border-line bg-white">
+      <div className="mt-5 flex flex-wrap items-center gap-3">
+        <DropdownSelect value={filters.taskId} ariaLabel="日志任务" className="w-[180px]" options={taskOptions} showSelectedDescription={false} onChange={updateTaskFilter} />
+        <DropdownSelect value={filters.runId} ariaLabel="日志 Run" className="w-[160px]" options={runOptions} showSelectedDescription={false} onChange={(runId) => onFiltersChange({ ...filters, runId })} />
+        <DropdownSelect value={filters.level} ariaLabel="日志级别" className="w-[140px]" options={levelOptions} showSelectedDescription={false} onChange={(level) => onFiltersChange({ ...filters, level: level as ChannelLogFilters["level"] })} />
+      </div>
+      <div className="mt-4 overflow-hidden rounded-lg border border-line bg-white">
         {logs.length === 0 ? (
           <div className="px-5 py-12 text-center text-sm text-slate-500">暂无日志</div>
         ) : logs.map((log) => (
           <div key={log.id} className="border-b border-line px-5 py-3 font-mono text-xs text-slate-700 last:border-b-0">
-            [{formatDateTime(log.createdAt)}][{log.level}][{log.thread}]{log.message}
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <span className={cx("min-w-0 break-all", log.level === "error" && "text-red-600", log.level === "warn" && "text-amber-700")}>
+                [{formatDateTime(log.createdAt)}][{log.level}][{log.thread}]{log.message}
+              </span>
+              <span className="shrink-0 font-sans text-[11px] text-slate-400">
+                {tasks.find((task) => task.id === log.taskId)?.name || log.taskId || "-"} · {log.runId ? log.runId.slice(0, 8) : "-"}
+              </span>
+            </div>
           </div>
         ))}
       </div>

@@ -521,18 +521,32 @@ func (s *Store) ChannelTaskRuns(channelID string, taskID string) ([]TaskRun, boo
 	return cloneJSON(runs), true
 }
 
-func (s *Store) ChannelTaskLogs(channelID string, runID string) ([]TaskLog, bool) {
+func (s *Store) ChannelTaskLogs(channelID string, filter ChannelTaskLogFilter) ([]TaskLog, bool, error) {
+	filter.TaskID = strings.TrimSpace(filter.TaskID)
+	filter.RunID = strings.TrimSpace(filter.RunID)
+	filter.Level = strings.TrimSpace(strings.ToLower(filter.Level))
+	switch filter.Level {
+	case "", "info", "warn", "error":
+	default:
+		return nil, true, errors.New("日志级别无效")
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.channelIndexLocked(channelID) < 0 {
-		return nil, false
+		return nil, false, nil
 	}
 	logs := make([]TaskLog, 0)
 	for _, log := range s.data.TaskLogs {
 		if log.ChannelID != channelID {
 			continue
 		}
-		if runID != "" && log.RunID != runID {
+		if filter.TaskID != "" && log.TaskID != filter.TaskID {
+			continue
+		}
+		if filter.RunID != "" && log.RunID != filter.RunID {
+			continue
+		}
+		if filter.Level != "" && log.Level != filter.Level {
 			continue
 		}
 		logs = append(logs, log)
@@ -540,7 +554,7 @@ func (s *Store) ChannelTaskLogs(channelID string, runID string) ([]TaskLog, bool
 	sort.SliceStable(logs, func(left, right int) bool {
 		return logs[left].CreatedAt > logs[right].CreatedAt
 	})
-	return cloneJSON(firstN(logs, 200)), true
+	return cloneJSON(firstN(logs, 200)), true, nil
 }
 
 func (s *Store) runChannelTask(channelID string, taskID string, actor string, rerun bool) (ChannelTask, bool, error) {

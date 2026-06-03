@@ -247,7 +247,11 @@ func (s *Server) handleChannelRuns(response http.ResponseWriter, request *http.R
 		}
 		writeJSON(response, http.StatusOK, firstN(runs, 100))
 	case len(parts) == 5 && parts[4] == "logs" && request.Method == http.MethodGet:
-		logs, ok := s.store.ChannelTaskLogs(channelID, parts[3])
+		logs, ok, err := s.store.ChannelTaskLogs(channelID, ChannelTaskLogFilter{RunID: parts[3]})
+		if err != nil {
+			writeError(response, http.StatusBadRequest, err.Error())
+			return
+		}
 		if !ok {
 			writeError(response, http.StatusNotFound, "Channel 不存在")
 			return
@@ -264,7 +268,16 @@ func (s *Server) handleChannelLogs(response http.ResponseWriter, request *http.R
 		writeError(response, http.StatusNotFound, "not found")
 		return
 	}
-	logs, ok := s.store.ChannelTaskLogs(channelID, "")
+	query := request.URL.Query()
+	logs, ok, err := s.store.ChannelTaskLogs(channelID, ChannelTaskLogFilter{
+		TaskID: query.Get("taskId"),
+		RunID:  query.Get("runId"),
+		Level:  query.Get("level"),
+	})
+	if err != nil {
+		writeError(response, http.StatusBadRequest, err.Error())
+		return
+	}
 	if !ok {
 		writeError(response, http.StatusNotFound, "Channel 不存在")
 		return

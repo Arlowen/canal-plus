@@ -144,6 +144,88 @@ func TestDataCorrectionRequiresSuccessfulValidationRun(t *testing.T) {
 	}
 }
 
+func TestChannelTaskLogsFilters(t *testing.T) {
+	store := newTestStore(t)
+	source := createNamedTestDatasource(t, store, "source", DatasourcePurposeSource)
+	target := createNamedTestDatasource(t, store, "target", DatasourcePurposeTarget)
+	channel, err := store.CreateChannel(ChannelInput{
+		Name:               "logs-channel",
+		SourceDatasourceID: source.ID,
+		TargetDatasourceID: target.ID,
+		RunNodeID:          "node-local",
+		ResourceSpec:       "0.5G",
+		Kind:               ChannelKindCheck,
+	}, "admin")
+	if err != nil {
+		t.Fatalf("create channel: %v", err)
+	}
+	if _, ok, err := store.SaveChannelMappings(channel.ID, ChannelMappingsInput{
+		Tables: []ChannelTableMappingInput{{
+			SourceTable: "orders",
+			TargetTable: "orders_shadow",
+			PrimaryKeys: []string{"id"},
+			Columns: []ChannelColumnMappingInput{
+				{SourceColumn: "id", SourceType: "bigint", TargetColumn: "id", TargetType: "bigint", IsPrimaryKey: true},
+				{SourceColumn: "amount", SourceType: "decimal(12,2)", TargetColumn: "amount", TargetType: "decimal(12,2)"},
+			},
+		}},
+	}, "admin"); err != nil || !ok {
+		t.Fatalf("save mappings ok=%v err=%v", ok, err)
+	}
+	validation, ok, err := store.CreateChannelTask(channel.ID, ChannelTaskInput{
+		Name:    "数据校验",
+		Type:    ChannelTaskDataValidation,
+		Enabled: boolPtr(true),
+	}, "admin")
+	if err != nil || !ok {
+		t.Fatalf("create validation ok=%v err=%v", ok, err)
+	}
+	compare, ok, err := store.CreateChannelTask(channel.ID, ChannelTaskInput{
+		Name:    "结构对比",
+		Type:    ChannelTaskSchemaCompare,
+		Enabled: boolPtr(true),
+	}, "admin")
+	if err != nil || !ok {
+		t.Fatalf("create compare ok=%v err=%v", ok, err)
+	}
+	if _, ok, err := store.StartChannelTask(channel.ID, validation.ID, "admin"); err != nil || !ok {
+		t.Fatalf("start validation ok=%v err=%v", ok, err)
+	}
+	if _, ok, err := store.StartChannelTask(channel.ID, compare.ID, "admin"); err != nil || !ok {
+		t.Fatalf("start compare ok=%v err=%v", ok, err)
+	}
+
+	allLogs, ok, err := store.ChannelTaskLogs(channel.ID, ChannelTaskLogFilter{})
+	if err != nil || !ok || len(allLogs) < 4 {
+		t.Fatalf("all logs ok=%v err=%v logs=%#v", ok, err, allLogs)
+	}
+	validationLogs, ok, err := store.ChannelTaskLogs(channel.ID, ChannelTaskLogFilter{TaskID: validation.ID})
+	if err != nil || !ok || len(validationLogs) == 0 {
+		t.Fatalf("validation logs ok=%v err=%v logs=%#v", ok, err, validationLogs)
+	}
+	for _, log := range validationLogs {
+		if log.TaskID != validation.ID {
+			t.Fatalf("unexpected task log: %#v", log)
+		}
+	}
+	warnLogs, ok, err := store.ChannelTaskLogs(channel.ID, ChannelTaskLogFilter{Level: "warn"})
+	if err != nil || !ok || len(warnLogs) != 1 || warnLogs[0].Level != "warn" {
+		t.Fatalf("warn logs ok=%v err=%v logs=%#v", ok, err, warnLogs)
+	}
+	runLogs, ok, err := store.ChannelTaskLogs(channel.ID, ChannelTaskLogFilter{RunID: warnLogs[0].RunID})
+	if err != nil || !ok || len(runLogs) == 0 {
+		t.Fatalf("run logs ok=%v err=%v logs=%#v", ok, err, runLogs)
+	}
+	for _, log := range runLogs {
+		if log.RunID != warnLogs[0].RunID {
+			t.Fatalf("unexpected run log: %#v", log)
+		}
+	}
+	if _, _, err := store.ChannelTaskLogs(channel.ID, ChannelTaskLogFilter{Level: "debug"}); err == nil {
+		t.Fatal("expected invalid log level error")
+	}
+}
+
 func precheckItem(result ChannelPrecheckResult, key string) *ChannelPrecheckItem {
 	for index := range result.Items {
 		if result.Items[index].Key == key {
