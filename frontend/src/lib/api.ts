@@ -13,6 +13,7 @@ import type {
   ClusterSnapshot,
   ClusterNode,
   Datasource,
+  DatasourceColumnsResponse,
   DatasourceDatabasesResponse,
   DatasourceInput,
   DatasourceTablesResponse,
@@ -220,6 +221,13 @@ export const api = {
     if (input.nodeId) params.set("nodeId", input.nodeId);
     params.set("database", input.database);
     return request<DatasourceTablesResponse>(`/datasources/${id}/tables?${params.toString()}`);
+  },
+  datasourceColumns(id: string, input: { nodeId?: string; database: string; table: string }) {
+    const params = new URLSearchParams();
+    if (input.nodeId) params.set("nodeId", input.nodeId);
+    params.set("database", input.database);
+    params.set("table", input.table);
+    return request<DatasourceColumnsResponse>(`/datasources/${id}/columns?${params.toString()}`);
   },
   channels() {
     return request<Channel[]>("/canals");

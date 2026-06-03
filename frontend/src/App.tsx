@@ -63,6 +63,7 @@ import type {
   ClusterSnapshot,
   Datasource,
   DatasourceAuthType,
+  DatasourceColumn,
   DatasourceInput,
   DatasourcePurpose,
   DatasourceType,
@@ -139,6 +140,13 @@ type ChannelWizardStep = "connections" | "tasks" | "tables" | "columns";
 type ResourceSpec = "0.5G" | "1G" | "2G" | "3G" | "4G";
 type DatasourceTestState = "idle" | "testing" | "success" | "failed";
 type MetadataLoadState = "idle" | "loading" | "success" | "failed";
+
+type ChannelWizardColumnMetadata = {
+  sourceColumns: DatasourceColumn[];
+  targetColumns: DatasourceColumn[];
+  loadState: MetadataLoadState;
+  error: string;
+};
 
 type ChannelWizardTableDraft = ChannelTableMappingDraft & {
   createTarget: boolean;
@@ -1523,6 +1531,7 @@ function ChannelCreateWizardPage({
 }) {
   const onlineNodes = useMemo(() => (cluster?.nodes || []).filter((node) => node.status === "online"), [cluster]);
   const [form, setForm] = useState<ChannelWizardFormState>(() => emptyChannelWizardForm(datasources, onlineNodes));
+  const formTablesRef = useRef(form.tables);
   const [step, setStep] = useState<ChannelWizardStep>("connections");
   const [submitting, setSubmitting] = useState(false);
   const [sourceDatabaseOptions, setSourceDatabaseOptions] = useState<string[]>([]);
@@ -1535,7 +1544,17 @@ function ChannelCreateWizardPage({
   const [targetTableLoadState, setTargetTableLoadState] = useState<MetadataLoadState>("idle");
   const [sourceMetadataError, setSourceMetadataError] = useState("");
   const [targetMetadataError, setTargetMetadataError] = useState("");
+  const [columnMetadataByTable, setColumnMetadataByTable] = useState<Record<string, ChannelWizardColumnMetadata>>({});
   const [testFailureDialog, setTestFailureDialog] = useState<{ side: "source" | "target"; message: string } | null>(null);
+  const columnMetadataRequestKey = useMemo(() => (
+    form.tables
+      .map((table) => [table.localId, table.sourceTable.trim(), table.targetTable.trim()].join(":"))
+      .join("|")
+  ), [form.tables]);
+
+  useEffect(() => {
+    formTablesRef.current = form.tables;
+  }, [form.tables]);
 
   useEffect(() => {
     setForm((current) => {
@@ -1711,6 +1730,99 @@ function ChannelCreateWizardPage({
     };
   }, [form.runNodeId, form.targetDatabase, form.targetDatasourceId, form.targetTestState]);
 
+  useEffect(() => {
+    if (
+      form.sourceTestState !== "success"
+      || form.targetTestState !== "success"
+      || !form.runNodeId
+      || !form.sourceDatasourceId
+      || !form.targetDatasourceId
+      || !form.sourceDatabase
+      || !form.targetDatabase
+    ) {
+      setColumnMetadataByTable({});
+      return;
+    }
+    const tablesToLoad = formTablesRef.current.filter((table) => table.sourceTable.trim() && table.targetTable.trim());
+    if (tablesToLoad.length === 0) {
+      setColumnMetadataByTable({});
+      return;
+    }
+    let active = true;
+    setColumnMetadataByTable((current) => {
+      const next: Record<string, ChannelWizardColumnMetadata> = {};
+      tablesToLoad.forEach((table) => {
+        next[table.localId] = current[table.localId] || {
+          sourceColumns: [],
+          targetColumns: [],
+          loadState: "loading",
+          error: ""
+        };
+        next[table.localId] = { ...next[table.localId], loadState: "loading", error: "" };
+      });
+      return next;
+    });
+    tablesToLoad.forEach((table) => {
+      const sourceTable = table.sourceTable.trim();
+      const targetTable = table.targetTable.trim();
+      void Promise.allSettled([
+        api.datasourceColumns(form.sourceDatasourceId, {
+          nodeId: form.runNodeId,
+          database: form.sourceDatabase,
+          table: sourceTable
+        }),
+        api.datasourceColumns(form.targetDatasourceId, {
+          nodeId: form.runNodeId,
+          database: form.targetDatabase,
+          table: targetTable
+        })
+      ]).then(([sourceResult, targetResult]) => {
+        if (!active) return;
+        const sourceColumns = sourceResult.status === "fulfilled" ? sourceResult.value.columns : [];
+        const targetColumns = targetResult.status === "fulfilled" ? targetResult.value.columns : [];
+        const sourceError = sourceResult.status === "rejected" ? requestErrorMessage(sourceResult.reason) : "";
+        const targetError = targetResult.status === "rejected" ? requestErrorMessage(targetResult.reason) : "";
+        const failed = sourceResult.status === "rejected";
+        setColumnMetadataByTable((current) => ({
+          ...current,
+          [table.localId]: {
+            sourceColumns,
+            targetColumns,
+            loadState: failed ? "failed" : "success",
+            error: sourceError || targetError
+          }
+        }));
+        if (sourceColumns.length === 0 || failed) return;
+        setForm((current) => ({
+          ...current,
+          tables: current.tables.map((currentTable) => {
+            if (
+              currentTable.localId !== table.localId
+              || currentTable.sourceTable.trim() !== sourceTable
+              || currentTable.targetTable.trim() !== targetTable
+              || !channelWizardColumnsAreEmpty(currentTable.columns)
+            ) {
+              return currentTable;
+            }
+            return applyColumnMetadataToWizardTable(currentTable, sourceColumns, targetColumns);
+          })
+        }));
+      });
+    });
+    return () => {
+      active = false;
+    };
+  }, [
+    columnMetadataRequestKey,
+    form.runNodeId,
+    form.sourceDatabase,
+    form.sourceDatasourceId,
+    form.sourceTestState,
+    form.targetDatabase,
+    form.targetDatasourceId,
+    form.targetTestState
+  ]);
+
   const selectedNode = onlineNodes.find((node) => node.id === form.runNodeId) || null;
   const sourceOptions = datasourceOptionsForWizard(datasources, "source", form.sourceDatasourceType);
   const targetOptions = datasourceOptionsForWizard(datasources, "target", form.targetDatasourceType);
@@ -1838,7 +1950,17 @@ function ChannelCreateWizardPage({
   const updateTable = (index: number, patch: Partial<ChannelWizardTableDraft>) => {
     setForm((current) => ({
       ...current,
-      tables: current.tables.map((table, tableIndex) => tableIndex === index ? { ...table, ...patch } : table)
+      tables: current.tables.map((table, tableIndex) => {
+        if (tableIndex !== index) return table;
+        const sourceTableChanged = patch.sourceTable !== undefined && patch.sourceTable !== table.sourceTable;
+        const targetTableChanged = patch.targetTable !== undefined && patch.targetTable !== table.targetTable;
+        return {
+          ...table,
+          ...patch,
+          primaryKeysText: sourceTableChanged ? "" : table.primaryKeysText,
+          columns: sourceTableChanged || targetTableChanged ? [emptyColumnDraft()] : table.columns
+        };
+      })
     }));
   };
 
@@ -1876,6 +1998,48 @@ function ChannelCreateWizardPage({
           primaryKeysText: patch.isPrimaryKey !== undefined ? Array.from(primaryKeys).join(", ") : table.primaryKeysText
         };
       })
+    }));
+  };
+
+  const updateColumnSource = (tableIndex: number, columnIndex: number, sourceColumn: string) => {
+    const table = form.tables[tableIndex];
+    const column = table?.columns[columnIndex];
+    const metadata = table ? columnMetadataByTable[table.localId] : undefined;
+    const sourceMetadata = metadata?.sourceColumns.find((item) => item.name === sourceColumn);
+    updateColumn(tableIndex, columnIndex, {
+      sourceColumn,
+      sourceType: sourceMetadata?.type || "",
+      isPrimaryKey: Boolean(sourceMetadata?.isPrimaryKey),
+      nullable: sourceMetadata?.nullable ?? column?.nullable ?? true,
+      defaultValue: sourceMetadata?.defaultValue || "",
+      targetColumn: column?.targetColumn?.trim() ? column.targetColumn : sourceColumn
+    });
+  };
+
+  const updateColumnTarget = (tableIndex: number, columnIndex: number, targetColumn: string) => {
+    const table = form.tables[tableIndex];
+    const metadata = table ? columnMetadataByTable[table.localId] : undefined;
+    const targetMetadata = metadata?.targetColumns.find((item) => item.name === targetColumn);
+    updateColumn(tableIndex, columnIndex, {
+      targetColumn,
+      targetType: targetMetadata?.type || ""
+    });
+  };
+
+  const generateColumnMappings = (tableIndex: number) => {
+    const table = form.tables[tableIndex];
+    const metadata = table ? columnMetadataByTable[table.localId] : undefined;
+    if (!table || !metadata || metadata.sourceColumns.length === 0) {
+      pushNotice({ tone: "warning", message: "列未加载" });
+      return;
+    }
+    setForm((current) => ({
+      ...current,
+      tables: current.tables.map((currentTable, currentTableIndex) => (
+        currentTableIndex === tableIndex
+          ? applyColumnMetadataToWizardTable(currentTable, metadata.sourceColumns, metadata.targetColumns)
+          : currentTable
+      ))
     }));
   };
 
@@ -2287,60 +2451,92 @@ function ChannelCreateWizardPage({
 
               {step === "columns" && (
                 <div className="grid gap-5 p-5">
-                  {form.tables.map((table, tableIndex) => (
-                    <div key={table.localId} className="rounded-lg border border-line p-4">
-                      <div className="mb-4 flex items-center justify-between gap-3">
-                        <div className="min-w-0">
-                          <div className="truncate font-semibold text-coal">{table.sourceTable || "源表"} → {table.targetTable || "目标表"}</div>
+                  {form.tables.map((table, tableIndex) => {
+                    const metadata = columnMetadataByTable[table.localId];
+                    return (
+                      <div key={table.localId} className="rounded-lg border border-line p-4">
+                        <div className="mb-4 flex items-center justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="truncate font-semibold text-coal">{table.sourceTable || "源表"} → {table.targetTable || "目标表"}</div>
+                            <div className={cx("mt-1 text-xs", metadata?.loadState === "failed" ? "text-amber-700" : "text-slate-500")}>
+                              {metadata?.loadState === "loading" ? "列加载中" : metadata?.error || `${metadata?.sourceColumns.length || 0} 列`}
+                            </div>
+                          </div>
+                          <div className="flex shrink-0 gap-2">
+                            <Button type="button" onClick={() => generateColumnMappings(tableIndex)} disabled={!metadata || metadata.loadState === "loading" || metadata.sourceColumns.length === 0} className="btn-secondary">
+                              {metadata?.loadState === "loading" ? <ArrowsClockwise size={16} className="animate-spin" /> : <CheckCircle size={16} />}
+                              生成
+                            </Button>
+                            <Button type="button" onClick={() => addColumn(tableIndex)} className="btn-secondary">
+                              <Plus size={16} />
+                              列
+                            </Button>
+                          </div>
                         </div>
-                        <Button type="button" onClick={() => addColumn(tableIndex)} className="btn-secondary">
-                          <Plus size={16} />
-                          列
-                        </Button>
-                      </div>
-                      <div className="overflow-x-auto">
-                        <table className="w-full min-w-[820px] table-fixed text-left text-sm">
-                          <colgroup>
-                            <col className="w-[160px]" />
-                            <col className="w-[120px]" />
-                            <col className="w-[160px]" />
-                            <col className="w-[120px]" />
-                            <col className="w-[90px]" />
-                            <col className="w-[90px]" />
-                            <col className="w-[80px]" />
-                          </colgroup>
-                          <thead className="border-b border-line text-xs font-semibold text-slate-500">
-                            <tr>
-                              <th className="py-2 pr-3">源列</th>
-                              <th className="py-2 pr-3">源类型</th>
-                              <th className="py-2 pr-3">目标列</th>
-                              <th className="py-2 pr-3">目标类型</th>
-                              <th className="py-2 pr-3">主键</th>
-                              <th className="py-2 pr-3">可空</th>
-                              <th className="py-2 pr-3">操作</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-line">
-                            {table.columns.map((column, columnIndex) => (
-                              <tr key={column.localId}>
-                                <td className="py-2 pr-3"><TextInput className="input h-10" value={column.sourceColumn} onChange={(event) => updateColumn(tableIndex, columnIndex, { sourceColumn: event.target.value })} /></td>
-                                <td className="py-2 pr-3"><TextInput className="input h-10" value={column.sourceType || ""} onChange={(event) => updateColumn(tableIndex, columnIndex, { sourceType: event.target.value })} /></td>
-                                <td className="py-2 pr-3"><TextInput className="input h-10" value={column.targetColumn} onChange={(event) => updateColumn(tableIndex, columnIndex, { targetColumn: event.target.value })} /></td>
-                                <td className="py-2 pr-3"><TextInput className="input h-10" value={column.targetType || ""} onChange={(event) => updateColumn(tableIndex, columnIndex, { targetType: event.target.value })} /></td>
-                                <td className="py-2 pr-3"><CheckboxInput checked={Boolean(column.isPrimaryKey)} onChange={(event) => updateColumn(tableIndex, columnIndex, { isPrimaryKey: event.target.checked })} /></td>
-                                <td className="py-2 pr-3"><CheckboxInput checked={Boolean(column.nullable)} onChange={(event) => updateColumn(tableIndex, columnIndex, { nullable: event.target.checked })} /></td>
-                                <td className="py-2 pr-3">
-                                  <IconActionButton label="删除列" tone="danger" onClick={() => removeColumn(tableIndex, columnIndex)}>
-                                    <Trash size={18} />
-                                  </IconActionButton>
-                                </td>
+                        <div className="overflow-x-auto">
+                          <table className="w-full min-w-[820px] table-fixed text-left text-sm">
+                            <colgroup>
+                              <col className="w-[160px]" />
+                              <col className="w-[120px]" />
+                              <col className="w-[160px]" />
+                              <col className="w-[120px]" />
+                              <col className="w-[90px]" />
+                              <col className="w-[90px]" />
+                              <col className="w-[80px]" />
+                            </colgroup>
+                            <thead className="border-b border-line text-xs font-semibold text-slate-500">
+                              <tr>
+                                <th className="py-2 pr-3">源列</th>
+                                <th className="py-2 pr-3">源类型</th>
+                                <th className="py-2 pr-3">目标列</th>
+                                <th className="py-2 pr-3">目标类型</th>
+                                <th className="py-2 pr-3">主键</th>
+                                <th className="py-2 pr-3">可空</th>
+                                <th className="py-2 pr-3">操作</th>
                               </tr>
-                            ))}
-                          </tbody>
-                        </table>
+                            </thead>
+                            <tbody className="divide-y divide-line">
+                              {table.columns.map((column, columnIndex) => (
+                                <tr key={column.localId}>
+                                  <td className="py-2 pr-3">
+                                    <DropdownSelect
+                                      value={column.sourceColumn}
+                                      ariaLabel="源列"
+                                      options={metadataColumnOptions(metadata?.sourceColumns || [], metadata?.loadState || "idle", "暂无源列", column.sourceColumn)}
+                                      disabled={metadata?.loadState === "loading"}
+                                      showSelectedDescription={false}
+                                      onChange={(sourceColumn) => updateColumnSource(tableIndex, columnIndex, sourceColumn)}
+                                      className="h-10 min-h-10"
+                                    />
+                                  </td>
+                                  <td className="py-2 pr-3"><TextInput className="input h-10" value={column.sourceType || ""} onChange={(event) => updateColumn(tableIndex, columnIndex, { sourceType: event.target.value })} /></td>
+                                  <td className="py-2 pr-3">
+                                    <DropdownSelect
+                                      value={column.targetColumn}
+                                      ariaLabel="目标列"
+                                      options={metadataColumnOptions(metadata?.targetColumns || [], metadata?.loadState || "idle", "暂无目标列", column.targetColumn)}
+                                      disabled={metadata?.loadState === "loading"}
+                                      showSelectedDescription={false}
+                                      onChange={(targetColumn) => updateColumnTarget(tableIndex, columnIndex, targetColumn)}
+                                      className="h-10 min-h-10"
+                                    />
+                                  </td>
+                                  <td className="py-2 pr-3"><TextInput className="input h-10" value={column.targetType || ""} onChange={(event) => updateColumn(tableIndex, columnIndex, { targetType: event.target.value })} /></td>
+                                  <td className="py-2 pr-3"><CheckboxInput checked={Boolean(column.isPrimaryKey)} onChange={(event) => updateColumn(tableIndex, columnIndex, { isPrimaryKey: event.target.checked })} /></td>
+                                  <td className="py-2 pr-3"><CheckboxInput checked={Boolean(column.nullable)} onChange={(event) => updateColumn(tableIndex, columnIndex, { nullable: event.target.checked })} /></td>
+                                  <td className="py-2 pr-3">
+                                    <IconActionButton label="删除列" tone="danger" onClick={() => removeColumn(tableIndex, columnIndex)}>
+                                      <Trash size={18} />
+                                    </IconActionButton>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
 
@@ -6317,6 +6513,30 @@ function metadataValueOptions(values: string[], state: MetadataLoadState, emptyL
   return placeholderLabel ? [{ value: "", label: placeholderLabel, disabled: true }, ...options] : options;
 }
 
+function metadataColumnOptions(columns: DatasourceColumn[], state: MetadataLoadState, emptyLabel: string, selectedValue = "") {
+  const selected = selectedValue.trim();
+  if (state === "loading") {
+    return selected
+      ? [{ value: selected, label: selected }, { value: "", label: "加载中", disabled: true }]
+      : [{ value: "", label: "加载中", disabled: true }];
+  }
+  if (columns.length === 0) {
+    return selected
+      ? [{ value: selected, label: selected }, { value: "", label: emptyLabel, disabled: true }]
+      : [{ value: "", label: emptyLabel, disabled: true }];
+  }
+  const hasSelected = !selected || columns.some((column) => column.name === selected);
+  return [
+    { value: "", label: "选择列", disabled: true },
+    ...(hasSelected ? [] : [{ value: selected, label: selected, description: "缺失" }]),
+    ...columns.map((column) => ({
+      value: column.name,
+      label: column.name,
+      description: column.type || undefined
+    }))
+  ];
+}
+
 function nodeOptionsForWizard(nodes: ClusterNode[]) {
   if (nodes.length === 0) {
     return [{ value: "", label: "暂无在线节点", disabled: true }];
@@ -6494,6 +6714,42 @@ function channelFormPayload(form: ChannelFormState): ChannelInput {
 
 function splitList(value: string) {
   return value.split(/[,，\n]/).map((item) => item.trim()).filter(Boolean);
+}
+
+function requestErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : "加载失败";
+}
+
+function channelWizardColumnsAreEmpty(columns: ChannelColumnMappingDraft[]) {
+  return columns.length === 0 || columns.every((column) => !column.sourceColumn.trim() && !column.targetColumn.trim());
+}
+
+function applyColumnMetadataToWizardTable(table: ChannelWizardTableDraft, sourceColumns: DatasourceColumn[], targetColumns: DatasourceColumn[]) {
+  const columns = channelWizardColumnMappingsFromMetadata(sourceColumns, targetColumns);
+  const primaryKeys = columns.filter((column) => column.isPrimaryKey && column.sourceColumn.trim()).map((column) => column.sourceColumn.trim());
+  return {
+    ...table,
+    primaryKeysText: table.primaryKeysText.trim() || primaryKeys.join(", "),
+    columns: columns.length > 0 ? columns : [emptyColumnDraft()]
+  };
+}
+
+function channelWizardColumnMappingsFromMetadata(sourceColumns: DatasourceColumn[], targetColumns: DatasourceColumn[]): ChannelColumnMappingDraft[] {
+  const targetByName = new Map(targetColumns.map((column) => [column.name.toLowerCase(), column]));
+  return sourceColumns.map((sourceColumn) => {
+    const targetColumn = targetByName.get(sourceColumn.name.toLowerCase());
+    return {
+      localId: newLocalId(),
+      sourceColumn: sourceColumn.name,
+      sourceType: sourceColumn.type || "",
+      targetColumn: targetColumn?.name || sourceColumn.name,
+      targetType: targetColumn?.type || "",
+      isPrimaryKey: sourceColumn.isPrimaryKey,
+      nullable: targetColumn?.nullable ?? sourceColumn.nullable,
+      defaultValue: sourceColumn.defaultValue || "",
+      enabled: true
+    };
+  });
 }
 
 function mappingDraftFromResponse(response: ChannelMappingsResponse): ChannelTableMappingDraft[] {

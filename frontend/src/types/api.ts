@@ -67,6 +67,21 @@ export interface DatasourceTablesResponse {
   tables: string[];
 }
 
+export interface DatasourceColumn {
+  name: string;
+  type?: string;
+  nullable: boolean;
+  isPrimaryKey: boolean;
+  defaultValue?: string;
+}
+
+export interface DatasourceColumnsResponse {
+  datasourceId: string;
+  database: string;
+  table: string;
+  columns: DatasourceColumn[];
+}
+
 export type ChannelStatus = "draft" | "ready" | "running" | "warning" | "failed" | "stopped" | "archived";
 export type ChannelKind = "sync" | "check";
 export type ChannelTaskType = "schema_migration" | "full_migration" | "incremental_sync" | "schema_compare" | "data_validation" | "data_correction";

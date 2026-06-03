@@ -135,6 +135,21 @@ type DatasourceTablesResponse struct {
 	Tables       []string `json:"tables"`
 }
 
+type DatasourceColumn struct {
+	Name         string `json:"name"`
+	Type         string `json:"type,omitempty"`
+	Nullable     bool   `json:"nullable"`
+	IsPrimaryKey bool   `json:"isPrimaryKey"`
+	DefaultValue string `json:"defaultValue,omitempty"`
+}
+
+type DatasourceColumnsResponse struct {
+	DatasourceID string             `json:"datasourceId"`
+	Database     string             `json:"database"`
+	Table        string             `json:"table"`
+	Columns      []DatasourceColumn `json:"columns"`
+}
+
 type ChannelStatus string
 
 const (

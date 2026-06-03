@@ -408,9 +408,11 @@ func TestAdminCanReadDatasourceMetadata(t *testing.T) {
 	datasource := createNamedTestDatasource(t, server.store, "metadata-source", DatasourcePurposeSource)
 	originalDatabaseLister := datasourceDatabaseLister
 	originalTableLister := datasourceTableLister
+	originalColumnLister := datasourceColumnLister
 	t.Cleanup(func() {
 		datasourceDatabaseLister = originalDatabaseLister
 		datasourceTableLister = originalTableLister
+		datasourceColumnLister = originalColumnLister
 	})
 	datasourceDatabaseLister = func(input Datasource) ([]string, error) {
 		if input.ID != datasource.ID {
@@ -427,6 +429,21 @@ func TestAdminCanReadDatasourceMetadata(t *testing.T) {
 		}
 		return []string{"orders"}, nil
 	}
+	datasourceColumnLister = func(input Datasource, database string, table string) ([]DatasourceColumn, error) {
+		if input.ID != datasource.ID {
+			t.Fatalf("unexpected datasource id = %q", input.ID)
+		}
+		if database != "sales" {
+			t.Fatalf("database = %q, want sales", database)
+		}
+		if table != "orders" {
+			t.Fatalf("table = %q, want orders", table)
+		}
+		return []DatasourceColumn{
+			{Name: "id", Type: "bigint", Nullable: false, IsPrimaryKey: true},
+			{Name: "amount", Type: "decimal(12,2)", Nullable: false},
+		}, nil
+	}
 
 	databasesResponse := serveTestRequest(server, authRequest(http.MethodGet, "/api/datasources/"+datasource.ID+"/databases", adminToken, ""))
 	if databasesResponse.Code != http.StatusOK {
@@ -442,6 +459,14 @@ func TestAdminCanReadDatasourceMetadata(t *testing.T) {
 	}
 	if !strings.Contains(tablesResponse.Body.String(), `"orders"`) {
 		t.Fatalf("read tables body = %s", tablesResponse.Body.String())
+	}
+
+	columnsResponse := serveTestRequest(server, authRequest(http.MethodGet, "/api/datasources/"+datasource.ID+"/columns?database=sales&table=orders", adminToken, ""))
+	if columnsResponse.Code != http.StatusOK {
+		t.Fatalf("read columns status = %d body = %s", columnsResponse.Code, columnsResponse.Body.String())
+	}
+	if !strings.Contains(columnsResponse.Body.String(), `"id"`) || !strings.Contains(columnsResponse.Body.String(), `"isPrimaryKey":true`) {
+		t.Fatalf("read columns body = %s", columnsResponse.Body.String())
 	}
 }
 

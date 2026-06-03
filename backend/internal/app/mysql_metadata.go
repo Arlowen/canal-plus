@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 
@@ -17,6 +18,7 @@ var datasourceDSNPattern = regexp.MustCompile(`[^\s]+:[^\s@]+@tcp\([^)]+\)/[^\s]
 var datasourceConnectionTester = runDatasourceConnectionTest
 var datasourceDatabaseLister = listDatasourceDatabases
 var datasourceTableLister = listDatasourceTables
+var datasourceColumnLister = listDatasourceColumns
 
 func runDatasourceConnectionTest(datasource Datasource) DatasourceTestResult {
 	startedAt := time.Now()
@@ -211,6 +213,63 @@ ORDER BY table_name
 	return tables, nil
 }
 
+func listDatasourceColumns(datasource Datasource, database string, table string) ([]DatasourceColumn, error) {
+	database = strings.TrimSpace(database)
+	table = strings.TrimSpace(table)
+	if database == "" {
+		return nil, errors.New("DB 必填")
+	}
+	if table == "" {
+		return nil, errors.New("表必填")
+	}
+	if datasource.IsDemo {
+		return demoDatasourceColumns(database, table), nil
+	}
+	db, err := openMySQL(datasource, "")
+	if err != nil {
+		return nil, errors.New(sanitizeDatasourceError(err.Error(), datasource))
+	}
+	defer db.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	rows, err := db.QueryContext(ctx, `
+SELECT column_name, column_type, is_nullable, column_key, column_default
+FROM information_schema.columns
+WHERE table_schema = ? AND table_name = ?
+ORDER BY ordinal_position
+`, database, table)
+	if err != nil {
+		return nil, errors.New(sanitizeDatasourceError(err.Error(), datasource))
+	}
+	defer rows.Close()
+
+	columns := []DatasourceColumn{}
+	for rows.Next() {
+		column := DatasourceColumn{}
+		nullable := ""
+		columnKey := ""
+		defaultValue := sql.NullString{}
+		if err := rows.Scan(&column.Name, &column.Type, &nullable, &columnKey, &defaultValue); err != nil {
+			return nil, errors.New(sanitizeDatasourceError(err.Error(), datasource))
+		}
+		column.Name = strings.TrimSpace(column.Name)
+		if column.Name == "" {
+			continue
+		}
+		column.Nullable = strings.EqualFold(nullable, "YES")
+		column.IsPrimaryKey = strings.EqualFold(columnKey, "PRI")
+		if defaultValue.Valid {
+			column.DefaultValue = defaultValue.String
+		}
+		columns = append(columns, column)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, errors.New(sanitizeDatasourceError(err.Error(), datasource))
+	}
+	return columns, nil
+}
+
 func isMySQLSystemDatabase(database string) bool {
 	switch strings.ToLower(strings.TrimSpace(database)) {
 	case "information_schema", "mysql", "performance_schema", "sys":
@@ -232,4 +291,41 @@ func demoDatasourceTables(database string) []string {
 		return []string{}
 	}
 	return []string{"orders", "users"}
+}
+
+func demoDatasourceColumns(database string, table string) []DatasourceColumn {
+	if strings.TrimSpace(database) == "" || strings.TrimSpace(table) == "" {
+		return []DatasourceColumn{}
+	}
+	columnsByTable := map[string][]DatasourceColumn{
+		"orders": {
+			{Name: "id", Type: "bigint", Nullable: false, IsPrimaryKey: true},
+			{Name: "user_id", Type: "bigint", Nullable: false},
+			{Name: "amount", Type: "decimal(12,2)", Nullable: false, DefaultValue: "0.00"},
+			{Name: "status", Type: "varchar(32)", Nullable: false, DefaultValue: "pending"},
+			{Name: "created_at", Type: "datetime", Nullable: false},
+		},
+		"users": {
+			{Name: "id", Type: "bigint", Nullable: false, IsPrimaryKey: true},
+			{Name: "name", Type: "varchar(128)", Nullable: false},
+			{Name: "email", Type: "varchar(255)", Nullable: true},
+			{Name: "updated_at", Type: "datetime", Nullable: true},
+		},
+	}
+	columns := columnsByTable[strings.ToLower(strings.TrimSpace(table))]
+	if len(columns) == 0 {
+		return []DatasourceColumn{
+			{Name: "id", Type: "bigint", Nullable: false, IsPrimaryKey: true},
+			{Name: "name", Type: "varchar(128)", Nullable: false},
+			{Name: "updated_at", Type: "datetime", Nullable: true},
+		}
+	}
+	copied := append([]DatasourceColumn(nil), columns...)
+	sort.SliceStable(copied, func(left, right int) bool {
+		if copied[left].IsPrimaryKey != copied[right].IsPrimaryKey {
+			return copied[left].IsPrimaryKey
+		}
+		return false
+	})
+	return copied
 }

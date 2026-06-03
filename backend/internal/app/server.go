@@ -221,6 +221,8 @@ func (s *Server) handleDatasources(response http.ResponseWriter, request *http.R
 		s.listSavedDatasourceDatabases(response, request, parts[1])
 	case len(parts) == 3 && parts[2] == "tables" && request.Method == http.MethodGet:
 		s.listSavedDatasourceTables(response, request, parts[1])
+	case len(parts) == 3 && parts[2] == "columns" && request.Method == http.MethodGet:
+		s.listSavedDatasourceColumns(response, request, parts[1])
 	case len(parts) == 2 && request.Method == http.MethodGet:
 		datasource, ok := s.store.GetDatasource(parts[1])
 		if !ok {
@@ -474,6 +476,35 @@ func (s *Server) listSavedDatasourceTables(response http.ResponseWriter, request
 		DatasourceID: datasource.ID,
 		Database:     database,
 		Tables:       tables,
+	})
+}
+
+func (s *Server) listSavedDatasourceColumns(response http.ResponseWriter, request *http.Request, id string) {
+	if err := s.ensureDatasourceTestNode(request.URL.Query().Get("nodeId")); err != nil {
+		writeError(response, http.StatusBadRequest, err.Error())
+		return
+	}
+	datasource, ok := s.store.GetDatasource(id)
+	if !ok {
+		writeError(response, http.StatusNotFound, "数据源不存在")
+		return
+	}
+	if datasource.Type != DatasourceTypeMySQL {
+		writeError(response, http.StatusBadRequest, "数据源类型不支持")
+		return
+	}
+	database := strings.TrimSpace(request.URL.Query().Get("database"))
+	table := strings.TrimSpace(request.URL.Query().Get("table"))
+	columns, err := datasourceColumnLister(datasource, database, table)
+	if err != nil {
+		writeError(response, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(response, http.StatusOK, DatasourceColumnsResponse{
+		DatasourceID: datasource.ID,
+		Database:     database,
+		Table:        table,
+		Columns:      columns,
 	})
 }
 
