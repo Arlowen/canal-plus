@@ -3226,7 +3226,7 @@ function ChannelRunsPanel({ runs, tasks }: { runs: TaskRun[]; tasks: ChannelTask
     <div className="pt-5">
       <SectionHeader title="运行" />
       <div className="mt-5 overflow-x-auto rounded-lg border border-line bg-white">
-        <table className="w-full min-w-[1020px] table-fixed text-left">
+        <table className="w-full min-w-[1110px] table-fixed text-left">
           <colgroup>
             <col className="w-[200px]" />
             <col className="w-[180px]" />
@@ -3234,6 +3234,7 @@ function ChannelRunsPanel({ runs, tasks }: { runs: TaskRun[]; tasks: ChannelTask
             <col className="w-[110px]" />
             <col className="w-[160px]" />
             <col className="w-[160px]" />
+            <col className="w-[90px]" />
             <col className="w-[90px]" />
             <col className="w-[90px]" />
           </colgroup>
@@ -3247,11 +3248,12 @@ function ChannelRunsPanel({ runs, tasks }: { runs: TaskRun[]; tasks: ChannelTask
               <th className="px-5 py-4">结束</th>
               <th className="px-5 py-4">读</th>
               <th className="px-5 py-4">写</th>
+              <th className="px-5 py-4">差异</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-line">
             {runs.length === 0 ? (
-              <tr><td colSpan={8} className="px-5 py-12 text-center text-sm text-slate-500">暂无运行</td></tr>
+              <tr><td colSpan={9} className="px-5 py-12 text-center text-sm text-slate-500">暂无运行</td></tr>
             ) : runs.map((run) => (
               <tr key={run.id}>
                 <td className="px-5 py-4 font-mono text-xs text-slate-600">{run.id}</td>
@@ -3265,6 +3267,7 @@ function ChannelRunsPanel({ runs, tasks }: { runs: TaskRun[]; tasks: ChannelTask
                 <td className="px-5 py-4 text-sm text-slate-600">{run.finishedAt ? formatDate(run.finishedAt) : "-"}</td>
                 <td className="px-5 py-4 text-sm text-slate-600">{run.readRows}</td>
                 <td className="px-5 py-4 text-sm text-slate-600">{run.writtenRows}</td>
+                <td className="px-5 py-4 text-sm text-slate-600">{run.diffRows}</td>
               </tr>
             ))}
           </tbody>

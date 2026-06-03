@@ -8,6 +8,11 @@ import (
 	"strings"
 )
 
+type schemaCompareFinding struct {
+	TargetTable string
+	Columns     []string
+}
+
 func (s *Store) Channels() []Channel {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -631,6 +636,13 @@ func (s *Store) runChannelTask(channelID string, taskID string, actor string, re
 			s.appendTaskLogLocked(channelID, task.ID, run.ID, "warn", "data-validation", fmt.Sprintf("Data validation produced %d diffs", len(diffs)))
 		}
 	}
+	if task.Type == ChannelTaskSchemaCompare && runStatus == TaskRunSuccess {
+		findings := s.schemaCompareMissingTargetColumnsLocked(channelID, task.MappingVersion)
+		for _, finding := range findings {
+			run.DiffRows += len(finding.Columns)
+			s.appendTaskLogLocked(channelID, task.ID, run.ID, "warn", "schema-compare", fmt.Sprintf("Schema compare missing target columns in %s: %s", finding.TargetTable, strings.Join(finding.Columns, ", ")))
+		}
+	}
 	if task.Type == ChannelTaskDataCorrection && runStatus == TaskRunSuccess {
 		corrected := s.markValidationDiffsCorrectedLocked(channelID, task.ID, run.ID, timestamp)
 		run.WrittenRows = corrected
@@ -1060,6 +1072,39 @@ func (s *Store) createDataValidationDiffsLocked(channelID string, taskID string,
 		})
 	}
 	return diffs
+}
+
+func (s *Store) schemaCompareMissingTargetColumnsLocked(channelID string, mappingVersion int) []schemaCompareFinding {
+	tablesByID := map[string]ChannelTableMapping{}
+	for _, table := range s.data.ChannelTableMappings {
+		if table.ChannelID == channelID && table.MappingVersion == mappingVersion && table.Enabled {
+			tablesByID[table.ID] = table
+		}
+	}
+	columnsByTable := map[string][]string{}
+	for _, column := range s.data.ChannelColumnMappings {
+		if column.ChannelID != channelID || column.MappingVersion != mappingVersion || !column.Enabled {
+			continue
+		}
+		table, ok := tablesByID[column.TableMappingID]
+		if !ok || column.SourceType == "" || column.TargetType != "" {
+			continue
+		}
+		columnsByTable[table.ID] = append(columnsByTable[table.ID], column.TargetColumn)
+	}
+	findings := make([]schemaCompareFinding, 0, len(columnsByTable))
+	for tableID, columns := range columnsByTable {
+		table := tablesByID[tableID]
+		sort.Strings(columns)
+		findings = append(findings, schemaCompareFinding{
+			TargetTable: table.TargetTable,
+			Columns:     columns,
+		})
+	}
+	sort.SliceStable(findings, func(left, right int) bool {
+		return findings[left].TargetTable < findings[right].TargetTable
+	})
+	return findings
 }
 
 func (s *Store) markValidationDiffsCorrectedLocked(channelID string, taskID string, runID string, timestamp string) int {
