@@ -551,6 +551,9 @@ func (s *Store) runChannelTask(channelID string, taskID string, actor string, re
 	if err := s.ensureTaskDependenciesCompleteLocked(task); err != nil {
 		return ChannelTask{}, true, err
 	}
+	if task.Type == ChannelTaskDataCorrection && !s.hasSuccessfulDataValidationRunLocked(channelID) {
+		return ChannelTask{}, true, errors.New("请先完成数据校验")
+	}
 	precheck := s.precheckChannelLocked(channelID)
 	if !precheck.Success {
 		return ChannelTask{}, true, errors.New("预检未通过")
@@ -860,27 +863,35 @@ func (s *Store) precheckChannelLocked(channelID string) ChannelPrecheckResult {
 		CheckedAt: now(),
 		Items:     []ChannelPrecheckItem{},
 	}
-	add := func(key string, label string, success bool, message string) {
+	add := func(key string, label string, success bool, severity ChannelPrecheckSeverity, message string) {
 		if !success {
 			result.Success = false
 		}
 		result.Items = append(result.Items, ChannelPrecheckItem{
-			Key:     key,
-			Label:   label,
-			Success: success,
-			Message: message,
+			Key:      key,
+			Label:    label,
+			Success:  success,
+			Severity: severity,
+			Message:  message,
 		})
+	}
+	addCheck := func(key string, label string, success bool, message string) {
+		severity := ChannelPrecheckPass
+		if !success {
+			severity = ChannelPrecheckBlocker
+		}
+		add(key, label, success, severity, message)
 	}
 	channelIndex := s.channelIndexLocked(channelID)
 	if channelIndex < 0 {
-		add("channel", "Channel", false, "Channel 不存在")
+		addCheck("channel", "Channel", false, "Channel 不存在")
 		return result
 	}
 	channel := s.data.Channels[channelIndex]
 	_, sourceOK := s.getDatasourceLocked(channel.SourceDatasourceID)
 	_, targetOK := s.getDatasourceLocked(channel.TargetDatasourceID)
-	add("source", "源端", sourceOK, valueByBool(sourceOK, "源端可用", "源端数据源不存在"))
-	add("target", "目标端", targetOK, valueByBool(targetOK, "目标端可用", "目标端数据源不存在"))
+	addCheck("source", "源端", sourceOK, valueByBool(sourceOK, "源端可用", "源端数据源不存在"))
+	addCheck("target", "目标端", targetOK, valueByBool(targetOK, "目标端可用", "目标端数据源不存在"))
 
 	tables := make([]ChannelTableMapping, 0)
 	columnsByTable := map[string][]ChannelColumnMapping{}
@@ -894,13 +905,19 @@ func (s *Store) precheckChannelLocked(channelID string) ChannelPrecheckResult {
 			columnsByTable[column.TableMappingID] = append(columnsByTable[column.TableMappingID], column)
 		}
 	}
-	add("tables", "表映射", len(tables) > 0, valueByBool(len(tables) > 0, "表映射可用", "至少需要一条表映射"))
+	addCheck("tables", "表映射", len(tables) > 0, valueByBool(len(tables) > 0, "表映射可用", "至少需要一条表映射"))
 	columnOK := true
 	primaryKeyOK := true
+	typeMismatchCount := 0
 	for _, table := range tables {
 		columns := columnsByTable[table.ID]
 		if len(columns) == 0 {
 			columnOK = false
+		}
+		for _, column := range columns {
+			if column.SourceType != "" && column.TargetType != "" && !strings.EqualFold(column.SourceType, column.TargetType) {
+				typeMismatchCount++
+			}
 		}
 		if len(table.PrimaryKeys) == 0 {
 			primaryKeyOK = false
@@ -919,9 +936,33 @@ func (s *Store) precheckChannelLocked(channelID string) ChannelPrecheckResult {
 			}
 		}
 	}
-	add("columns", "列映射", columnOK, valueByBool(columnOK, "列映射可用", "每个表至少需要一条列映射"))
-	add("primaryKey", "主键", primaryKeyOK, valueByBool(primaryKeyOK, "主键可用", "数据校验和订正需要主键列映射"))
+	addCheck("columns", "列映射", columnOK, valueByBool(columnOK, "列映射可用", "每个表至少需要一条列映射"))
+	addCheck("primaryKey", "主键", primaryKeyOK, valueByBool(primaryKeyOK, "主键可用", "数据校验和订正需要主键列映射"))
+	if typeMismatchCount > 0 {
+		add("columnTypes", "类型", true, ChannelPrecheckWarning, fmt.Sprintf("存在 %d 个类型不一致列", typeMismatchCount))
+	}
+	if s.hasEnabledTaskTypeLocked(channelID, ChannelTaskDataCorrection) && !s.hasSuccessfulDataValidationRunLocked(channelID) {
+		add("dataCorrectionValidation", "数据订正", true, ChannelPrecheckWarning, "启动前需要先完成数据校验")
+	}
 	return result
+}
+
+func (s *Store) hasEnabledTaskTypeLocked(channelID string, taskType ChannelTaskType) bool {
+	for _, task := range s.data.ChannelTasks {
+		if task.ChannelID == channelID && task.Type == taskType && task.Enabled {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *Store) hasSuccessfulDataValidationRunLocked(channelID string) bool {
+	for _, run := range s.data.TaskRuns {
+		if run.ChannelID == channelID && run.TaskType == ChannelTaskDataValidation && run.Status == TaskRunSuccess {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Store) refreshChannelDerivedLocked(index int) {

@@ -2630,16 +2630,18 @@ function ChannelDetailPage({
     if (!channelId) return;
     setDetailLoading(true);
     try {
-      const [nextMappings, nextTasks, nextRuns, nextLogs] = await Promise.all([
+      const [nextMappings, nextTasks, nextRuns, nextLogs, nextPrecheck] = await Promise.all([
         api.channelMappings(channelId),
         api.channelTasks(channelId),
         api.channelRuns(channelId),
-        api.channelLogs(channelId)
+        api.channelLogs(channelId),
+        api.precheckChannel(channelId)
       ]);
       setMappingDraft(mappingDraftFromResponse(nextMappings));
       setTasks(nextTasks);
       setRuns(nextRuns);
       setLogs(nextLogs);
+      setPrecheck(nextPrecheck);
     } catch (requestError) {
       pushNotice({ tone: "error", message: requestError instanceof Error ? requestError.message : "加载失败" });
     } finally {
@@ -2905,7 +2907,7 @@ function ChannelOverview({
                   <div className="font-medium text-coal">{item.label}</div>
                   <div className="mt-1 text-sm text-slate-500">{item.message}</div>
                 </div>
-                <Badge tone={item.success ? "green" : "red"}>{item.success ? "通过" : "失败"}</Badge>
+                <Badge tone={channelPrecheckSeverityTone(item)}>{channelPrecheckSeverityText(item)}</Badge>
               </div>
             ))}
           </div>
@@ -6334,6 +6336,20 @@ function ChannelStatusBadge({ status }: { status: Channel["status"] }) {
               ? "purple"
               : "neutral";
   return <Badge tone={tone}>{channelStatusText(status)}</Badge>;
+}
+
+function channelPrecheckSeverityTone(item: ChannelPrecheckResult["items"][number]) {
+  const severity = item.severity || (item.success ? "pass" : "blocker");
+  if (severity === "warning") return "yellow";
+  if (severity === "blocker") return "red";
+  return "green";
+}
+
+function channelPrecheckSeverityText(item: ChannelPrecheckResult["items"][number]) {
+  const severity = item.severity || (item.success ? "pass" : "blocker");
+  if (severity === "warning") return "警告";
+  if (severity === "blocker") return "阻断";
+  return "通过";
 }
 
 function channelTaskTypeOptions() {

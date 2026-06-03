@@ -358,11 +358,20 @@ type TaskLog struct {
 	CreatedAt string `json:"createdAt"`
 }
 
+type ChannelPrecheckSeverity string
+
+const (
+	ChannelPrecheckPass    ChannelPrecheckSeverity = "pass"
+	ChannelPrecheckWarning ChannelPrecheckSeverity = "warning"
+	ChannelPrecheckBlocker ChannelPrecheckSeverity = "blocker"
+)
+
 type ChannelPrecheckItem struct {
-	Key     string `json:"key"`
-	Label   string `json:"label"`
-	Success bool   `json:"success"`
-	Message string `json:"message"`
+	Key      string                  `json:"key"`
+	Label    string                  `json:"label"`
+	Success  bool                    `json:"success"`
+	Severity ChannelPrecheckSeverity `json:"severity"`
+	Message  string                  `json:"message"`
 }
 
 type ChannelPrecheckResult struct {

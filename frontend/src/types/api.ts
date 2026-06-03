@@ -245,6 +245,7 @@ export interface ChannelPrecheckItem {
   key: string;
   label: string;
   success: boolean;
+  severity?: "pass" | "warning" | "blocker";
   message: string;
 }
 
