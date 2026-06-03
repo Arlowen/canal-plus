@@ -336,6 +336,8 @@ type TaskRun struct {
 	ChannelID    string          `json:"channelId"`
 	TaskID       string          `json:"taskId"`
 	TaskType     ChannelTaskType `json:"taskType"`
+	RunNodeID    string          `json:"runNodeId,omitempty"`
+	RunNodeName  string          `json:"runNodeName,omitempty"`
 	Status       TaskRunStatus   `json:"status"`
 	StartedAt    string          `json:"startedAt"`
 	FinishedAt   string          `json:"finishedAt,omitempty"`

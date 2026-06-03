@@ -115,6 +115,8 @@ type taskRunRow struct {
 	ChannelID    string          `json:"channelId" gorm:"size:64;not null;index"`
 	TaskID       string          `json:"taskId" gorm:"size:64;not null;index"`
 	TaskType     ChannelTaskType `json:"taskType" gorm:"size:64;not null;index"`
+	RunNodeID    string          `json:"runNodeId,omitempty" gorm:"size:64;index"`
+	RunNodeName  string          `json:"runNodeName,omitempty" gorm:"size:255;index"`
 	Status       TaskRunStatus   `json:"status" gorm:"size:32;not null;index"`
 	StartedAt    string          `json:"startedAt" gorm:"size:64;index"`
 	FinishedAt   string          `json:"finishedAt,omitempty" gorm:"size:64;index"`

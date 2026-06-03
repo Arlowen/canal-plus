@@ -3226,10 +3226,11 @@ function ChannelRunsPanel({ runs, tasks }: { runs: TaskRun[]; tasks: ChannelTask
     <div className="pt-5">
       <SectionHeader title="运行" />
       <div className="mt-5 overflow-x-auto rounded-lg border border-line bg-white">
-        <table className="w-full min-w-[900px] table-fixed text-left">
+        <table className="w-full min-w-[1020px] table-fixed text-left">
           <colgroup>
             <col className="w-[200px]" />
             <col className="w-[180px]" />
+            <col className="w-[150px]" />
             <col className="w-[110px]" />
             <col className="w-[160px]" />
             <col className="w-[160px]" />
@@ -3240,6 +3241,7 @@ function ChannelRunsPanel({ runs, tasks }: { runs: TaskRun[]; tasks: ChannelTask
             <tr className="border-b border-line">
               <th className="px-5 py-4">Run</th>
               <th className="px-5 py-4">任务</th>
+              <th className="px-5 py-4">节点</th>
               <th className="px-5 py-4">状态</th>
               <th className="px-5 py-4">开始</th>
               <th className="px-5 py-4">结束</th>
@@ -3249,11 +3251,15 @@ function ChannelRunsPanel({ runs, tasks }: { runs: TaskRun[]; tasks: ChannelTask
           </thead>
           <tbody className="divide-y divide-line">
             {runs.length === 0 ? (
-              <tr><td colSpan={7} className="px-5 py-12 text-center text-sm text-slate-500">暂无运行</td></tr>
+              <tr><td colSpan={8} className="px-5 py-12 text-center text-sm text-slate-500">暂无运行</td></tr>
             ) : runs.map((run) => (
               <tr key={run.id}>
                 <td className="px-5 py-4 font-mono text-xs text-slate-600">{run.id}</td>
                 <td className="px-5 py-4 text-sm text-coal">{tasks.find((task) => task.id === run.taskId)?.name || channelTaskTypeText(run.taskType)}</td>
+                <td className="px-5 py-4">
+                  <div className="truncate text-sm font-medium text-coal">{run.runNodeName || run.runNodeId || "-"}</div>
+                  {run.runNodeId && <div className="mt-1 truncate font-mono text-xs text-slate-500">{run.runNodeId}</div>}
+                </td>
                 <td className="px-5 py-4"><Badge tone={run.status === "success" ? "green" : run.status === "running" ? "blue" : run.status === "failed" ? "red" : "neutral"}>{taskRunStatusText(run.status)}</Badge></td>
                 <td className="px-5 py-4 text-sm text-slate-600">{formatDate(run.startedAt)}</td>
                 <td className="px-5 py-4 text-sm text-slate-600">{run.finishedAt ? formatDate(run.finishedAt) : "-"}</td>

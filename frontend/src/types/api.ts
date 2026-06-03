@@ -219,6 +219,8 @@ export interface TaskRun {
   channelId: string;
   taskId: string;
   taskType: ChannelTaskType;
+  runNodeId?: string;
+  runNodeName?: string;
   status: TaskRunStatus;
   startedAt: string;
   finishedAt?: string;

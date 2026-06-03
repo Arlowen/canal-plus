@@ -601,11 +601,19 @@ func (s *Store) runChannelTask(channelID string, taskID string, actor string, re
 		taskStatus = ChannelTaskRunning
 		finishedAt = ""
 	}
+	runNodeName := ""
+	if channel.RunNodeID != "" {
+		if node := s.getNodeLocked(channel.RunNodeID); node != nil {
+			runNodeName = node.Name
+		}
+	}
 	run := TaskRun{
 		ID:          newID(),
 		ChannelID:   channelID,
 		TaskID:      task.ID,
 		TaskType:    task.Type,
+		RunNodeID:   channel.RunNodeID,
+		RunNodeName: runNodeName,
 		Status:      runStatus,
 		StartedAt:   timestamp,
 		FinishedAt:  finishedAt,

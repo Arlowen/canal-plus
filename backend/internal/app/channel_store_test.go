@@ -226,6 +226,54 @@ func TestChannelTaskLogsFilters(t *testing.T) {
 	}
 }
 
+func TestTaskRunStoresRunNode(t *testing.T) {
+	store := newTestStore(t)
+	source := createNamedTestDatasource(t, store, "source", DatasourcePurposeSource)
+	target := createNamedTestDatasource(t, store, "target", DatasourcePurposeTarget)
+	channel, err := store.CreateChannel(ChannelInput{
+		Name:               "run-node-channel",
+		SourceDatasourceID: source.ID,
+		TargetDatasourceID: target.ID,
+		RunNodeID:          "node-local",
+		ResourceSpec:       "0.5G",
+		Kind:               ChannelKindCheck,
+	}, "admin")
+	if err != nil {
+		t.Fatalf("create channel: %v", err)
+	}
+	if _, ok, err := store.SaveChannelMappings(channel.ID, ChannelMappingsInput{
+		Tables: []ChannelTableMappingInput{{
+			SourceTable: "orders",
+			TargetTable: "orders_shadow",
+			PrimaryKeys: []string{"id"},
+			Columns: []ChannelColumnMappingInput{
+				{SourceColumn: "id", SourceType: "bigint", TargetColumn: "id", TargetType: "bigint", IsPrimaryKey: true},
+				{SourceColumn: "amount", SourceType: "decimal(12,2)", TargetColumn: "amount", TargetType: "decimal(12,2)"},
+			},
+		}},
+	}, "admin"); err != nil || !ok {
+		t.Fatalf("save mappings ok=%v err=%v", ok, err)
+	}
+	task, ok, err := store.CreateChannelTask(channel.ID, ChannelTaskInput{
+		Name:    "结构对比",
+		Type:    ChannelTaskSchemaCompare,
+		Enabled: boolPtr(true),
+	}, "admin")
+	if err != nil || !ok {
+		t.Fatalf("create task ok=%v err=%v", ok, err)
+	}
+	if _, ok, err := store.StartChannelTask(channel.ID, task.ID, "admin"); err != nil || !ok {
+		t.Fatalf("start task ok=%v err=%v", ok, err)
+	}
+	runs, ok := store.ChannelRuns(channel.ID)
+	if !ok || len(runs) == 0 {
+		t.Fatalf("runs ok=%v runs=%#v", ok, runs)
+	}
+	if runs[0].RunNodeID != "node-local" || runs[0].RunNodeName != "local" {
+		t.Fatalf("run node not stored: %#v", runs[0])
+	}
+}
+
 func precheckItem(result ChannelPrecheckResult, key string) *ChannelPrecheckItem {
 	for index := range result.Items {
 		if result.Items[index].Key == key {
