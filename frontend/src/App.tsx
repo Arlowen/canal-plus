@@ -1097,7 +1097,6 @@ function App() {
                 cluster={cluster}
                 canManage={canManage}
                 onBack={closeChannelCreate}
-                onCreateDatasource={openDatasourceCreate}
                 onOpenChannel={openChannelDetail}
                 onChanged={refresh}
                 pushNotice={pushNotice}
@@ -1536,7 +1535,6 @@ function ChannelCreateWizardPage({
   cluster,
   canManage,
   onBack,
-  onCreateDatasource,
   onOpenChannel,
   onChanged,
   pushNotice
@@ -1545,7 +1543,6 @@ function ChannelCreateWizardPage({
   cluster: ClusterSnapshot | null;
   canManage: boolean;
   onBack: () => void;
-  onCreateDatasource: () => void;
   onOpenChannel: (channelId: string) => void;
   onChanged: (quiet?: boolean) => Promise<void>;
   pushNotice: (notice: Notice) => void;
@@ -2291,15 +2288,9 @@ function ChannelCreateWizardPage({
                             })}
                           />
                         </Field>
-                        <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start">
-                          <Field label="数据源" required error={!targetHasDatasources ? "暂无" : undefined}>
-                            <DropdownSelect value={form.targetDatasourceId} ariaLabel="目标端数据源" options={targetOptions} onChange={updateTargetDatasource} />
-                          </Field>
-                          <Button type="button" onClick={onCreateDatasource} className="btn-secondary h-[46px] px-3 sm:mt-7">
-                            <Plus size={16} />
-                            新增
-                          </Button>
-                        </div>
+                        <Field label="数据源" required error={!targetHasDatasources ? "暂无" : undefined}>
+                          <DropdownSelect value={form.targetDatasourceId} ariaLabel="目标端数据源" options={targetOptions} onChange={updateTargetDatasource} />
+                        </Field>
                         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                           <Button
                             type="button"
