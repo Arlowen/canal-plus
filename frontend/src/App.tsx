@@ -1934,7 +1934,7 @@ function ChannelCreateWizardPage({
   const tableStepValid = Boolean(form.sourceDatabase && form.targetDatabase && !sameDatasourceSameDatabase) && selectedTables.length > 0 && selectedTables.every((table) => (
     table.sourceTable.trim() && table.targetTable.trim()
   ));
-  const columnStepValid = tableStepValid && selectedTables.every((table) => table.columns.some((column) => column.sourceColumn.trim() && column.targetColumn.trim()));
+  const columnStepValid = tableStepValid && selectedTables.every((table) => table.columns.some((column) => column.enabled !== false && column.sourceColumn.trim() && column.targetColumn.trim()));
   const stepIndex = channelWizardSteps.indexOf(step);
   const maxReachableStepIndex = !connectionStepValid ? 0 : !taskStepValid ? 1 : !tableStepValid ? 2 : 3;
   const currentStepValid = step === "connections"
@@ -2067,18 +2067,9 @@ function ChannelCreateWizardPage({
           ...table,
           ...patch,
           primaryKeysText: sourceTableChanged ? "" : table.primaryKeysText,
-          columns: sourceTableChanged || targetTableChanged ? [emptyColumnDraft()] : table.columns
+          columns: sourceTableChanged || targetTableChanged ? [] : table.columns
         };
       })
-    }));
-  };
-
-  const addColumn = (tableIndex: number) => {
-    setForm((current) => ({
-      ...current,
-      tables: current.tables.map((table, currentTableIndex) => (
-        currentTableIndex === tableIndex ? { ...table, columns: [...table.columns, emptyColumnDraft()] } : table
-      ))
     }));
   };
 
@@ -2106,53 +2097,19 @@ function ChannelCreateWizardPage({
     }));
   };
 
-  const updateColumnSource = (tableIndex: number, columnIndex: number, sourceColumn: string) => {
-    const table = form.tables[tableIndex];
-    const column = table?.columns[columnIndex];
-    const metadata = table ? columnMetadataByTable[table.localId] : undefined;
-    const sourceMetadata = metadata?.sourceColumns.find((item) => item.name === sourceColumn);
-    updateColumn(tableIndex, columnIndex, {
-      sourceColumn,
-      sourceType: sourceMetadata?.type || "",
-      isPrimaryKey: Boolean(sourceMetadata?.isPrimaryKey),
-      nullable: sourceMetadata?.nullable ?? column?.nullable ?? true,
-      defaultValue: sourceMetadata?.defaultValue || "",
-      targetColumn: column?.targetColumn?.trim() ? column.targetColumn : sourceColumn
-    });
-  };
-
-  const updateColumnTarget = (tableIndex: number, columnIndex: number, targetColumn: string) => {
-    const table = form.tables[tableIndex];
-    const metadata = table ? columnMetadataByTable[table.localId] : undefined;
-    const targetMetadata = metadata?.targetColumns.find((item) => item.name === targetColumn);
-    updateColumn(tableIndex, columnIndex, {
-      targetColumn,
-      targetType: targetMetadata?.type || ""
-    });
-  };
-
-  const generateColumnMappings = (tableIndex: number) => {
-    const table = form.tables[tableIndex];
-    const metadata = table ? columnMetadataByTable[table.localId] : undefined;
-    if (!table || !metadata || metadata.sourceColumns.length === 0) {
-      pushNotice({ tone: "warning", message: "列未加载" });
-      return;
-    }
-    setForm((current) => ({
-      ...current,
-      tables: current.tables.map((currentTable, currentTableIndex) => (
-        currentTableIndex === tableIndex
-          ? applyColumnMetadataToWizardTable(currentTable, metadata.sourceColumns, metadata.targetColumns)
-          : currentTable
-      ))
-    }));
-  };
-
-  const removeColumn = (tableIndex: number, columnIndex: number) => {
+  const updateTableColumnsEnabled = (tableIndex: number, enabled: boolean) => {
     setForm((current) => ({
       ...current,
       tables: current.tables.map((table, currentTableIndex) => (
-        currentTableIndex === tableIndex ? { ...table, columns: table.columns.filter((_, currentColumnIndex) => currentColumnIndex !== columnIndex) } : table
+        currentTableIndex === tableIndex
+          ? {
+            ...table,
+            columns: table.columns.map((column) => ({
+              ...column,
+              enabled
+            }))
+          }
+          : table
       ))
     }));
   };
@@ -2630,87 +2587,74 @@ function ChannelCreateWizardPage({
                   {form.tables.map((table, tableIndex) => {
                     if (!table.enabled) return null;
                     const metadata = columnMetadataByTable[table.localId];
+                    const selectableColumns = table.columns.filter((column) => column.sourceColumn.trim() && column.targetColumn.trim());
+                    const selectedColumnCount = selectableColumns.filter((column) => column.enabled !== false).length;
+                    const allColumnsSelected = selectableColumns.length > 0 && selectedColumnCount === selectableColumns.length;
                     return (
                       <div key={table.localId} className="rounded-lg border border-line p-4">
                         <div className="mb-4 flex items-center justify-between gap-3">
                           <div className="min-w-0">
                             <div className="truncate font-semibold text-coal">{table.sourceTable || "源表"} → {table.targetTable || "目标表"}</div>
                             <div className={cx("mt-1 text-xs", metadata?.loadState === "failed" ? "text-amber-700" : "text-slate-500")}>
-                              {metadata?.loadState === "loading" ? "列加载中" : metadata?.error || `${metadata?.sourceColumns.length || 0} 列`}
+                              {metadata?.loadState === "loading" ? "列加载中" : metadata?.error || `已选 ${selectedColumnCount}/${selectableColumns.length}`}
                             </div>
                           </div>
-                          <div className="flex shrink-0 gap-2">
-                            <Button type="button" onClick={() => generateColumnMappings(tableIndex)} disabled={!metadata || metadata.loadState === "loading" || metadata.sourceColumns.length === 0} className="btn-secondary">
-                              {metadata?.loadState === "loading" ? <ArrowsClockwise size={16} className="animate-spin" /> : <CheckCircle size={16} />}
-                              生成
-                            </Button>
-                            <Button type="button" onClick={() => addColumn(tableIndex)} className="btn-secondary">
-                              <Plus size={16} />
-                              列
-                            </Button>
+                          <label className="flex shrink-0 items-center gap-2 text-sm font-semibold text-slate-600">
+                            <CheckboxInput
+                              aria-label="全选列"
+                              checked={allColumnsSelected}
+                              disabled={selectableColumns.length === 0}
+                              onChange={(event) => updateTableColumnsEnabled(tableIndex, event.target.checked)}
+                            />
+                            全选
+                          </label>
+                        </div>
+                        {selectableColumns.length === 0 ? (
+                          <div className="rounded-lg border border-dashed border-line bg-slate-50/70 px-4 py-6 text-center text-sm font-medium text-slate-500">
+                            {metadata?.loadState === "loading" ? "加载中" : "暂无列"}
                           </div>
-                        </div>
-                        <div className="overflow-x-auto">
-                          <table className="w-full min-w-[820px] table-fixed text-left text-sm">
-                            <colgroup>
-                              <col className="w-[160px]" />
-                              <col className="w-[120px]" />
-                              <col className="w-[160px]" />
-                              <col className="w-[120px]" />
-                              <col className="w-[90px]" />
-                              <col className="w-[90px]" />
-                              <col className="w-[80px]" />
-                            </colgroup>
-                            <thead className="border-b border-line text-xs font-semibold text-slate-500">
-                              <tr>
-                                <th className="py-2 pr-3">源列</th>
-                                <th className="py-2 pr-3">源类型</th>
-                                <th className="py-2 pr-3">目标列</th>
-                                <th className="py-2 pr-3">目标类型</th>
-                                <th className="py-2 pr-3">主键</th>
-                                <th className="py-2 pr-3">可空</th>
-                                <th className="py-2 pr-3">操作</th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-line">
-                              {table.columns.map((column, columnIndex) => (
-                                <tr key={column.localId}>
-                                  <td className="py-2 pr-3">
-                                    <DropdownSelect
-                                      value={column.sourceColumn}
-                                      ariaLabel="源列"
-                                      options={metadataColumnOptions(metadata?.sourceColumns || [], metadata?.loadState || "idle", "暂无源列", column.sourceColumn)}
-                                      disabled={metadata?.loadState === "loading"}
-                                      showSelectedDescription={false}
-                                      onChange={(sourceColumn) => updateColumnSource(tableIndex, columnIndex, sourceColumn)}
-                                      className="h-10 min-h-10"
-                                    />
-                                  </td>
-                                  <td className="py-2 pr-3"><TextInput className="input h-10" value={column.sourceType || ""} onChange={(event) => updateColumn(tableIndex, columnIndex, { sourceType: event.target.value })} /></td>
-                                  <td className="py-2 pr-3">
-                                    <DropdownSelect
-                                      value={column.targetColumn}
-                                      ariaLabel="目标列"
-                                      options={metadataColumnOptions(metadata?.targetColumns || [], metadata?.loadState || "idle", "暂无目标列", column.targetColumn)}
-                                      disabled={metadata?.loadState === "loading"}
-                                      showSelectedDescription={false}
-                                      onChange={(targetColumn) => updateColumnTarget(tableIndex, columnIndex, targetColumn)}
-                                      className="h-10 min-h-10"
-                                    />
-                                  </td>
-                                  <td className="py-2 pr-3"><TextInput className="input h-10" value={column.targetType || ""} onChange={(event) => updateColumn(tableIndex, columnIndex, { targetType: event.target.value })} /></td>
-                                  <td className="py-2 pr-3"><CheckboxInput checked={Boolean(column.isPrimaryKey)} onChange={(event) => updateColumn(tableIndex, columnIndex, { isPrimaryKey: event.target.checked })} /></td>
-                                  <td className="py-2 pr-3"><CheckboxInput checked={Boolean(column.nullable)} onChange={(event) => updateColumn(tableIndex, columnIndex, { nullable: event.target.checked })} /></td>
-                                  <td className="py-2 pr-3">
-                                    <IconActionButton label="删除列" tone="danger" onClick={() => removeColumn(tableIndex, columnIndex)}>
-                                      <Trash size={18} />
-                                    </IconActionButton>
-                                  </td>
+                        ) : (
+                          <div className="overflow-x-auto">
+                            <table className="w-full min-w-[680px] table-fixed text-left text-sm">
+                              <colgroup>
+                                <col className="w-[80px]" />
+                                <col className="w-[180px]" />
+                                <col className="w-[170px]" />
+                                <col className="w-[180px]" />
+                                <col className="w-[170px]" />
+                              </colgroup>
+                              <thead className="border-b border-line text-xs font-semibold text-slate-500">
+                                <tr>
+                                  <th className="py-2 pr-3">同步</th>
+                                  <th className="py-2 pr-3">源列</th>
+                                  <th className="py-2 pr-3">源类型</th>
+                                  <th className="py-2 pr-3">目标列</th>
+                                  <th className="py-2 pr-3">目标类型</th>
                                 </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
+                              </thead>
+                              <tbody className="divide-y divide-line">
+                                {table.columns.map((column, columnIndex) => {
+                                  if (!column.sourceColumn.trim() || !column.targetColumn.trim()) return null;
+                                  return (
+                                    <tr key={column.localId} className={cx("transition", column.enabled === false ? "bg-slate-50/60 text-slate-400" : "hover:bg-blue-50/40")}>
+                                      <td className="py-3 pr-3">
+                                        <CheckboxInput
+                                          aria-label={`${column.sourceColumn} 同步`}
+                                          checked={column.enabled !== false}
+                                          onChange={(event) => updateColumn(tableIndex, columnIndex, { enabled: event.target.checked })}
+                                        />
+                                      </td>
+                                      <td className={cx("truncate py-3 pr-3 font-medium", column.enabled === false ? "text-slate-400" : "text-coal")} title={column.sourceColumn}>{column.sourceColumn}</td>
+                                      <td className={cx("truncate py-3 pr-3 font-mono text-xs", column.enabled === false ? "text-slate-400" : "text-slate-600")} title={column.sourceType || "-"}>{column.sourceType || "-"}</td>
+                                      <td className={cx("truncate py-3 pr-3 font-medium", column.enabled === false ? "text-slate-400" : "text-coal")} title={column.targetColumn}>{column.targetColumn}</td>
+                                      <td className={cx("truncate py-3 pr-3 font-mono text-xs", column.enabled === false ? "text-slate-400" : "text-slate-600")} title={column.targetType || "-"}>{column.targetType || "-"}</td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
                       </div>
                     );
                   })}
@@ -7011,30 +6955,6 @@ function metadataValueOptions(values: string[], state: MetadataLoadState, emptyL
   return placeholderLabel ? [{ value: "", label: placeholderLabel, disabled: true }, ...options] : options;
 }
 
-function metadataColumnOptions(columns: DatasourceColumn[], state: MetadataLoadState, emptyLabel: string, selectedValue = "") {
-  const selected = selectedValue.trim();
-  if (state === "loading") {
-    return selected
-      ? [{ value: selected, label: selected }, { value: "", label: "加载中", disabled: true }]
-      : [{ value: "", label: "加载中", disabled: true }];
-  }
-  if (columns.length === 0) {
-    return selected
-      ? [{ value: selected, label: selected }, { value: "", label: emptyLabel, disabled: true }]
-      : [{ value: "", label: emptyLabel, disabled: true }];
-  }
-  const hasSelected = !selected || columns.some((column) => column.name === selected);
-  return [
-    { value: "", label: "选择列", disabled: true },
-    ...(hasSelected ? [] : [{ value: selected, label: selected, description: "缺失" }]),
-    ...columns.map((column) => ({
-      value: column.name,
-      label: column.name,
-      description: column.type || undefined
-    }))
-  ];
-}
-
 function nodeOptionsForWizard(nodes: ClusterNode[]) {
   if (nodes.length === 0) {
     return [{ value: "", label: "暂无在线节点", disabled: true }];
@@ -7106,7 +7026,7 @@ function emptyChannelWizardTable(): ChannelWizardTableDraft {
     primaryKeysText: "",
     enabled: false,
     createTarget: false,
-    columns: [emptyColumnDraft()]
+    columns: []
   };
 }
 
@@ -7150,29 +7070,27 @@ function channelWizardMappingPayload(form: ChannelWizardFormState): ChannelTable
   const sourceSchema = effectiveChannelSchema(form.sourceDatabase, form.sourceSchema);
   const targetSchema = effectiveChannelSchema(form.targetDatabase, form.targetSchema);
   return form.tables.filter((table) => table.enabled).map((table) => {
-    const markedPrimaryKeys = table.columns
+    const enabledColumns = table.columns.filter((column) => column.enabled !== false && column.sourceColumn.trim() && column.targetColumn.trim());
+    const markedPrimaryKeys = enabledColumns
       .filter((column) => column.isPrimaryKey && column.sourceColumn.trim())
       .map((column) => column.sourceColumn.trim());
-    const primaryKeys = splitList(table.primaryKeysText);
     return {
       sourceSchema,
       sourceTable: table.sourceTable.trim(),
       targetSchema,
       targetTable: table.targetTable.trim(),
-      primaryKeys: primaryKeys.length > 0 ? primaryKeys : markedPrimaryKeys,
+      primaryKeys: markedPrimaryKeys,
       enabled: true,
-      columns: table.columns
-        .filter((column) => column.sourceColumn.trim() && column.targetColumn.trim())
-        .map((column) => ({
-          sourceColumn: column.sourceColumn.trim(),
-          sourceType: column.sourceType?.trim() || "",
-          targetColumn: column.targetColumn.trim(),
-          targetType: column.targetType?.trim() || "",
-          isPrimaryKey: Boolean(column.isPrimaryKey),
-          nullable: Boolean(column.nullable),
-          defaultValue: column.defaultValue?.trim() || "",
-          enabled: true
-        }))
+      columns: enabledColumns.map((column) => ({
+        sourceColumn: column.sourceColumn.trim(),
+        sourceType: column.sourceType?.trim() || "",
+        targetColumn: column.targetColumn.trim(),
+        targetType: column.targetType?.trim() || "",
+        isPrimaryKey: Boolean(column.isPrimaryKey),
+        nullable: Boolean(column.nullable),
+        defaultValue: column.defaultValue?.trim() || "",
+        enabled: true
+      }))
     };
   });
 }
@@ -7265,7 +7183,7 @@ function applyColumnMetadataToWizardTable(table: ChannelWizardTableDraft, source
   return {
     ...table,
     primaryKeysText: table.primaryKeysText.trim() || primaryKeys.join(", "),
-    columns: columns.length > 0 ? columns : [emptyColumnDraft()]
+    columns
   };
 }
 
