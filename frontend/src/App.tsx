@@ -2166,8 +2166,8 @@ function ChannelCreateWizardPage({
       const sourceNeedsTest = Boolean(form.sourceDatasourceId && form.sourceTestState !== "success");
       const targetNeedsTest = Boolean(form.targetDatasourceId && form.targetTestState !== "success");
       if (sourceNeedsTest || targetNeedsTest) {
-        setTestFailureDialog({
-          side: sourceNeedsTest && targetNeedsTest ? "both" : sourceNeedsTest ? "source" : "target",
+        pushNotice({
+          tone: "error",
           message: sourceNeedsTest && targetNeedsTest
             ? "请先测试源端和目标端连接"
             : sourceNeedsTest
