@@ -1898,6 +1898,14 @@ function ChannelCreateWizardPage({
       : step === "tables"
         ? tableStepValid
         : columnStepValid;
+  const nextStepDisabled = submitting || !currentStepValid;
+  const nextStepDisabledHint = !currentStepValid
+    && step === "connections"
+    && form.sourceDatasourceId
+    && form.targetDatasourceId
+    && (form.sourceTestState !== "success" || form.targetTestState !== "success")
+    ? "请先测试链接"
+    : undefined;
 
   useEffect(() => {
     setTablePageIndex((current) => clampPage(current, tableTotalPages));
@@ -2665,10 +2673,12 @@ function ChannelCreateWizardPage({
                     创建
                   </Button>
                 ) : (
-                  <Button type="button" onClick={goNext} disabled={submitting || !currentStepValid} className="btn-primary">
-                    下一步
-                    <CaretRight size={16} />
-                  </Button>
+                  <span title={nextStepDisabledHint} className={cx("inline-flex", nextStepDisabledHint && "cursor-not-allowed")}>
+                    <Button type="button" onClick={goNext} disabled={nextStepDisabled} title={nextStepDisabledHint} className="btn-primary">
+                      下一步
+                      <CaretRight size={16} />
+                    </Button>
+                  </span>
                 )}
               </div>
             </div>
