@@ -2608,11 +2608,13 @@ function ChannelCreateWizardPage({
                 </div>
               )}
 
-              <div className="flex items-center justify-between gap-3 border-t border-line p-5">
-                <Button type="button" onClick={goPrevious} disabled={stepIndex === 0 || submitting} className="btn-secondary">
-                  <CaretLeft size={16} />
-                  上一步
-                </Button>
+              <div className={cx("flex items-center gap-3 border-t border-line p-5", stepIndex === 0 ? "justify-end" : "justify-between")}>
+                {stepIndex > 0 && (
+                  <Button type="button" onClick={goPrevious} disabled={submitting} className="btn-secondary">
+                    <CaretLeft size={16} />
+                    上一步
+                  </Button>
+                )}
                 {step === "columns" ? (
                   <Button type="button" onClick={() => void submit()} disabled={submitting || !columnStepValid} className="btn-primary">
                     {submitting ? <ArrowsClockwise size={16} className="animate-spin" /> : <CheckCircle size={16} />}
