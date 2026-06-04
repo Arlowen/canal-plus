@@ -300,6 +300,34 @@ func TestRegisterLocalControlNodePreservesStoredNameWhenNameEnvMissing(t *testin
 	}
 }
 
+func TestRegisterLocalControlNodeReusesExistingEndpoint(t *testing.T) {
+	store := newTestStore(t)
+	snapshot := store.ClusterSnapshot()
+	existing := snapshot.Nodes[0]
+	t.Setenv("CANAL_PLUS_NODE_ID", "node-worker-a")
+	t.Setenv("CANAL_PLUS_NODE_ENDPOINT", existing.Endpoint)
+	t.Setenv("CANAL_PLUS_NODE_NAME", "")
+
+	if _, _, err := store.UpdateNodeName(existing.ID, ClusterNodeNameInput{Name: "custom-endpoint-node"}); err != nil {
+		t.Fatalf("update node name: %v", err)
+	}
+	node, err := registerLocalControlNode(store, "4100")
+	if err != nil {
+		t.Fatalf("registerLocalControlNode() error = %v", err)
+	}
+	if node.ID != existing.ID {
+		t.Fatalf("node id = %q, want existing endpoint node %q", node.ID, existing.ID)
+	}
+	if node.Name != "custom-endpoint-node" {
+		t.Fatalf("node name = %q, want stored name", node.Name)
+	}
+
+	after := store.ClusterSnapshot()
+	if after.TotalNodes != 1 {
+		t.Fatalf("total nodes = %d, want 1: %#v", after.TotalNodes, after.Nodes)
+	}
+}
+
 func TestAdminCanMutateConfiguration(t *testing.T) {
 	server := newTestServer(t)
 	adminToken := tokenFor("user-admin")

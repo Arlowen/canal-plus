@@ -105,14 +105,32 @@ func envDurationSeconds(name string, fallback time.Duration) time.Duration {
 
 func registerLocalControlNode(store *Store, port string) (ClusterNode, error) {
 	input := localClusterNodeInput(port)
-	if strings.TrimSpace(os.Getenv("CANAL_PLUS_NODE_NAME")) == "" {
-		snapshot := store.ClusterSnapshot()
-		for _, node := range snapshot.Nodes {
-			if node.ID == input.ID && strings.TrimSpace(node.Name) != "" {
-				input.Name = node.Name
-				break
+	nameEnvMissing := strings.TrimSpace(os.Getenv("CANAL_PLUS_NODE_NAME")) == ""
+	snapshot := store.ClusterSnapshot()
+	inputID := strings.TrimSpace(input.ID)
+	inputEndpoint := strings.TrimSpace(input.Endpoint)
+	var matchedByID *ClusterNode
+	var matchedByEndpoint *ClusterNode
+	for index := range snapshot.Nodes {
+		node := &snapshot.Nodes[index]
+		if inputID != "" && node.ID == inputID {
+			matchedByID = node
+		}
+		if inputEndpoint != "" && strings.TrimSpace(node.Endpoint) == inputEndpoint {
+			if matchedByEndpoint == nil || node.ID == inputID {
+				matchedByEndpoint = node
 			}
 		}
+	}
+	if matchedByEndpoint != nil {
+		input.ID = matchedByEndpoint.ID
+		if nameEnvMissing && strings.TrimSpace(matchedByEndpoint.Name) != "" {
+			input.Name = matchedByEndpoint.Name
+		}
+		return store.RegisterLocalNode(input)
+	}
+	if nameEnvMissing && matchedByID != nil && strings.TrimSpace(matchedByID.Name) != "" {
+		input.Name = matchedByID.Name
 	}
 	return store.RegisterLocalNode(input)
 }
