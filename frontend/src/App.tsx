@@ -1739,6 +1739,16 @@ function ChannelCreateWizardPage({
       setTargetTableLoadState("idle");
       return;
     }
+    if (
+      form.sourceDatasourceId
+      && form.sourceDatasourceId === form.targetDatasourceId
+      && form.sourceDatabase
+      && form.sourceDatabase === form.targetDatabase
+    ) {
+      setTargetTableOptions([]);
+      setTargetTableLoadState("idle");
+      return;
+    }
     let active = true;
     setTargetTableLoadState("loading");
     setTargetMetadataError("");
@@ -1757,7 +1767,35 @@ function ChannelCreateWizardPage({
     return () => {
       active = false;
     };
-  }, [form.runNodeId, form.targetDatabase, form.targetDatasourceId, form.targetTestState]);
+  }, [form.runNodeId, form.sourceDatabase, form.sourceDatasourceId, form.targetDatabase, form.targetDatasourceId, form.targetTestState]);
+
+  useEffect(() => {
+    if (
+      !form.sourceDatasourceId
+      || form.sourceDatasourceId !== form.targetDatasourceId
+      || !form.sourceDatabase
+      || form.sourceDatabase !== form.targetDatabase
+    ) {
+      return;
+    }
+    setForm((current) => {
+      if (
+        !current.sourceDatasourceId
+        || current.sourceDatasourceId !== current.targetDatasourceId
+        || !current.sourceDatabase
+        || current.sourceDatabase !== current.targetDatabase
+      ) {
+        return current;
+      }
+      const nextTargetDatabase = targetDatabaseOptions.find((database) => database !== current.sourceDatabase) || "";
+      return {
+        ...current,
+        targetDatabase: nextTargetDatabase,
+        targetSchema: "",
+        tables: resetWizardTables(current.tables, "target")
+      };
+    });
+  }, [form.sourceDatabase, form.sourceDatasourceId, form.targetDatabase, form.targetDatasourceId, targetDatabaseOptions]);
 
   useEffect(() => {
     if (
@@ -1862,8 +1900,16 @@ function ChannelCreateWizardPage({
   const connectionStepMissingDatasourceMessage = !sourceHasDatasources || !targetHasDatasources
     ? "先建数据源"
     : "";
-  const sourceDatabaseSelectOptions = metadataValueOptions(sourceDatabaseOptions, sourceDatabaseLoadState, "暂无 DB");
-  const targetDatabaseSelectOptions = metadataValueOptions(targetDatabaseOptions, targetDatabaseLoadState, "暂无 DB");
+  const sameDatasourceSelected = Boolean(form.sourceDatasourceId && form.sourceDatasourceId === form.targetDatasourceId);
+  const sameDatasourceSameDatabase = Boolean(sameDatasourceSelected && form.sourceDatabase && form.sourceDatabase === form.targetDatabase);
+  const sourceDatabaseValues = sameDatasourceSelected && form.targetDatabase
+    ? sourceDatabaseOptions.filter((database) => database !== form.targetDatabase)
+    : sourceDatabaseOptions;
+  const targetDatabaseValues = sameDatasourceSelected && form.sourceDatabase
+    ? targetDatabaseOptions.filter((database) => database !== form.sourceDatabase)
+    : targetDatabaseOptions;
+  const sourceDatabaseSelectOptions = metadataValueOptions(sourceDatabaseValues, sourceDatabaseLoadState, "暂无 DB");
+  const targetDatabaseSelectOptions = metadataValueOptions(targetDatabaseValues, targetDatabaseLoadState, "暂无 DB");
   const requiredCapacity = channelResourceSpecGB(form.resourceSpec);
   const hasCapacity = Boolean(selectedNode && selectedNode.capacity >= requiredCapacity);
   const selectedTables = form.tables.filter((table) => table.enabled);
@@ -1885,7 +1931,7 @@ function ChannelCreateWizardPage({
     && form.targetTestState === "success"
   );
   const taskStepValid = hasCapacity && (form.kind === "sync" || form.schemaCompare || form.dataValidation);
-  const tableStepValid = Boolean(form.sourceDatabase && form.targetDatabase) && selectedTables.length > 0 && selectedTables.every((table) => (
+  const tableStepValid = Boolean(form.sourceDatabase && form.targetDatabase && !sameDatasourceSameDatabase) && selectedTables.length > 0 && selectedTables.every((table) => (
     table.sourceTable.trim() && table.targetTable.trim()
   ));
   const columnStepValid = tableStepValid && selectedTables.every((table) => table.columns.some((column) => column.sourceColumn.trim() && column.targetColumn.trim()));
@@ -2448,7 +2494,7 @@ function ChannelCreateWizardPage({
               {step === "tables" && (
                 <div className="grid gap-5 p-5">
                   <div className="grid gap-4 md:grid-cols-2">
-                    <Field label="源 DB" required error={!form.sourceDatabase ? "必选" : undefined}>
+                    <Field label="源 DB" required error={!form.sourceDatabase ? "必选" : sameDatasourceSameDatabase ? "需不同" : undefined}>
                       <DropdownSelect
                         value={form.sourceDatabase}
                         ariaLabel="源 DB"
@@ -2457,7 +2503,7 @@ function ChannelCreateWizardPage({
                         onChange={updateSourceDatabase}
                       />
                     </Field>
-                    <Field label="目标 DB" required error={!form.targetDatabase ? "必选" : undefined}>
+                    <Field label="目标 DB" required error={!form.targetDatabase ? "必选" : sameDatasourceSameDatabase ? "需不同" : undefined}>
                       <DropdownSelect
                         value={form.targetDatabase}
                         ariaLabel="目标 DB"
