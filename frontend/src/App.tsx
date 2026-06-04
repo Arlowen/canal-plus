@@ -4929,7 +4929,7 @@ function NodesPage({
     <>
       <section className="min-w-0 overflow-hidden">
         <div className="flex h-[101px] items-center border-b border-line px-5 md:px-8">
-          <h1 className="text-3xl font-semibold tracking-tight text-coal">节点管理</h1>
+          <h1 className="text-3xl font-semibold tracking-tight text-coal">节点</h1>
         </div>
 
         <div className="px-5 py-6 md:px-8">
