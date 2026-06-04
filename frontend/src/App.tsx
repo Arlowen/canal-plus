@@ -1565,6 +1565,7 @@ function ChannelCreateWizardPage({
   const [targetMetadataError, setTargetMetadataError] = useState("");
   const [columnMetadataByTable, setColumnMetadataByTable] = useState<Record<string, ChannelWizardColumnMetadata>>({});
   const [testFailureDialog, setTestFailureDialog] = useState<{ side: "source" | "target"; message: string } | null>(null);
+  const [connectionTestDialog, setConnectionTestDialog] = useState<{ source: boolean; target: boolean } | null>(null);
   const [schemaMigrationInfoOpen, setSchemaMigrationInfoOpen] = useState(false);
   const [tablePageIndex, setTablePageIndex] = useState(1);
   const [tableJumpPageDraft, setTableJumpPageDraft] = useState("1");
@@ -1944,14 +1945,7 @@ function ChannelCreateWizardPage({
       : step === "tables"
         ? tableStepValid
         : columnStepValid;
-  const nextStepDisabled = submitting || !currentStepValid;
-  const nextStepDisabledHint = !currentStepValid
-    && step === "connections"
-    && form.sourceDatasourceId
-    && form.targetDatasourceId
-    && (form.sourceTestState !== "success" || form.targetTestState !== "success")
-    ? "请先测试链接"
-    : undefined;
+  const nextStepDisabled = submitting;
 
   useEffect(() => {
     setTablePageIndex((current) => clampPage(current, tableTotalPages));
@@ -2165,6 +2159,18 @@ function ChannelCreateWizardPage({
   };
 
   const goNext = () => {
+    if (step === "connections") {
+      if (connectionStepMissingDatasourceMessage) {
+        pushNotice({ tone: "warning", message: connectionStepMissingDatasourceMessage });
+        return;
+      }
+      const sourceNeedsTest = Boolean(form.sourceDatasourceId && form.sourceTestState !== "success");
+      const targetNeedsTest = Boolean(form.targetDatasourceId && form.targetTestState !== "success");
+      if (sourceNeedsTest || targetNeedsTest) {
+        setConnectionTestDialog({ source: sourceNeedsTest, target: targetNeedsTest });
+        return;
+      }
+    }
     if (!currentStepValid) {
       pushNotice({
         tone: "warning",
@@ -2719,12 +2725,10 @@ function ChannelCreateWizardPage({
                     创建
                   </Button>
                 ) : (
-                  <span title={nextStepDisabledHint} className={cx("inline-flex", nextStepDisabledHint && "cursor-not-allowed")}>
-                    <Button type="button" onClick={goNext} disabled={nextStepDisabled} title={nextStepDisabledHint} className="btn-primary">
-                      下一步
-                      <CaretRight size={16} />
-                    </Button>
-                  </span>
+                  <Button type="button" onClick={goNext} disabled={nextStepDisabled} className="btn-primary">
+                    下一步
+                    <CaretRight size={16} />
+                  </Button>
                 )}
               </div>
             </div>
@@ -2732,8 +2736,38 @@ function ChannelCreateWizardPage({
         )}
       </div>
       </section>
+      <ChannelWizardConnectionTestDialog dialog={connectionTestDialog} onClose={() => setConnectionTestDialog(null)} />
       <ChannelWizardTestFailureDialog dialog={testFailureDialog} onClose={() => setTestFailureDialog(null)} />
     </>
+  );
+}
+
+function ChannelWizardConnectionTestDialog({
+  dialog,
+  onClose
+}: {
+  dialog: { source: boolean; target: boolean } | null;
+  onClose: () => void;
+}) {
+  const message = dialog?.source && dialog.target
+    ? "请先测试源端和目标端连接"
+    : dialog?.source
+      ? "请先测试源端连接"
+      : "请先测试目标端连接";
+  return (
+    <Modal open={Boolean(dialog)} title="测试连接" onClose={onClose} size="md">
+      <div className="grid gap-5">
+        <div className="flex items-start gap-3 rounded-lg border border-amber-100 bg-amber-50 p-4 text-amber-800">
+          <WarningCircle className="mt-0.5 shrink-0" size={18} weight="fill" />
+          <p className="text-sm font-semibold leading-6">{message}</p>
+        </div>
+        <div className="flex justify-end">
+          <Button type="button" onClick={onClose} className="btn-primary">
+            知道了
+          </Button>
+        </div>
+      </div>
+    </Modal>
   );
 }
 
