@@ -1015,7 +1015,7 @@ function App() {
           </NoticeToast>
         )}
         {notice && (
-          <NoticeToast tone={notice.tone} autoCloseMs={notice.tone === "error" ? 5200 : 3000} onClose={() => setNotice(null)}>
+          <NoticeToast tone={notice.tone} autoCloseMs={notice.tone === "error" ? 5200 : notice.tone === "info" ? 7000 : 3000} onClose={() => setNotice(null)}>
             {notice.message}
           </NoticeToast>
         )}
@@ -2355,9 +2355,20 @@ function ChannelCreateWizardPage({
                   {form.kind === "sync" ? (
                     <div className="grid gap-3">
                       <div className="rounded-lg border border-line p-4">
-                        <div className="flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-2">
+                          <Button
+                            type="button"
+                            aria-label="结构迁移说明"
+                            title="结构迁移说明"
+                            onClick={() => pushNotice({
+                              tone: "info",
+                              message: "系统根据实际选择的表判断是否需要结构迁移任务；有待创建的表时自动添加结构迁移任务，没有待创建的表时不会添加。"
+                            })}
+                            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-blue-100 bg-blue-50 text-accent transition hover:bg-blue-100 active:translate-y-px"
+                          >
+                            <Info size={16} weight="bold" />
+                          </Button>
                           <div className="font-semibold text-coal">结构迁移</div>
-                          <Badge tone="blue">按表</Badge>
                         </div>
                       </div>
                       <TaskToggle label="全量迁移" checked={form.fullMigration} onChange={(fullMigration) => patchForm({ fullMigration })} />
