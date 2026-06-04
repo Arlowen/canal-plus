@@ -1341,12 +1341,6 @@ function ChannelsPage({
             </Button>
           </div>
 
-          {datasources.length < 2 && (
-            <div className="mb-5 border-l-4 border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
-              需要源端和目标端。
-            </div>
-          )}
-
           <div className="overflow-x-auto rounded-lg border border-line bg-white">
             <table className="w-full min-w-[1020px] table-fixed border-collapse text-left">
               <colgroup>
