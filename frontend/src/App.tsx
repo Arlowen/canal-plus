@@ -1566,6 +1566,8 @@ function ChannelCreateWizardPage({
   const [columnMetadataByTable, setColumnMetadataByTable] = useState<Record<string, ChannelWizardColumnMetadata>>({});
   const [testFailureDialog, setTestFailureDialog] = useState<{ side: "source" | "target"; message: string } | null>(null);
   const [schemaMigrationInfoOpen, setSchemaMigrationInfoOpen] = useState(false);
+  const [tablePageIndex, setTablePageIndex] = useState(1);
+  const [tableJumpPageDraft, setTableJumpPageDraft] = useState("1");
   const columnMetadataRequestKey = useMemo(() => (
     form.tables
       .filter((table) => table.enabled)
@@ -1865,6 +1867,15 @@ function ChannelCreateWizardPage({
   const requiredCapacity = channelResourceSpecGB(form.resourceSpec);
   const hasCapacity = Boolean(selectedNode && selectedNode.capacity >= requiredCapacity);
   const selectedTables = form.tables.filter((table) => table.enabled);
+  const tablePageSize = 10;
+  const tableTotalItems = form.tables.length;
+  const tableTotalPages = Math.max(1, Math.ceil(tableTotalItems / tablePageSize));
+  const tableCurrentPage = clampPage(tablePageIndex, tableTotalPages);
+  const tablePageStart = (tableCurrentPage - 1) * tablePageSize;
+  const tablePageRows = form.tables
+    .map((table, tableIndex) => ({ table, tableIndex }))
+    .slice(tablePageStart, tablePageStart + tablePageSize);
+  const tablePageNumbers = useMemo(() => paginationRange(tableCurrentPage, tableTotalPages), [tableCurrentPage, tableTotalPages]);
   const connectionStepValid = Boolean(
     form.name.trim()
     && form.runNodeId
@@ -1887,6 +1898,18 @@ function ChannelCreateWizardPage({
       : step === "tables"
         ? tableStepValid
         : columnStepValid;
+
+  useEffect(() => {
+    setTablePageIndex((current) => clampPage(current, tableTotalPages));
+  }, [tableTotalPages]);
+
+  useEffect(() => {
+    setTableJumpPageDraft(String(tableCurrentPage));
+  }, [tableCurrentPage]);
+
+  useEffect(() => {
+    setTablePageIndex(1);
+  }, [form.sourceDatasourceId, form.targetDatasourceId, form.sourceDatabase, form.targetDatabase]);
 
   const patchForm = (patch: Partial<ChannelWizardFormState>) => setForm((current) => ({ ...current, ...patch }));
 
@@ -1970,6 +1993,20 @@ function ChannelCreateWizardPage({
       }));
       setTestFailureDialog({ side, message });
     }
+  };
+
+  const goToTablePage = (nextPage: number) => {
+    setTablePageIndex(clampPage(nextPage, tableTotalPages));
+  };
+
+  const commitTableJumpPage = () => {
+    if (!tableJumpPageDraft.trim()) {
+      setTableJumpPageDraft(String(tableCurrentPage));
+      return;
+    }
+    const nextPage = clampPage(Number(tableJumpPageDraft), tableTotalPages);
+    setTablePageIndex(nextPage);
+    setTableJumpPageDraft(String(nextPage));
   };
 
   const updateTable = (index: number, patch: Partial<ChannelWizardTableDraft>) => {
@@ -2437,41 +2474,85 @@ function ChannelCreateWizardPage({
                   ) : form.tables.length === 0 ? (
                     <EmptyPanel icon={Database} title="暂无表" />
                   ) : (
-                    <div className="overflow-x-auto rounded-lg border border-line">
-                      <table className="w-full min-w-[760px] table-fixed text-left text-sm">
-                        <colgroup>
-                          <col className="w-[90px]" />
-                          <col className="w-[260px]" />
-                          <col className="w-[260px]" />
-                          <col className="w-[150px]" />
-                        </colgroup>
-                        <thead className="border-b border-line bg-slate-50 text-xs font-semibold text-slate-500">
-                          <tr>
-                            <th className="px-4 py-3">同步</th>
-                            <th className="px-4 py-3">源表</th>
-                            <th className="px-4 py-3">目标表</th>
-                            <th className="px-4 py-3">目标状态</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-line">
-                          {form.tables.map((table, tableIndex) => (
-                            <tr key={table.localId}>
-                              <td className="px-4 py-3">
-                                <CheckboxInput checked={Boolean(table.enabled)} onChange={(event) => updateTable(tableIndex, { enabled: event.target.checked })} />
-                              </td>
-                              <td className="px-4 py-3">
-                                <div className="truncate font-medium text-coal" title={table.sourceTable}>{table.sourceTable}</div>
-                              </td>
-                              <td className="px-4 py-3">
-                                <div className="truncate text-coal" title={table.targetTable}>{table.targetTable}</div>
-                              </td>
-                              <td className="px-4 py-3">
-                                <TableTargetStatusBadge table={table} targetTableLoadState={targetTableLoadState} />
-                              </td>
+                    <div className="rounded-lg border border-line">
+                      <div className="overflow-x-auto">
+                        <table className="w-full min-w-[760px] table-fixed text-left text-sm">
+                          <colgroup>
+                            <col className="w-[90px]" />
+                            <col className="w-[260px]" />
+                            <col className="w-[260px]" />
+                            <col className="w-[150px]" />
+                          </colgroup>
+                          <thead className="border-b border-line bg-slate-50 text-xs font-semibold text-slate-500">
+                            <tr>
+                              <th className="px-4 py-3">同步</th>
+                              <th className="px-4 py-3">源表</th>
+                              <th className="px-4 py-3">目标表</th>
+                              <th className="px-4 py-3">目标状态</th>
                             </tr>
+                          </thead>
+                          <tbody className="divide-y divide-line">
+                            {tablePageRows.map(({ table, tableIndex }) => (
+                              <tr key={table.localId}>
+                                <td className="px-4 py-3">
+                                  <CheckboxInput checked={Boolean(table.enabled)} onChange={(event) => updateTable(tableIndex, { enabled: event.target.checked })} />
+                                </td>
+                                <td className="px-4 py-3">
+                                  <div className="truncate font-medium text-coal" title={table.sourceTable}>{table.sourceTable}</div>
+                                </td>
+                                <td className="px-4 py-3">
+                                  <div className="truncate text-coal" title={table.targetTable}>{table.targetTable}</div>
+                                </td>
+                                <td className="px-4 py-3">
+                                  <TableTargetStatusBadge table={table} targetTableLoadState={targetTableLoadState} />
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                      <div className="flex flex-col gap-3 border-t border-line px-4 py-3 text-sm text-slate-600 lg:flex-row lg:items-center lg:justify-between">
+                        <div>共 {tableTotalItems} 条</div>
+                        <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+                          <PaginationButton label="上一页" disabled={tableCurrentPage <= 1} onClick={() => goToTablePage(tableCurrentPage - 1)}>
+                            <CaretLeft size={16} />
+                          </PaginationButton>
+                          {tablePageNumbers.map((pageNumber) => (
+                            <Button
+                              key={pageNumber}
+                              type="button"
+                              onClick={() => goToTablePage(pageNumber)}
+                              className={cx(
+                                "inline-flex h-10 min-w-10 items-center justify-center rounded-lg border px-3 text-sm font-semibold transition active:translate-y-px",
+                                tableCurrentPage === pageNumber
+                                  ? "border-accent bg-accent text-white shadow-raised"
+                                  : "border-line bg-white text-coal hover:border-blue-200 hover:bg-blue-50 hover:text-accent"
+                              )}
+                            >
+                              {pageNumber}
+                            </Button>
                           ))}
-                        </tbody>
-                      </table>
+                          <PaginationButton label="下一页" disabled={tableCurrentPage >= tableTotalPages} onClick={() => goToTablePage(tableCurrentPage + 1)}>
+                            <CaretRight size={16} />
+                          </PaginationButton>
+                          <span className="ml-2 text-slate-500">前往</span>
+                          <TextInput
+                            aria-label="页码"
+                            inputMode="numeric"
+                            value={tableJumpPageDraft}
+                            onChange={(event) => setTableJumpPageDraft(event.target.value.replace(/\D/g, "").slice(0, 4))}
+                            onBlur={commitTableJumpPage}
+                            onKeyDown={(event) => {
+                              if (event.key === "Enter") {
+                                event.preventDefault();
+                                commitTableJumpPage();
+                              }
+                            }}
+                            className="input h-10 w-16 px-3 py-2 text-center"
+                          />
+                          <span className="text-slate-500">页</span>
+                        </div>
+                      </div>
                     </div>
                   )}
                 </div>
