@@ -2198,8 +2198,8 @@ function ChannelCreateWizardPage({
 
   return (
     <>
-      <section className="min-w-0 overflow-hidden">
-      <div className="flex h-[101px] items-center justify-between border-b border-line px-5 md:px-8">
+      <section className="flex min-h-[100dvh] min-w-0 flex-col overflow-hidden lg:h-[100dvh] lg:min-h-0">
+      <div className="flex h-[101px] shrink-0 items-center justify-between border-b border-line px-5 md:px-8">
         <div className="min-w-0">
           <h1 className="truncate text-3xl font-semibold tracking-tight text-coal">新增 Canal</h1>
         </div>
@@ -2209,11 +2209,11 @@ function ChannelCreateWizardPage({
         </Button>
       </div>
 
-      <div className="px-5 py-6 md:px-8">
+      <div className="min-h-0 px-5 py-6 md:px-8 lg:flex-1 lg:overflow-hidden">
         {!canManage ? (
           <PermissionNotice description="当前账号不能创建 Canal。" />
         ) : (
-          <div className="grid gap-6">
+          <div className="grid gap-6 lg:h-full lg:min-h-0 lg:grid-rows-[auto_minmax(0,1fr)]">
             <nav className="overflow-x-auto rounded-lg border border-line bg-white p-3" aria-label="Canal 创建步骤">
               <div className="grid min-w-[680px] grid-cols-4 gap-3">
                 {channelWizardSteps.map((wizardStep, index) => (
@@ -2242,7 +2242,8 @@ function ChannelCreateWizardPage({
               </div>
             </nav>
 
-            <div className="min-w-0 rounded-lg border border-line bg-white">
+            <div className="flex min-w-0 flex-col rounded-lg border border-line bg-white lg:min-h-0">
+              <div className="min-h-0 lg:flex-1 lg:overflow-auto">
               {step === "connections" && (
                 <div className="grid gap-6 p-5">
                   <div className="grid gap-4">
@@ -2649,8 +2650,9 @@ function ChannelCreateWizardPage({
                   })}
                 </div>
               )}
+              </div>
 
-              <div className={cx("flex items-center gap-3 border-t border-line p-5", stepIndex === 0 ? "justify-end" : "justify-between")}>
+              <div className={cx("flex shrink-0 items-center gap-3 border-t border-line p-5", stepIndex === 0 ? "justify-end" : "justify-between")}>
                 {stepIndex > 0 && (
                   <Button type="button" onClick={goPrevious} disabled={submitting} className="btn-secondary">
                     <CaretLeft size={16} />
