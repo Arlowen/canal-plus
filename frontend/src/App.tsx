@@ -1863,7 +1863,6 @@ function ChannelCreateWizardPage({
     && form.runNodeId
     && form.sourceDatasourceId
     && form.targetDatasourceId
-    && form.sourceDatasourceId !== form.targetDatasourceId
     && form.sourceTestState === "success"
     && form.targetTestState === "success"
   );
