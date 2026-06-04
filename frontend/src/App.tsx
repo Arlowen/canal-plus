@@ -1015,7 +1015,7 @@ function App() {
           </NoticeToast>
         )}
         {notice && (
-          <NoticeToast tone={notice.tone} autoCloseMs={notice.tone === "error" ? 5200 : notice.tone === "info" ? 7000 : 3000} onClose={() => setNotice(null)}>
+          <NoticeToast tone={notice.tone} autoCloseMs={notice.tone === "error" ? 5200 : 3000} onClose={() => setNotice(null)}>
             {notice.message}
           </NoticeToast>
         )}
@@ -1564,6 +1564,7 @@ function ChannelCreateWizardPage({
   const [targetMetadataError, setTargetMetadataError] = useState("");
   const [columnMetadataByTable, setColumnMetadataByTable] = useState<Record<string, ChannelWizardColumnMetadata>>({});
   const [testFailureDialog, setTestFailureDialog] = useState<{ side: "source" | "target"; message: string } | null>(null);
+  const [schemaMigrationInfoOpen, setSchemaMigrationInfoOpen] = useState(false);
   const columnMetadataRequestKey = useMemo(() => (
     form.tables
       .map((table) => [table.localId, table.sourceTable.trim(), table.targetTable.trim()].join(":"))
@@ -2355,20 +2356,30 @@ function ChannelCreateWizardPage({
                   {form.kind === "sync" ? (
                     <div className="grid gap-3">
                       <div className="rounded-lg border border-line p-4">
-                        <div className="flex items-center gap-2">
-                          <Button
-                            type="button"
-                            aria-label="结构迁移说明"
-                            title="结构迁移说明"
-                            onClick={() => pushNotice({
-                              tone: "info",
-                              message: "系统根据实际选择的表判断是否需要结构迁移任务；有待创建的表时自动添加结构迁移任务，没有待创建的表时不会添加。"
-                            })}
-                            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-blue-100 bg-blue-50 text-accent transition hover:bg-blue-100 active:translate-y-px"
-                          >
-                            <Info size={16} weight="bold" />
-                          </Button>
+                        <div className="flex items-center justify-between gap-3">
                           <div className="font-semibold text-coal">结构迁移</div>
+                          <div className="relative flex shrink-0 items-center justify-end">
+                            {schemaMigrationInfoOpen && (
+                              <div
+                                id="schema-migration-info"
+                                role="tooltip"
+                                className="absolute right-10 top-1/2 z-20 w-[min(520px,calc(100vw-112px))] -translate-y-1/2 rounded-lg border border-blue-100 bg-white px-3 py-2 text-sm font-medium leading-5 text-slate-700 shadow-[0_18px_54px_-24px_rgba(37,99,235,0.36)]"
+                              >
+                                系统根据实际选择的表判断是否需要结构迁移任务；有待创建的表时自动添加结构迁移任务，没有待创建的表时不会添加。
+                              </div>
+                            )}
+                            <Button
+                              type="button"
+                              aria-label="结构迁移说明"
+                              aria-expanded={schemaMigrationInfoOpen}
+                              aria-describedby={schemaMigrationInfoOpen ? "schema-migration-info" : undefined}
+                              title="结构迁移说明"
+                              onClick={() => setSchemaMigrationInfoOpen((open) => !open)}
+                              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-blue-100 bg-blue-50 text-accent transition hover:bg-blue-100 active:translate-y-px"
+                            >
+                              <Info size={16} weight="bold" />
+                            </Button>
+                          </div>
                         </div>
                       </div>
                       <TaskToggle label="全量迁移" checked={form.fullMigration} onChange={(fullMigration) => patchForm({ fullMigration })} />

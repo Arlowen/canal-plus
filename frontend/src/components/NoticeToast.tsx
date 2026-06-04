@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { CheckCircle, Info, WarningCircle, X, XCircle } from "@phosphor-icons/react";
+import { CheckCircle, WarningCircle, X, XCircle } from "@phosphor-icons/react";
 import { cx } from "../lib/format";
 import { Button } from "./ui";
 
-export type NoticeToastTone = "success" | "error" | "warning" | "info";
+export type NoticeToastTone = "success" | "error" | "warning";
 
 type NoticeToastProps = {
   tone: NoticeToastTone;
@@ -23,11 +23,6 @@ const toneClasses: Record<NoticeToastTone, {
 }> = {
   success: {
     icon: CheckCircle,
-    iconWrap: "border-blue-100 bg-blue-50 text-accent",
-    closeButton: "text-slate-500 hover:border-blue-100 hover:bg-blue-50 hover:text-accent"
-  },
-  info: {
-    icon: Info,
     iconWrap: "border-blue-100 bg-blue-50 text-accent",
     closeButton: "text-slate-500 hover:border-blue-100 hover:bg-blue-50 hover:text-accent"
   },
