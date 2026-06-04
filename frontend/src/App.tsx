@@ -1568,6 +1568,7 @@ function ChannelCreateWizardPage({
   const [schemaMigrationInfoOpen, setSchemaMigrationInfoOpen] = useState(false);
   const columnMetadataRequestKey = useMemo(() => (
     form.tables
+      .filter((table) => table.enabled)
       .map((table) => [table.localId, table.sourceTable.trim(), table.targetTable.trim()].join(":"))
       .join("|")
   ), [form.tables]);
@@ -1575,6 +1576,18 @@ function ChannelCreateWizardPage({
   useEffect(() => {
     formTablesRef.current = form.tables;
   }, [form.tables]);
+
+  useEffect(() => {
+    if (sourceTableLoadState !== "success") {
+      return;
+    }
+    setForm((current) => syncWizardTablesWithMetadata(
+      current,
+      sourceTableOptions,
+      targetTableOptions,
+      targetTableLoadState === "success"
+    ));
+  }, [sourceTableLoadState, sourceTableOptions, targetTableLoadState, targetTableOptions]);
 
   useEffect(() => {
     if (channelNameEdited || !form.sourceDatasourceType || !form.targetDatasourceType) {
@@ -1706,13 +1719,6 @@ function ChannelCreateWizardPage({
         if (!active) return;
         setSourceTableOptions(response.tables);
         setSourceTableLoadState("success");
-        setForm((current) => {
-          if (current.sourceDatasourceId !== form.sourceDatasourceId || current.sourceDatabase !== form.sourceDatabase) return current;
-          return {
-            ...current,
-            tables: current.tables.map((table) => response.tables.includes(table.sourceTable) ? table : { ...table, sourceTable: "" })
-          };
-        });
       })
       .catch((requestError) => {
         if (!active) return;
@@ -1739,13 +1745,6 @@ function ChannelCreateWizardPage({
         if (!active) return;
         setTargetTableOptions(response.tables);
         setTargetTableLoadState("success");
-        setForm((current) => {
-          if (current.targetDatasourceId !== form.targetDatasourceId || current.targetDatabase !== form.targetDatabase) return current;
-          return {
-            ...current,
-            tables: current.tables.map((table) => response.tables.includes(table.targetTable) ? table : { ...table, targetTable: "" })
-          };
-        });
       })
       .catch((requestError) => {
         if (!active) return;
@@ -1771,7 +1770,7 @@ function ChannelCreateWizardPage({
       setColumnMetadataByTable({});
       return;
     }
-    const tablesToLoad = formTablesRef.current.filter((table) => table.sourceTable.trim() && table.targetTable.trim());
+    const tablesToLoad = formTablesRef.current.filter((table) => table.enabled && table.sourceTable.trim() && table.targetTable.trim());
     if (tablesToLoad.length === 0) {
       setColumnMetadataByTable({});
       return;
@@ -1863,11 +1862,9 @@ function ChannelCreateWizardPage({
     : "";
   const sourceDatabaseSelectOptions = metadataValueOptions(sourceDatabaseOptions, sourceDatabaseLoadState, "暂无 DB");
   const targetDatabaseSelectOptions = metadataValueOptions(targetDatabaseOptions, targetDatabaseLoadState, "暂无 DB");
-  const sourceTableSelectOptions = metadataValueOptions(sourceTableOptions, sourceTableLoadState, "暂无表", "选择表");
-  const targetTableSelectOptions = metadataValueOptions(targetTableOptions, targetTableLoadState, "暂无表", "选择表");
   const requiredCapacity = channelResourceSpecGB(form.resourceSpec);
   const hasCapacity = Boolean(selectedNode && selectedNode.capacity >= requiredCapacity);
-  const needsPrimaryKeys = form.kind === "check" && (form.dataValidation || form.dataCorrection);
+  const selectedTables = form.tables.filter((table) => table.enabled);
   const connectionStepValid = Boolean(
     form.name.trim()
     && form.runNodeId
@@ -1877,12 +1874,10 @@ function ChannelCreateWizardPage({
     && form.targetTestState === "success"
   );
   const taskStepValid = hasCapacity && (form.kind === "sync" || form.schemaCompare || form.dataValidation);
-  const tableStepValid = Boolean(form.sourceDatabase && form.targetDatabase) && form.tables.length > 0 && form.tables.every((table) => {
-    const hasNames = Boolean(table.sourceTable.trim() && table.targetTable.trim());
-    const hasPrimaryKeys = !needsPrimaryKeys || Boolean(table.primaryKeysText.trim());
-    return hasNames && hasPrimaryKeys;
-  });
-  const columnStepValid = tableStepValid && form.tables.every((table) => table.columns.some((column) => column.sourceColumn.trim() && column.targetColumn.trim()));
+  const tableStepValid = Boolean(form.sourceDatabase && form.targetDatabase) && selectedTables.length > 0 && selectedTables.every((table) => (
+    table.sourceTable.trim() && table.targetTable.trim()
+  ));
+  const columnStepValid = tableStepValid && selectedTables.every((table) => table.columns.some((column) => column.sourceColumn.trim() && column.targetColumn.trim()));
   const stepIndex = channelWizardSteps.indexOf(step);
   const maxReachableStepIndex = !connectionStepValid ? 0 : !taskStepValid ? 1 : !tableStepValid ? 2 : 3;
   const currentStepValid = step === "connections"
@@ -1977,10 +1972,6 @@ function ChannelCreateWizardPage({
     }
   };
 
-  const addTable = () => {
-    setForm((current) => ({ ...current, tables: [...current.tables, emptyChannelWizardTable()] }));
-  };
-
   const updateTable = (index: number, patch: Partial<ChannelWizardTableDraft>) => {
     setForm((current) => ({
       ...current,
@@ -1996,10 +1987,6 @@ function ChannelCreateWizardPage({
         };
       })
     }));
-  };
-
-  const removeTable = (index: number) => {
-    setForm((current) => ({ ...current, tables: current.tables.filter((_, tableIndex) => tableIndex !== index) }));
   };
 
   const addColumn = (tableIndex: number) => {
@@ -2092,7 +2079,7 @@ function ChannelCreateWizardPage({
         tone: "warning",
         message: step === "connections" && connectionStepMissingDatasourceMessage
           ? connectionStepMissingDatasourceMessage
-          : channelWizardStepError(step, needsPrimaryKeys)
+          : channelWizardStepError(step)
       });
       return;
     }
@@ -2129,7 +2116,7 @@ function ChannelCreateWizardPage({
       await api.saveChannelMappings(channel.id, { tables: channelWizardMappingPayload(form) });
       const baseConfig = channelWizardTaskConfig(form);
       if (form.kind === "sync") {
-        const createTables = form.tables.filter((table) => table.createTarget);
+        const createTables = form.tables.filter((table) => table.enabled && table.createTarget);
         if (createTables.length > 0) {
           await api.createChannelTask(channel.id, {
             name: "结构迁移",
@@ -2442,71 +2429,44 @@ function ChannelCreateWizardPage({
 
                   <div className="flex items-center justify-between gap-3">
                     <div className="text-base font-semibold text-coal">表</div>
-                    <Button type="button" onClick={addTable} className="btn-secondary">
-                      <Plus size={16} />
-                      表
-                    </Button>
+                    <div className="text-sm font-medium text-slate-500">已选 {selectedTables.length}</div>
                   </div>
 
-                  {form.tables.length === 0 ? (
-                    <EmptyPanel icon={Database} title="暂无表" action={(
-                      <Button type="button" onClick={addTable} className="btn-primary">
-                        <Plus size={16} />
-                        添加
-                      </Button>
-                    )} />
+                  {sourceTableLoadState === "loading" ? (
+                    <EmptyPanel icon={Database} title="加载中" />
+                  ) : form.tables.length === 0 ? (
+                    <EmptyPanel icon={Database} title="暂无表" />
                   ) : (
                     <div className="overflow-x-auto rounded-lg border border-line">
-                      <table className="w-full min-w-[900px] table-fixed text-left text-sm">
+                      <table className="w-full min-w-[760px] table-fixed text-left text-sm">
                         <colgroup>
-                          <col className="w-[220px]" />
-                          <col className="w-[220px]" />
-                          <col className="w-[190px]" />
-                          <col className="w-[120px]" />
-                          <col className="w-[80px]" />
+                          <col className="w-[90px]" />
+                          <col className="w-[260px]" />
+                          <col className="w-[260px]" />
+                          <col className="w-[150px]" />
                         </colgroup>
                         <thead className="border-b border-line bg-slate-50 text-xs font-semibold text-slate-500">
                           <tr>
+                            <th className="px-4 py-3">同步</th>
                             <th className="px-4 py-3">源表</th>
                             <th className="px-4 py-3">目标表</th>
-                            <th className="px-4 py-3">主键</th>
-                            <th className="px-4 py-3">建表</th>
-                            <th className="px-4 py-3">操作</th>
+                            <th className="px-4 py-3">目标状态</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-line">
                           {form.tables.map((table, tableIndex) => (
                             <tr key={table.localId}>
                               <td className="px-4 py-3">
-                                <DropdownSelect
-                                  value={table.sourceTable}
-                                  ariaLabel="源表"
-                                  options={sourceTableSelectOptions}
-                                  disabled={!form.sourceDatabase || sourceTableLoadState === "loading"}
-                                  onChange={(sourceTable) => updateTable(tableIndex, { sourceTable })}
-                                  className="h-10 min-h-10"
-                                />
+                                <CheckboxInput checked={Boolean(table.enabled)} onChange={(event) => updateTable(tableIndex, { enabled: event.target.checked })} />
                               </td>
                               <td className="px-4 py-3">
-                                <DropdownSelect
-                                  value={table.targetTable}
-                                  ariaLabel="目标表"
-                                  options={targetTableSelectOptions}
-                                  disabled={!form.targetDatabase || targetTableLoadState === "loading"}
-                                  onChange={(targetTable) => updateTable(tableIndex, { targetTable })}
-                                  className="h-10 min-h-10"
-                                />
+                                <div className="truncate font-medium text-coal" title={table.sourceTable}>{table.sourceTable}</div>
                               </td>
                               <td className="px-4 py-3">
-                                <TextInput className="input h-10" value={table.primaryKeysText} placeholder={needsPrimaryKeys ? "必填" : "可选"} onChange={(event) => updateTable(tableIndex, { primaryKeysText: event.target.value })} />
+                                <div className="truncate text-coal" title={table.targetTable}>{table.targetTable}</div>
                               </td>
                               <td className="px-4 py-3">
-                                <CheckboxInput checked={table.createTarget} disabled={form.kind !== "sync"} onChange={(event) => updateTable(tableIndex, { createTarget: event.target.checked })} />
-                              </td>
-                              <td className="px-4 py-3">
-                                <IconActionButton label="删除表" tone="danger" onClick={() => removeTable(tableIndex)}>
-                                  <Trash size={18} />
-                                </IconActionButton>
+                                <TableTargetStatusBadge table={table} targetTableLoadState={targetTableLoadState} />
                               </td>
                             </tr>
                           ))}
@@ -2520,6 +2480,7 @@ function ChannelCreateWizardPage({
               {step === "columns" && (
                 <div className="grid gap-5 p-5">
                   {form.tables.map((table, tableIndex) => {
+                    if (!table.enabled) return null;
                     const metadata = columnMetadataByTable[table.localId];
                     return (
                       <div key={table.localId} className="rounded-lg border border-line p-4">
@@ -6251,6 +6212,16 @@ function Badge({ tone, children }: { tone: BadgeTone; children: ReactNode }) {
   return <span className={cx("chip", className)}>{children}</span>;
 }
 
+function TableTargetStatusBadge({ table, targetTableLoadState }: { table: ChannelWizardTableDraft; targetTableLoadState: MetadataLoadState }) {
+  if (targetTableLoadState === "loading") {
+    return <Badge tone="neutral">加载中</Badge>;
+  }
+  if (targetTableLoadState === "failed" || targetTableLoadState === "idle") {
+    return <Badge tone="yellow">待确认</Badge>;
+  }
+  return table.createTarget ? <Badge tone="yellow">待创建</Badge> : <Badge tone="green">已存在</Badge>;
+}
+
 function getFocusableElements(container: HTMLElement | null) {
   if (!container) return [];
   return Array.from(container.querySelectorAll<HTMLElement>(focusableSelector)).filter((element) => !element.hasAttribute("disabled"));
@@ -6974,7 +6945,7 @@ function emptyChannelWizardForm(datasources: Datasource[], onlineNodes: ClusterN
     sourceSchema: "",
     targetDatabase: target?.defaultSchema || "",
     targetSchema: "",
-    tables: [emptyChannelWizardTable()]
+    tables: []
   };
 }
 
@@ -6987,18 +6958,37 @@ function emptyChannelWizardTable(): ChannelWizardTableDraft {
     targetTable: "",
     primaryKeys: [],
     primaryKeysText: "",
-    enabled: true,
+    enabled: false,
     createTarget: false,
     columns: [emptyColumnDraft()]
   };
 }
 
+function syncWizardTablesWithMetadata(
+  form: ChannelWizardFormState,
+  sourceTables: string[],
+  targetTables: string[],
+  targetTablesLoaded: boolean
+): ChannelWizardFormState {
+  const existingBySourceTable = new Map(form.tables.map((table) => [table.sourceTable, table]));
+  const targetTableSet = new Set(targetTables);
+  const tables = sourceTables.map((sourceTable) => {
+    const existing = existingBySourceTable.get(sourceTable);
+    const targetTable = existing?.targetTable?.trim() || sourceTable;
+    return {
+      ...(existing || emptyChannelWizardTable()),
+      sourceTable,
+      targetTable,
+      createTarget: targetTablesLoaded ? !targetTableSet.has(targetTable) : existing?.createTarget || false
+    };
+  });
+  return { ...form, tables };
+}
+
 function resetWizardTables(tables: ChannelWizardTableDraft[], side: "source" | "target") {
-  return tables.map((table) => ({
-    ...table,
-    sourceTable: side === "source" ? "" : table.sourceTable,
-    targetTable: side === "target" ? "" : table.targetTable
-  }));
+  void tables;
+  void side;
+  return [];
 }
 
 function channelResourceSpecGB(spec: ResourceSpec | string) {
@@ -7013,7 +7003,7 @@ function channelResourceSpecGB(spec: ResourceSpec | string) {
 function channelWizardMappingPayload(form: ChannelWizardFormState): ChannelTableMappingInput[] {
   const sourceSchema = effectiveChannelSchema(form.sourceDatabase, form.sourceSchema);
   const targetSchema = effectiveChannelSchema(form.targetDatabase, form.targetSchema);
-  return form.tables.map((table) => {
+  return form.tables.filter((table) => table.enabled).map((table) => {
     const markedPrimaryKeys = table.columns
       .filter((column) => column.isPrimaryKey && column.sourceColumn.trim())
       .map((column) => column.sourceColumn.trim());
@@ -7067,10 +7057,10 @@ function channelWizardStepLabel(step: ChannelWizardStep) {
   return labels[step];
 }
 
-function channelWizardStepError(step: ChannelWizardStep, needsPrimaryKeys: boolean) {
+function channelWizardStepError(step: ChannelWizardStep) {
   if (step === "connections") return "选择数据源未完成";
   if (step === "tasks") return "选择任务类型未完成";
-  if (step === "tables") return needsPrimaryKeys ? "主键必填" : "选择表未完成";
+  if (step === "tables") return "选择表未完成";
   return "选择列未完成";
 }
 
