@@ -1550,6 +1550,7 @@ function ChannelCreateWizardPage({
   const onlineNodes = useMemo(() => (cluster?.nodes || []).filter((node) => node.status === "online"), [cluster]);
   const [form, setForm] = useState<ChannelWizardFormState>(() => emptyChannelWizardForm(datasources, onlineNodes));
   const formTablesRef = useRef(form.tables);
+  const [channelNameEdited, setChannelNameEdited] = useState(false);
   const [step, setStep] = useState<ChannelWizardStep>("connections");
   const [submitting, setSubmitting] = useState(false);
   const [sourceDatabaseOptions, setSourceDatabaseOptions] = useState<string[]>([]);
@@ -1574,6 +1575,14 @@ function ChannelCreateWizardPage({
   useEffect(() => {
     formTablesRef.current = form.tables;
   }, [form.tables]);
+
+  useEffect(() => {
+    if (channelNameEdited || !form.sourceDatasourceType || !form.targetDatasourceType) {
+      return;
+    }
+    const nextName = channelWizardDefaultName(form.sourceDatasourceType, form.targetDatasourceType);
+    setForm((current) => current.name === nextName ? current : { ...current, name: nextName });
+  }, [channelNameEdited, form.sourceDatasourceType, form.targetDatasourceType]);
 
   useEffect(() => {
     setForm((current) => {
@@ -2214,7 +2223,15 @@ function ChannelCreateWizardPage({
                 <div className="grid gap-6 p-5">
                   <div className="grid gap-4">
                     <Field label="名称" required error={!form.name.trim() ? "必填" : undefined}>
-                      <TextInput className="input" maxLength={80} value={form.name} onChange={(event) => patchForm({ name: event.target.value })} />
+                      <TextInput
+                        className="input"
+                        maxLength={80}
+                        value={form.name}
+                        onChange={(event) => {
+                          setChannelNameEdited(true);
+                          patchForm({ name: event.target.value });
+                        }}
+                      />
                     </Field>
                     <Field label="运行节点" required error={!form.runNodeId ? "必填" : undefined}>
                       <DropdownSelect
@@ -6908,6 +6925,24 @@ function nodeOptionsForWizard(nodes: ClusterNode[]) {
     label: node.name,
     description: node.endpoint
   }));
+}
+
+function channelWizardDefaultName(sourceType: DatasourceType, targetType: DatasourceType, date = new Date()) {
+  return `canal-plus-${sourceType}-to-${targetType}-${channelWizardNameTimestamp(date)}`;
+}
+
+function channelWizardNameTimestamp(date: Date) {
+  return [
+    String(date.getFullYear()),
+    timestampPart(date.getMonth() + 1),
+    timestampPart(date.getDate()),
+    timestampPart(date.getHours()),
+    timestampPart(date.getMinutes())
+  ].join("");
+}
+
+function timestampPart(value: number) {
+  return String(value).padStart(2, "0");
 }
 
 function emptyChannelWizardForm(datasources: Datasource[], onlineNodes: ClusterNode[]): ChannelWizardFormState {
