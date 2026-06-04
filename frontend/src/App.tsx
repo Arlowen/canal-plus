@@ -1097,6 +1097,7 @@ function App() {
                 cluster={cluster}
                 canManage={canManage}
                 onBack={closeChannelCreate}
+                onCreateDatasource={openDatasourceCreate}
                 onOpenChannel={openChannelDetail}
                 onChanged={refresh}
                 pushNotice={pushNotice}
@@ -1335,7 +1336,7 @@ function ChannelsPage({
               </Button>
             </div>
 
-            <Button type="button" onClick={openCreate} disabled={!canManage || datasources.length < 2} className="btn-primary h-12 min-w-[118px] px-4">
+            <Button type="button" onClick={openCreate} disabled={!canManage} className="btn-primary h-12 min-w-[118px] px-4">
               <Plus size={18} />
               新增
             </Button>
@@ -1369,7 +1370,7 @@ function ChannelsPage({
                     <td colSpan={7} className="px-6 py-16">
                       <div className="mx-auto flex max-w-sm flex-col items-center text-center">
                         <div className="text-base font-semibold text-coal">{channels.length === 0 ? "暂无 Canal" : "无匹配"}</div>
-                        {canManage && channels.length === 0 && datasources.length >= 2 && (
+                        {canManage && channels.length === 0 && (
                           <Button type="button" onClick={openCreate} className="btn-primary mt-5">
                             <Plus size={16} />
                             新增
@@ -1535,6 +1536,7 @@ function ChannelCreateWizardPage({
   cluster,
   canManage,
   onBack,
+  onCreateDatasource,
   onOpenChannel,
   onChanged,
   pushNotice
@@ -1543,6 +1545,7 @@ function ChannelCreateWizardPage({
   cluster: ClusterSnapshot | null;
   canManage: boolean;
   onBack: () => void;
+  onCreateDatasource: () => void;
   onOpenChannel: (channelId: string) => void;
   onChanged: (quiet?: boolean) => Promise<void>;
   pushNotice: (notice: Notice) => void;
@@ -1842,8 +1845,15 @@ function ChannelCreateWizardPage({
   ]);
 
   const selectedNode = onlineNodes.find((node) => node.id === form.runNodeId) || null;
+  const sourceDatasourceCandidates = datasourcesForWizard(datasources, "source", form.sourceDatasourceType);
+  const targetDatasourceCandidates = datasourcesForWizard(datasources, "target", form.targetDatasourceType);
   const sourceOptions = datasourceOptionsForWizard(datasources, "source", form.sourceDatasourceType);
   const targetOptions = datasourceOptionsForWizard(datasources, "target", form.targetDatasourceType);
+  const sourceHasDatasources = sourceDatasourceCandidates.length > 0;
+  const targetHasDatasources = targetDatasourceCandidates.length > 0;
+  const connectionStepMissingDatasourceMessage = !sourceHasDatasources || !targetHasDatasources
+    ? "先建数据源"
+    : "";
   const sourceDatabaseSelectOptions = metadataValueOptions(sourceDatabaseOptions, sourceDatabaseLoadState, "暂无 DB");
   const targetDatabaseSelectOptions = metadataValueOptions(targetDatabaseOptions, targetDatabaseLoadState, "暂无 DB");
   const sourceTableSelectOptions = metadataValueOptions(sourceTableOptions, sourceTableLoadState, "暂无表", "选择表");
@@ -2072,7 +2082,12 @@ function ChannelCreateWizardPage({
 
   const goNext = () => {
     if (!currentStepValid) {
-      pushNotice({ tone: "warning", message: channelWizardStepError(step, needsPrimaryKeys) });
+      pushNotice({
+        tone: "warning",
+        message: step === "connections" && connectionStepMissingDatasourceMessage
+          ? connectionStepMissingDatasourceMessage
+          : channelWizardStepError(step, needsPrimaryKeys)
+      });
       return;
     }
     setStep(channelWizardSteps[Math.min(channelWizardSteps.length - 1, stepIndex + 1)]);
@@ -2233,9 +2248,15 @@ function ChannelCreateWizardPage({
                             })}
                           />
                         </Field>
-                        <Field label="数据源" required>
-                          <DropdownSelect value={form.sourceDatasourceId} ariaLabel="源端数据源" options={sourceOptions} onChange={updateSourceDatasource} />
-                        </Field>
+                        <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start">
+                          <Field label="数据源" required error={!sourceHasDatasources ? "暂无" : undefined}>
+                            <DropdownSelect value={form.sourceDatasourceId} ariaLabel="源端数据源" options={sourceOptions} onChange={updateSourceDatasource} />
+                          </Field>
+                          <Button type="button" onClick={onCreateDatasource} className="btn-secondary h-[46px] px-3 sm:mt-7">
+                            <Plus size={16} />
+                            新增
+                          </Button>
+                        </div>
                         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                           <Button
                             type="button"
@@ -2276,9 +2297,15 @@ function ChannelCreateWizardPage({
                             })}
                           />
                         </Field>
-                        <Field label="数据源" required>
-                          <DropdownSelect value={form.targetDatasourceId} ariaLabel="目标端数据源" options={targetOptions} onChange={updateTargetDatasource} />
-                        </Field>
+                        <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start">
+                          <Field label="数据源" required error={!targetHasDatasources ? "暂无" : undefined}>
+                            <DropdownSelect value={form.targetDatasourceId} ariaLabel="目标端数据源" options={targetOptions} onChange={updateTargetDatasource} />
+                          </Field>
+                          <Button type="button" onClick={onCreateDatasource} className="btn-secondary h-[46px] px-3 sm:mt-7">
+                            <Plus size={16} />
+                            新增
+                          </Button>
+                        </div>
                         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                           <Button
                             type="button"
