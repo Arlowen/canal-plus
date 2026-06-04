@@ -1006,7 +1006,7 @@ function App() {
               </Button>
             )}
           >
-            后端暂时不可用
+            系统异常
           </NoticeToast>
         )}
         {globalError && (
@@ -6264,10 +6264,7 @@ function BackendUnavailableScreen({
             <WarningCircle size={28} />
           </div>
           <div className="label mt-6">Canal Plus</div>
-          <h1 className="mt-4 text-2xl font-semibold tracking-tight text-coal md:text-3xl">后端不可用</h1>
-          <p className="mx-auto mt-4 max-w-2xl text-sm leading-7 text-slate-500 md:text-base">
-            API 未响应。确认后端后重试。
-          </p>
+          <h1 className="mt-4 text-2xl font-semibold tracking-tight text-coal md:text-3xl">系统异常</h1>
           <div className="mt-8 flex justify-center">
             <Button onClick={() => void onRetry()} disabled={retrying} className="btn-primary min-w-40 justify-center">
               <ArrowsClockwise size={16} />

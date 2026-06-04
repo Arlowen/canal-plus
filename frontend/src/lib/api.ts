@@ -30,7 +30,7 @@ import type {
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:4100/api";
 const TOKEN_KEY = "canal-plus-token";
-const SERVICE_UNAVAILABLE_MESSAGE = "后端服务暂时不可用，请稍后重试。";
+const SERVICE_UNAVAILABLE_MESSAGE = "系统异常";
 
 type BackendAvailabilityListener = (available: boolean) => void;
 
