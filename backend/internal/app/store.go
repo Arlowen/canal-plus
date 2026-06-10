@@ -393,10 +393,11 @@ func (s *Store) registerNode(input ClusterNodeInput, actor string, action string
 	defer s.mu.Unlock()
 	s.ensureClusterLocked()
 
+	inputEndpoint := strings.TrimSpace(input.Endpoint)
 	nodeID := strings.TrimSpace(input.ID)
-	if nodeID == "" {
+	if inputEndpoint != "" {
 		for _, node := range s.data.Nodes {
-			if node.Endpoint == strings.TrimSpace(input.Endpoint) {
+			if strings.TrimSpace(node.Endpoint) == inputEndpoint {
 				nodeID = node.ID
 				break
 			}
@@ -414,7 +415,7 @@ func (s *Store) registerNode(input ClusterNodeInput, actor string, action string
 		}
 		node := &s.data.Nodes[index]
 		node.Name = strings.TrimSpace(input.Name)
-		node.Endpoint = strings.TrimSpace(input.Endpoint)
+		node.Endpoint = inputEndpoint
 		node.SSHPort = normalizeNodeSSHPort(input.SSHPort)
 		node.SSHUser = strings.TrimSpace(input.SSHUser)
 		node.AuthMode = normalizeNodeAuthMode(input.AuthMode)
@@ -436,6 +437,7 @@ func (s *Store) registerNode(input ClusterNodeInput, actor string, action string
 		node.UpdatedAt = timestamp
 		created = false
 		s.logLocked(actor, action, "cluster_node", node.ID, "Node registered or updated: "+node.Name)
+		s.removeDuplicateClusterNodeEndpointsLocked(node.ID, node.Endpoint)
 		s.reconcileClusterLocked()
 		if err := s.saveLocked(); err != nil {
 			return ClusterNode{}, false, err
@@ -446,7 +448,7 @@ func (s *Store) registerNode(input ClusterNodeInput, actor string, action string
 	node := ClusterNode{
 		ID:              nodeID,
 		Name:            strings.TrimSpace(input.Name),
-		Endpoint:        strings.TrimSpace(input.Endpoint),
+		Endpoint:        inputEndpoint,
 		SSHPort:         normalizeNodeSSHPort(input.SSHPort),
 		SSHUser:         strings.TrimSpace(input.SSHUser),
 		AuthMode:        normalizeNodeAuthMode(input.AuthMode),
@@ -471,6 +473,23 @@ func (s *Store) registerNode(input ClusterNodeInput, actor string, action string
 		return ClusterNode{}, false, err
 	}
 	return cloneJSON(node), created, nil
+}
+
+func (s *Store) removeDuplicateClusterNodeEndpointsLocked(keepID string, endpoint string) {
+	endpoint = strings.TrimSpace(endpoint)
+	if endpoint == "" {
+		return
+	}
+	writeIndex := 0
+	for _, node := range s.data.Nodes {
+		if node.ID != keepID && strings.TrimSpace(node.Endpoint) == endpoint {
+			s.logLocked("system", "node_deduplicate", "cluster_node", node.ID, "Duplicate node endpoint removed: "+node.Name)
+			continue
+		}
+		s.data.Nodes[writeIndex] = node
+		writeIndex++
+	}
+	s.data.Nodes = s.data.Nodes[:writeIndex]
 }
 
 func (s *Store) UpgradeNode(id string) (NodeOperationResult, bool, error) {

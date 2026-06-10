@@ -43,6 +43,45 @@ func TestMultipleNodesDefaultToSingleMasterAndStandby(t *testing.T) {
 	}
 }
 
+func TestRegisterNodeUpdatesMatchingEndpointWithDifferentID(t *testing.T) {
+	t.Setenv("CANAL_PLUS_NODE_ID", "node-local")
+	t.Setenv("CANAL_PLUS_NODE_NAME", "local")
+	t.Setenv("CANAL_PLUS_NODE_ENDPOINT", "127.0.0.1:4100")
+	store := newTestStore(t)
+	before := store.ClusterSnapshot()
+	if before.TotalNodes != 1 {
+		t.Fatalf("initial node count = %d, want 1", before.TotalNodes)
+	}
+	existing := before.Nodes[0]
+
+	node, created, err := store.registerNode(ClusterNodeInput{
+		ID:       "node-local-dev",
+		Name:     "local-dev",
+		Endpoint: existing.Endpoint,
+		Role:     NodeRoleMaster,
+	}, "system", "node_self_register")
+	if err != nil {
+		t.Fatalf("register node with matching endpoint: %v", err)
+	}
+	if created {
+		t.Fatal("expected matching endpoint to update existing node")
+	}
+	if node.ID != existing.ID {
+		t.Fatalf("node ID = %q, want existing ID %q", node.ID, existing.ID)
+	}
+	if node.Name != "local-dev" {
+		t.Fatalf("node name = %q, want local-dev", node.Name)
+	}
+
+	after := store.ClusterSnapshot()
+	if after.TotalNodes != 1 {
+		t.Fatalf("node count = %d, want 1: %#v", after.TotalNodes, after.Nodes)
+	}
+	if after.Nodes[0].ID != existing.ID || after.Nodes[0].Name != "local-dev" {
+		t.Fatalf("updated node = %#v, want existing ID with new name", after.Nodes[0])
+	}
+}
+
 func TestStandbyTakesOverWhenMasterHeartbeatTimesOut(t *testing.T) {
 	store := newTestStore(t)
 
