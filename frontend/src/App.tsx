@@ -1568,6 +1568,7 @@ function ChannelCreateWizardPage({
   const [schemaMigrationInfoOpen, setSchemaMigrationInfoOpen] = useState(false);
   const [tablePageIndex, setTablePageIndex] = useState(1);
   const [tableJumpPageDraft, setTableJumpPageDraft] = useState("1");
+  const [tableFilterText, setTableFilterText] = useState("");
   const columnMetadataRequestKey = useMemo(() => (
     form.tables
       .filter((table) => table.enabled)
@@ -1914,13 +1915,24 @@ function ChannelCreateWizardPage({
   const hasCapacity = Boolean(selectedNode && selectedNode.capacity >= requiredCapacity);
   const selectedTables = form.tables.filter((table) => table.enabled);
   const tablePageSize = 10;
-  const tableTotalItems = form.tables.length;
+  const tableFilterQuery = tableFilterText.trim().toLowerCase();
+  const tableRows = useMemo(() => {
+    const rows = form.tables.map((table, tableIndex) => ({ table, tableIndex }));
+    if (!tableFilterQuery) {
+      return rows;
+    }
+    return rows.filter(({ table }) => [
+      table.sourceSchema,
+      table.sourceTable,
+      table.targetSchema,
+      table.targetTable
+    ].some((value) => (value || "").toLowerCase().includes(tableFilterQuery)));
+  }, [form.tables, tableFilterQuery]);
+  const tableTotalItems = tableRows.length;
   const tableTotalPages = Math.max(1, Math.ceil(tableTotalItems / tablePageSize));
   const tableCurrentPage = clampPage(tablePageIndex, tableTotalPages);
   const tablePageStart = (tableCurrentPage - 1) * tablePageSize;
-  const tablePageRows = form.tables
-    .map((table, tableIndex) => ({ table, tableIndex }))
-    .slice(tablePageStart, tablePageStart + tablePageSize);
+  const tablePageRows = tableRows.slice(tablePageStart, tablePageStart + tablePageSize);
   const tablePageNumbers = useMemo(() => paginationRange(tableCurrentPage, tableTotalPages), [tableCurrentPage, tableTotalPages]);
   const connectionStepValid = Boolean(
     form.name.trim()
@@ -1957,6 +1969,10 @@ function ChannelCreateWizardPage({
   useEffect(() => {
     setTablePageIndex(1);
   }, [form.sourceDatasourceId, form.targetDatasourceId, form.sourceDatabase, form.targetDatabase]);
+
+  useEffect(() => {
+    setTablePageIndex(1);
+  }, [tableFilterQuery]);
 
   const patchForm = (patch: Partial<ChannelWizardFormState>) => setForm((current) => ({ ...current, ...patch }));
 
@@ -2488,15 +2504,32 @@ function ChannelCreateWizardPage({
                     </div>
                   )}
 
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="text-base font-semibold text-coal">表</div>
-                    <div className="text-sm font-medium text-slate-500">已选 {selectedTables.length}</div>
+                  <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="text-base font-semibold text-coal">表</div>
+                      <div className="text-sm font-medium text-slate-500">已选 {selectedTables.length}</div>
+                      {tableFilterQuery && (
+                        <div className="text-sm font-medium text-slate-500">匹配 {tableTotalItems}</div>
+                      )}
+                    </div>
+                    <label className="relative block w-full md:w-[280px]">
+                      <MagnifyingGlass aria-hidden="true" className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500" size={17} />
+                      <TextInput
+                        aria-label="搜表"
+                        className="input h-10 pl-10"
+                        value={tableFilterText}
+                        placeholder="搜表"
+                        onChange={(event) => setTableFilterText(event.target.value)}
+                      />
+                    </label>
                   </div>
 
                   {sourceTableLoadState === "loading" ? (
                     <EmptyPanel icon={Database} title="加载中" />
                   ) : form.tables.length === 0 ? (
                     <EmptyPanel icon={Database} title="暂无表" />
+                  ) : tableTotalItems === 0 ? (
+                    <EmptyPanel icon={MagnifyingGlass} title="无匹配" />
                   ) : (
                     <div className="rounded-lg border border-line">
                       <div className="overflow-x-auto">
