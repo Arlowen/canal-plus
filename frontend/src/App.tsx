@@ -1568,6 +1568,7 @@ function ChannelCreateWizardPage({
   const [schemaMigrationInfoOpen, setSchemaMigrationInfoOpen] = useState(false);
   const [tablePageIndex, setTablePageIndex] = useState(1);
   const [tableJumpPageDraft, setTableJumpPageDraft] = useState("1");
+  const [tableFilterDraft, setTableFilterDraft] = useState("");
   const [tableFilterText, setTableFilterText] = useState("");
   const columnMetadataRequestKey = useMemo(() => (
     form.tables
@@ -1968,6 +1969,8 @@ function ChannelCreateWizardPage({
 
   useEffect(() => {
     setTablePageIndex(1);
+    setTableFilterDraft("");
+    setTableFilterText("");
   }, [form.sourceDatasourceId, form.targetDatasourceId, form.sourceDatabase, form.targetDatabase]);
 
   useEffect(() => {
@@ -1975,6 +1978,11 @@ function ChannelCreateWizardPage({
   }, [tableFilterQuery]);
 
   const patchForm = (patch: Partial<ChannelWizardFormState>) => setForm((current) => ({ ...current, ...patch }));
+
+  const applyTableFilter = () => {
+    setTableFilterText(tableFilterDraft);
+    setTablePageIndex(1);
+  };
 
   const updateSourceDatasource = (datasourceId: string) => {
     const datasource = datasources.find((item) => item.id === datasourceId);
@@ -2504,24 +2512,34 @@ function ChannelCreateWizardPage({
                     </div>
                   )}
 
-                  <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                    <div className="flex items-center gap-3">
+                  <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+                    <div className="flex flex-col gap-3 md:flex-row md:flex-wrap md:items-center">
                       <div className="text-base font-semibold text-coal">表</div>
                       <div className="text-sm font-medium text-slate-500">已选 {selectedTables.length}</div>
+                      <label className="relative block w-full md:w-[280px]">
+                        <MagnifyingGlass aria-hidden="true" className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500" size={17} />
+                        <TextInput
+                          aria-label="搜表"
+                          className="input h-10 pl-10"
+                          value={tableFilterDraft}
+                          placeholder="搜表"
+                          onChange={(event) => setTableFilterDraft(event.target.value)}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter") {
+                              event.preventDefault();
+                              applyTableFilter();
+                            }
+                          }}
+                        />
+                      </label>
+                      <Button type="button" onClick={applyTableFilter} className="btn-primary h-10 min-w-[86px]">
+                        <MagnifyingGlass size={16} />
+                        查询
+                      </Button>
                       {tableFilterQuery && (
                         <div className="text-sm font-medium text-slate-500">匹配 {tableTotalItems}</div>
                       )}
                     </div>
-                    <label className="relative block w-full md:w-[280px]">
-                      <MagnifyingGlass aria-hidden="true" className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500" size={17} />
-                      <TextInput
-                        aria-label="搜表"
-                        className="input h-10 pl-10"
-                        value={tableFilterText}
-                        placeholder="搜表"
-                        onChange={(event) => setTableFilterText(event.target.value)}
-                      />
-                    </label>
                   </div>
 
                   {sourceTableLoadState === "loading" ? (
