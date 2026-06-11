@@ -201,6 +201,7 @@ type DatasourceFieldErrors = Partial<Record<"name" | "host" | "port" | "username
 type DatasourceTypeFilter = "all" | "mysql";
 type NodeTypeFilter = "all" | "master" | "standby";
 type ChannelStatusFilter = "all" | Channel["status"];
+type TableSelectionFilter = "all" | "selected" | "unselected";
 type ChannelDetailTab = "overview" | "mappings" | "tasks" | "runs" | "logs" | "diffs";
 type ChannelLogFilters = {
   taskId: string;
@@ -1570,6 +1571,7 @@ function ChannelCreateWizardPage({
   const [tableJumpPageDraft, setTableJumpPageDraft] = useState("1");
   const [tableFilterDraft, setTableFilterDraft] = useState("");
   const [tableFilterText, setTableFilterText] = useState("");
+  const [tableSelectionFilter, setTableSelectionFilter] = useState<TableSelectionFilter>("all");
   const columnMetadataRequestKey = useMemo(() => (
     form.tables
       .filter((table) => table.enabled)
@@ -1919,16 +1921,24 @@ function ChannelCreateWizardPage({
   const tableFilterQuery = tableFilterText.trim().toLowerCase();
   const tableRows = useMemo(() => {
     const rows = form.tables.map((table, tableIndex) => ({ table, tableIndex }));
-    if (!tableFilterQuery) {
-      return rows;
-    }
-    return rows.filter(({ table }) => [
-      table.sourceSchema,
-      table.sourceTable,
-      table.targetSchema,
-      table.targetTable
-    ].some((value) => (value || "").toLowerCase().includes(tableFilterQuery)));
-  }, [form.tables, tableFilterQuery]);
+    return rows.filter(({ table }) => {
+      if (tableSelectionFilter === "selected" && !table.enabled) {
+        return false;
+      }
+      if (tableSelectionFilter === "unselected" && table.enabled) {
+        return false;
+      }
+      if (!tableFilterQuery) {
+        return true;
+      }
+      return [
+        table.sourceSchema,
+        table.sourceTable,
+        table.targetSchema,
+        table.targetTable
+      ].some((value) => (value || "").toLowerCase().includes(tableFilterQuery));
+    });
+  }, [form.tables, tableFilterQuery, tableSelectionFilter]);
   const tableTotalItems = tableRows.length;
   const tableTotalPages = Math.max(1, Math.ceil(tableTotalItems / tablePageSize));
   const tableCurrentPage = clampPage(tablePageIndex, tableTotalPages);
@@ -1971,11 +1981,12 @@ function ChannelCreateWizardPage({
     setTablePageIndex(1);
     setTableFilterDraft("");
     setTableFilterText("");
+    setTableSelectionFilter("all");
   }, [form.sourceDatasourceId, form.targetDatasourceId, form.sourceDatabase, form.targetDatabase]);
 
   useEffect(() => {
     setTablePageIndex(1);
-  }, [tableFilterQuery]);
+  }, [tableFilterQuery, tableSelectionFilter]);
 
   const patchForm = (patch: Partial<ChannelWizardFormState>) => setForm((current) => ({ ...current, ...patch }));
 
@@ -2516,6 +2527,16 @@ function ChannelCreateWizardPage({
                     <div className="flex flex-col gap-3 md:flex-row md:flex-wrap md:items-center">
                       <div className="text-base font-semibold text-coal">表</div>
                       <div className="text-sm font-medium text-slate-500">已选 {selectedTables.length}</div>
+                      <div className="w-full md:w-[128px]">
+                        <DropdownSelect
+                          value={tableSelectionFilter}
+                          ariaLabel="过滤类型"
+                          options={tableSelectionFilterOptions()}
+                          showSelectedDescription={false}
+                          onChange={(value) => setTableSelectionFilter(value as TableSelectionFilter)}
+                          className="h-10 min-h-10"
+                        />
+                      </div>
                       <label className="relative block w-full md:w-[280px]">
                         <MagnifyingGlass aria-hidden="true" className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500" size={17} />
                         <TextInput
@@ -2536,7 +2557,7 @@ function ChannelCreateWizardPage({
                         <MagnifyingGlass size={16} />
                         查询
                       </Button>
-                      {tableFilterQuery && (
+                      {(tableFilterQuery || tableSelectionFilter !== "all") && (
                         <div className="text-sm font-medium text-slate-500">匹配 {tableTotalItems}</div>
                       )}
                     </div>
@@ -6648,6 +6669,14 @@ function channelStatusOptions() {
     { value: "failed", label: "失败" },
     { value: "stopped", label: "已停止" },
     { value: "archived", label: "已归档" }
+  ];
+}
+
+function tableSelectionFilterOptions() {
+  return [
+    { value: "all", label: "全部" },
+    { value: "selected", label: "已选" },
+    { value: "unselected", label: "未选" }
   ];
 }
 
