@@ -155,7 +155,7 @@ type ChannelTableMappingDraft = Omit<ChannelTableMappingInput, "columns"> & {
   columns: ChannelColumnMappingDraft[];
 };
 
-type ChannelWizardStep = "connections" | "tasks" | "tables" | "columns";
+type ChannelWizardStep = "connections" | "tasks" | "sourceTables" | "targetTables" | "columns";
 type ResourceSpec = "0.5G" | "1G" | "2G" | "3G" | "4G";
 type DatasourceTestState = "idle" | "testing" | "success" | "failed";
 type MetadataLoadState = "idle" | "loading" | "success" | "failed";
@@ -215,7 +215,7 @@ const navItems: Array<{ id: MainPage; label: string; icon: typeof Database }> = 
   { id: "nodes", label: "节点", icon: HardDrives }
 ];
 
-const channelWizardSteps: ChannelWizardStep[] = ["connections", "tasks", "tables", "columns"];
+const channelWizardSteps: ChannelWizardStep[] = ["connections", "tasks", "sourceTables", "targetTables", "columns"];
 const resourceSpecOptions: ResourceSpec[] = ["0.5G", "1G", "2G", "3G", "4G"];
 
 const emptyDatasourceForm: DatasourceFormState = {
@@ -1586,6 +1586,11 @@ function ChannelCreateWizardPage({
   const [tableFilterDraft, setTableFilterDraft] = useState("");
   const [tableFilterText, setTableFilterText] = useState("");
   const [tableSelectionFilter, setTableSelectionFilter] = useState<TableSelectionFilter>("all");
+  const [targetTablePageIndex, setTargetTablePageIndex] = useState(1);
+  const [targetTableJumpPageDraft, setTargetTableJumpPageDraft] = useState("1");
+  const [targetTableFilterDraft, setTargetTableFilterDraft] = useState("");
+  const [targetTableFilterText, setTargetTableFilterText] = useState("");
+  const targetTableListId = useId();
   const columnMetadataRequestKey = useMemo(() => (
     form.tables
       .filter((table) => table.enabled)
@@ -1931,6 +1936,7 @@ function ChannelCreateWizardPage({
   const requiredCapacity = channelResourceSpecGB(form.resourceSpec);
   const hasCapacity = Boolean(selectedNode && selectedNode.capacity >= requiredCapacity);
   const selectedTables = form.tables.filter((table) => table.enabled);
+  const selectedTableCount = selectedTables.length;
   const tablePageSize = 10;
   const tableFilterQuery = tableFilterText.trim().toLowerCase();
   const tableRows = useMemo(() => {
@@ -1959,6 +1965,26 @@ function ChannelCreateWizardPage({
   const tablePageStart = (tableCurrentPage - 1) * tablePageSize;
   const tablePageRows = tableRows.slice(tablePageStart, tablePageStart + tablePageSize);
   const tablePageNumbers = useMemo(() => paginationRange(tableCurrentPage, tableTotalPages), [tableCurrentPage, tableTotalPages]);
+  const targetTablePageSize = 10;
+  const targetTableFilterQuery = targetTableFilterText.trim().toLowerCase();
+  const targetTableRows = useMemo(() => {
+    const rows = form.tables.map((table, tableIndex) => ({ table, tableIndex })).filter(({ table }) => table.enabled);
+    if (!targetTableFilterQuery) {
+      return rows;
+    }
+    return rows.filter(({ table }) => [
+      table.sourceSchema,
+      table.sourceTable,
+      table.targetSchema,
+      table.targetTable
+    ].some((value) => (value || "").toLowerCase().includes(targetTableFilterQuery)));
+  }, [form.tables, targetTableFilterQuery]);
+  const targetTableTotalItems = targetTableRows.length;
+  const targetTableTotalPages = Math.max(1, Math.ceil(targetTableTotalItems / targetTablePageSize));
+  const targetTableCurrentPage = clampPage(targetTablePageIndex, targetTableTotalPages);
+  const targetTablePageStart = (targetTableCurrentPage - 1) * targetTablePageSize;
+  const targetTablePageRows = targetTableRows.slice(targetTablePageStart, targetTablePageStart + targetTablePageSize);
+  const targetTablePageNumbers = useMemo(() => paginationRange(targetTableCurrentPage, targetTableTotalPages), [targetTableCurrentPage, targetTableTotalPages]);
   const connectionStepValid = Boolean(
     form.name.trim()
     && form.runNodeId
@@ -1968,19 +1994,20 @@ function ChannelCreateWizardPage({
     && form.targetTestState === "success"
   );
   const taskStepValid = hasCapacity && (form.kind === "sync" || form.schemaCompare || form.dataValidation);
-  const tableStepValid = Boolean(form.sourceDatabase && form.targetDatabase && !sameDatasourceSameDatabase) && selectedTables.length > 0 && selectedTables.every((table) => (
-    table.sourceTable.trim() && table.targetTable.trim()
-  ));
-  const columnStepValid = tableStepValid && selectedTables.every((table) => table.columns.some((column) => column.enabled !== false && column.sourceColumn.trim() && column.targetColumn.trim()));
+  const sourceTableStepValid = Boolean(form.sourceDatabase) && selectedTableCount > 0 && selectedTables.every((table) => table.sourceTable.trim());
+  const targetTableStepValid = sourceTableStepValid && Boolean(form.targetDatabase && !sameDatasourceSameDatabase) && selectedTables.every((table) => table.targetTable.trim());
+  const columnStepValid = targetTableStepValid && selectedTables.every((table) => table.columns.some((column) => column.enabled !== false && column.sourceColumn.trim() && column.targetColumn.trim()));
   const stepIndex = channelWizardSteps.indexOf(step);
-  const maxReachableStepIndex = !connectionStepValid ? 0 : !taskStepValid ? 1 : !tableStepValid ? 2 : 3;
+  const maxReachableStepIndex = !connectionStepValid ? 0 : !taskStepValid ? 1 : !sourceTableStepValid ? 2 : !targetTableStepValid ? 3 : 4;
   const currentStepValid = step === "connections"
     ? connectionStepValid
     : step === "tasks"
       ? taskStepValid
-      : step === "tables"
-        ? tableStepValid
-        : columnStepValid;
+      : step === "sourceTables"
+        ? sourceTableStepValid
+        : step === "targetTables"
+          ? targetTableStepValid
+          : columnStepValid;
   const nextStepDisabled = submitting;
 
   useEffect(() => {
@@ -1988,25 +2015,45 @@ function ChannelCreateWizardPage({
   }, [tableTotalPages]);
 
   useEffect(() => {
+    setTargetTablePageIndex((current) => clampPage(current, targetTableTotalPages));
+  }, [targetTableTotalPages]);
+
+  useEffect(() => {
     setTableJumpPageDraft(String(tableCurrentPage));
   }, [tableCurrentPage]);
+
+  useEffect(() => {
+    setTargetTableJumpPageDraft(String(targetTableCurrentPage));
+  }, [targetTableCurrentPage]);
 
   useEffect(() => {
     setTablePageIndex(1);
     setTableFilterDraft("");
     setTableFilterText("");
     setTableSelectionFilter("all");
+    setTargetTablePageIndex(1);
+    setTargetTableFilterDraft("");
+    setTargetTableFilterText("");
   }, [form.sourceDatasourceId, form.targetDatasourceId, form.sourceDatabase, form.targetDatabase]);
 
   useEffect(() => {
     setTablePageIndex(1);
   }, [tableFilterQuery, tableSelectionFilter]);
 
+  useEffect(() => {
+    setTargetTablePageIndex(1);
+  }, [targetTableFilterQuery, selectedTableCount]);
+
   const patchForm = (patch: Partial<ChannelWizardFormState>) => setForm((current) => ({ ...current, ...patch }));
 
   const applyTableFilter = () => {
     setTableFilterText(tableFilterDraft);
     setTablePageIndex(1);
+  };
+
+  const applyTargetTableFilter = () => {
+    setTargetTableFilterText(targetTableFilterDraft);
+    setTargetTablePageIndex(1);
   };
 
   const updateSourceDatasource = (datasourceId: string) => {
@@ -2095,6 +2142,10 @@ function ChannelCreateWizardPage({
     setTablePageIndex(clampPage(nextPage, tableTotalPages));
   };
 
+  const goToTargetTablePage = (nextPage: number) => {
+    setTargetTablePageIndex(clampPage(nextPage, targetTableTotalPages));
+  };
+
   const commitTableJumpPage = () => {
     if (!tableJumpPageDraft.trim()) {
       setTableJumpPageDraft(String(tableCurrentPage));
@@ -2105,6 +2156,16 @@ function ChannelCreateWizardPage({
     setTableJumpPageDraft(String(nextPage));
   };
 
+  const commitTargetTableJumpPage = () => {
+    if (!targetTableJumpPageDraft.trim()) {
+      setTargetTableJumpPageDraft(String(targetTableCurrentPage));
+      return;
+    }
+    const nextPage = clampPage(Number(targetTableJumpPageDraft), targetTableTotalPages);
+    setTargetTablePageIndex(nextPage);
+    setTargetTableJumpPageDraft(String(nextPage));
+  };
+
   const updateTable = (index: number, patch: Partial<ChannelWizardTableDraft>) => {
     setForm((current) => ({
       ...current,
@@ -2112,9 +2173,12 @@ function ChannelCreateWizardPage({
         if (tableIndex !== index) return table;
         const sourceTableChanged = patch.sourceTable !== undefined && patch.sourceTable !== table.sourceTable;
         const targetTableChanged = patch.targetTable !== undefined && patch.targetTable !== table.targetTable;
+        const nextTargetTable = (patch.targetTable ?? table.targetTable).trim();
+        const targetTableExists = targetTableOptions.some((targetTable) => targetTable === nextTargetTable);
         return {
           ...table,
           ...patch,
+          createTarget: targetTableChanged && targetTableLoadState === "success" ? Boolean(nextTargetTable) && !targetTableExists : patch.createTarget ?? table.createTarget,
           primaryKeysText: sourceTableChanged ? "" : table.primaryKeysText,
           columns: sourceTableChanged || targetTableChanged ? [] : table.columns
         };
@@ -2204,7 +2268,7 @@ function ChannelCreateWizardPage({
       pushNotice({ tone: "warning", message: "权限不足" });
       return;
     }
-    if (!connectionStepValid || !taskStepValid || !columnStepValid) {
+    if (!connectionStepValid || !taskStepValid || !targetTableStepValid || !columnStepValid) {
       pushNotice({ tone: "warning", message: "配置不完整" });
       return;
     }
@@ -2287,7 +2351,7 @@ function ChannelCreateWizardPage({
         ) : (
           <div className="grid gap-6 lg:h-full lg:min-h-0 lg:grid-rows-[auto_minmax(0,1fr)]">
             <nav className="toolbar overflow-x-auto" aria-label="Canal 创建步骤">
-              <div className="grid min-w-[680px] grid-cols-4 gap-3">
+              <div className="grid min-w-[860px] grid-cols-5 gap-3">
                 {channelWizardSteps.map((wizardStep, index) => (
                   <Button
                     key={wizardStep}
@@ -2509,10 +2573,10 @@ function ChannelCreateWizardPage({
                 </div>
               )}
 
-              {step === "tables" && (
+              {step === "sourceTables" && (
                 <div className="grid gap-5 p-5">
                   <div className="grid gap-4 md:grid-cols-2">
-                    <Field label="源 DB" required error={!form.sourceDatabase ? "必选" : sameDatasourceSameDatabase ? "需不同" : undefined}>
+                    <Field label="源 DB" required error={!form.sourceDatabase ? "必选" : undefined}>
                       <DropdownSelect
                         value={form.sourceDatabase}
                         ariaLabel="源 DB"
@@ -2521,26 +2585,17 @@ function ChannelCreateWizardPage({
                         onChange={updateSourceDatabase}
                       />
                     </Field>
-                    <Field label="目标 DB" required error={!form.targetDatabase ? "必选" : sameDatasourceSameDatabase ? "需不同" : undefined}>
-                      <DropdownSelect
-                        value={form.targetDatabase}
-                        ariaLabel="目标 DB"
-                        options={targetDatabaseSelectOptions}
-                        disabled={targetDatabaseLoadState === "loading"}
-                        onChange={updateTargetDatabase}
-                      />
-                    </Field>
                   </div>
-                  {(sourceMetadataError || targetMetadataError) && (
+                  {sourceMetadataError && (
                     <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-                      {sourceMetadataError || targetMetadataError}
+                      {sourceMetadataError}
                     </div>
                   )}
 
                   <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
                     <div className="flex flex-col gap-3 md:flex-row md:flex-wrap md:items-center">
-                      <div className="text-base font-semibold text-coal">表</div>
-                      <div className="text-sm font-medium text-slate-500">已选 {selectedTables.length}</div>
+                      <div className="text-base font-semibold text-coal">源端订阅表</div>
+                      <div className="text-sm font-medium text-slate-500">已选 {selectedTableCount}</div>
                       <div className="w-full md:w-[128px]">
                         <DropdownSelect
                           value={tableSelectionFilter}
@@ -2580,25 +2635,21 @@ function ChannelCreateWizardPage({
                   {sourceTableLoadState === "loading" ? (
                     <EmptyPanel icon={Database} title="加载中" />
                   ) : form.tables.length === 0 ? (
-                    <EmptyPanel icon={Database} title="暂无表" />
+                    <EmptyPanel icon={Database} title="暂无源表" />
                   ) : tableTotalItems === 0 ? (
                     <EmptyPanel icon={MagnifyingGlass} title="无匹配" />
                   ) : (
                     <div className="rounded-lg border border-line">
                       <div className="overflow-x-auto">
-                        <table className="w-full min-w-[760px] table-fixed text-left text-sm">
+                        <table className="w-full min-w-[560px] table-fixed text-left text-sm">
                           <colgroup>
                             <col className="w-[90px]" />
-                            <col className="w-[260px]" />
-                            <col className="w-[260px]" />
-                            <col className="w-[150px]" />
+                            <col className="w-[470px]" />
                           </colgroup>
                           <thead className="border-b border-line bg-slate-50 text-xs font-semibold text-slate-500">
                             <tr>
-                              <th className="px-4 py-3">同步</th>
+                              <th className="px-4 py-3">订阅</th>
                               <th className="px-4 py-3">源表</th>
-                              <th className="px-4 py-3">目标表</th>
-                              <th className="px-4 py-3">目标状态</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-line">
@@ -2609,12 +2660,6 @@ function ChannelCreateWizardPage({
                                 </td>
                                 <td className="px-4 py-3">
                                   <div className="truncate font-medium text-coal" title={table.sourceTable}>{table.sourceTable}</div>
-                                </td>
-                                <td className="px-4 py-3">
-                                  <div className="truncate text-coal" title={table.targetTable}>{table.targetTable}</div>
-                                </td>
-                                <td className="px-4 py-3">
-                                  <TableTargetStatusBadge table={table} targetTableLoadState={targetTableLoadState} />
                                 </td>
                               </tr>
                             ))}
@@ -2656,6 +2701,152 @@ function ChannelCreateWizardPage({
                               if (event.key === "Enter") {
                                 event.preventDefault();
                                 commitTableJumpPage();
+                              }
+                            }}
+                            className="input h-10 w-16 px-3 py-2 text-center"
+                          />
+                          <span className="text-slate-500">页</span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {step === "targetTables" && (
+                <div className="grid gap-5 p-5">
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <Field label="目标 DB" required error={!form.targetDatabase ? "必选" : sameDatasourceSameDatabase ? "需不同" : undefined}>
+                      <DropdownSelect
+                        value={form.targetDatabase}
+                        ariaLabel="目标 DB"
+                        options={targetDatabaseSelectOptions}
+                        disabled={targetDatabaseLoadState === "loading"}
+                        onChange={updateTargetDatabase}
+                      />
+                    </Field>
+                  </div>
+                  {targetMetadataError && (
+                    <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                      {targetMetadataError}
+                    </div>
+                  )}
+                  {targetTableOptions.length > 0 && (
+                    <datalist id={targetTableListId}>
+                      {targetTableOptions.map((targetTable) => (
+                        <option key={targetTable} value={targetTable} />
+                      ))}
+                    </datalist>
+                  )}
+
+                  <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+                    <div className="flex flex-col gap-3 md:flex-row md:flex-wrap md:items-center">
+                      <div className="text-base font-semibold text-coal">目标端映射表</div>
+                      <div className="text-sm font-medium text-slate-500">已映射 {selectedTableCount}</div>
+                      <label className="relative block w-full md:w-[280px]">
+                        <MagnifyingGlass aria-hidden="true" className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500" size={17} />
+                        <TextInput
+                          aria-label="搜映射表"
+                          className="input h-10 pl-10"
+                          value={targetTableFilterDraft}
+                          placeholder="搜表"
+                          onChange={(event) => setTargetTableFilterDraft(event.target.value)}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter") {
+                              event.preventDefault();
+                              applyTargetTableFilter();
+                            }
+                          }}
+                        />
+                      </label>
+                      <Button type="button" onClick={applyTargetTableFilter} className="btn-primary h-10 min-w-[86px]">
+                        <MagnifyingGlass size={16} />
+                        查询
+                      </Button>
+                      {targetTableFilterQuery && (
+                        <div className="text-sm font-medium text-slate-500">匹配 {targetTableTotalItems}</div>
+                      )}
+                    </div>
+                  </div>
+
+                  {selectedTableCount === 0 ? (
+                    <EmptyPanel icon={Database} title="未选源表" />
+                  ) : targetTableTotalItems === 0 ? (
+                    <EmptyPanel icon={MagnifyingGlass} title="无匹配" />
+                  ) : (
+                    <div className="rounded-lg border border-line">
+                      <div className="overflow-x-auto">
+                        <table className="w-full min-w-[860px] table-fixed text-left text-sm">
+                          <colgroup>
+                            <col className="w-[280px]" />
+                            <col className="w-[360px]" />
+                            <col className="w-[160px]" />
+                          </colgroup>
+                          <thead className="border-b border-line bg-slate-50 text-xs font-semibold text-slate-500">
+                            <tr>
+                              <th className="px-4 py-3">源表</th>
+                              <th className="px-4 py-3">目标表</th>
+                              <th className="px-4 py-3">目标状态</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-line">
+                            {targetTablePageRows.map(({ table, tableIndex }) => (
+                              <tr key={table.localId}>
+                                <td className="px-4 py-3">
+                                  <div className="truncate font-medium text-coal" title={table.sourceTable}>{table.sourceTable}</div>
+                                </td>
+                                <td className="px-4 py-3">
+                                  <TextInput
+                                    className="input h-10"
+                                    list={targetTableOptions.length > 0 ? targetTableListId : undefined}
+                                    value={table.targetTable}
+                                    placeholder="目标表"
+                                    onChange={(event) => updateTable(tableIndex, { targetTable: event.target.value })}
+                                  />
+                                </td>
+                                <td className="px-4 py-3">
+                                  <TableTargetStatusBadge table={table} targetTableLoadState={targetTableLoadState} />
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                      <div className="flex flex-col gap-3 border-t border-line px-4 py-3 text-sm text-slate-600 lg:flex-row lg:items-center lg:justify-between">
+                        <div>共 {targetTableTotalItems} 条</div>
+                        <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+                          <PaginationButton label="上一页" disabled={targetTableCurrentPage <= 1} onClick={() => goToTargetTablePage(targetTableCurrentPage - 1)}>
+                            <CaretLeft size={16} />
+                          </PaginationButton>
+                          {targetTablePageNumbers.map((pageNumber) => (
+                            <Button
+                              key={pageNumber}
+                              type="button"
+                              onClick={() => goToTargetTablePage(pageNumber)}
+                              className={cx(
+                                "inline-flex h-10 min-w-10 items-center justify-center rounded-lg border px-3 text-sm font-semibold transition active:translate-y-px",
+                                targetTableCurrentPage === pageNumber
+                                  ? "border-accent bg-accent text-white shadow-raised"
+                                  : "border-line bg-white text-coal hover:border-blue-200 hover:bg-blue-50 hover:text-accent"
+                              )}
+                            >
+                              {pageNumber}
+                            </Button>
+                          ))}
+                          <PaginationButton label="下一页" disabled={targetTableCurrentPage >= targetTableTotalPages} onClick={() => goToTargetTablePage(targetTableCurrentPage + 1)}>
+                            <CaretRight size={16} />
+                          </PaginationButton>
+                          <span className="ml-2 text-slate-500">前往</span>
+                          <TextInput
+                            aria-label="页码"
+                            inputMode="numeric"
+                            value={targetTableJumpPageDraft}
+                            onChange={(event) => setTargetTableJumpPageDraft(event.target.value.replace(/\D/g, "").slice(0, 4))}
+                            onBlur={commitTargetTableJumpPage}
+                            onKeyDown={(event) => {
+                              if (event.key === "Enter") {
+                                event.preventDefault();
+                                commitTargetTableJumpPage();
                               }
                             }}
                             className="input h-10 w-16 px-3 py-2 text-center"
@@ -6389,6 +6580,9 @@ function Badge({ tone, children }: { tone: BadgeTone; children: ReactNode }) {
 }
 
 function TableTargetStatusBadge({ table, targetTableLoadState }: { table: ChannelWizardTableDraft; targetTableLoadState: MetadataLoadState }) {
+  if (!table.targetTable.trim()) {
+    return <Badge tone="red">未映射</Badge>;
+  }
   if (targetTableLoadState === "loading") {
     return <Badge tone="neutral">加载中</Badge>;
   }
@@ -7209,7 +7403,8 @@ function channelWizardStepLabel(step: ChannelWizardStep) {
   const labels: Record<ChannelWizardStep, string> = {
     connections: "选择数据源",
     tasks: "选择任务类型",
-    tables: "选择表",
+    sourceTables: "源端订阅表",
+    targetTables: "目标端映射表",
     columns: "选择列"
   };
   return labels[step];
@@ -7218,7 +7413,8 @@ function channelWizardStepLabel(step: ChannelWizardStep) {
 function channelWizardStepError(step: ChannelWizardStep) {
   if (step === "connections") return "选择数据源未完成";
   if (step === "tasks") return "选择任务类型未完成";
-  if (step === "tables") return "选择表未完成";
+  if (step === "sourceTables") return "选择源端订阅表未完成";
+  if (step === "targetTables") return "选择目标端映射表未完成";
   return "选择列未完成";
 }
 
