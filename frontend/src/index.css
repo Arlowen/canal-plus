@@ -3,8 +3,8 @@
 @tailwind utilities;
 
 :root {
-  color: #1d2430;
-  background: #f5f8ff;
+  color: #172033;
+  background: #f6f9ff;
   --font-display: "HarmonyOS Sans SC", "MiSans", "PingFang SC", "Noto Sans SC Variable", "Microsoft YaHei UI", sans-serif;
   --font-body: "HarmonyOS Sans SC", "MiSans", "PingFang SC", "Noto Sans SC Variable", "Microsoft YaHei UI", sans-serif;
   font-synthesis: none;
@@ -27,10 +27,9 @@ body {
   min-height: 100dvh;
   font-family: var(--font-body);
   background:
-    linear-gradient(180deg, rgba(37, 99, 235, 0.08), rgba(245, 248, 255, 0) 280px),
-    linear-gradient(90deg, rgba(96, 165, 250, 0.10), transparent 38%),
-    #f5f8ff;
-  background-size: 100% 280px, auto, auto;
+    linear-gradient(180deg, rgba(0, 82, 255, 0.055), rgba(246, 249, 255, 0) 260px),
+    #f6f9ff;
+  background-size: 100% 260px, auto;
 }
 
 button,
@@ -58,12 +57,12 @@ input[type="number"]::-webkit-outer-spin-button {
   }
 
   .surface-muted {
-    @apply rounded-lg border border-line/80 bg-slate-50/80;
+    @apply rounded-lg border border-line/80 bg-[#f8fbff];
   }
 
   .brand-wordmark {
     font-family: var(--font-display);
-    @apply flex items-baseline gap-1 text-[22px] font-semibold leading-none tracking-tight text-coal;
+    @apply flex items-baseline gap-1 text-[22px] font-semibold leading-none text-coal;
   }
 
   .page-shell {
@@ -79,19 +78,19 @@ input[type="number"]::-webkit-outer-spin-button {
   }
 
   .btn {
-    @apply inline-flex items-center justify-center gap-2 rounded-lg border px-4 py-2.5 text-sm font-medium transition duration-200 active:translate-y-px disabled:cursor-not-allowed disabled:opacity-45;
+    @apply inline-flex items-center justify-center gap-2 rounded-lg border px-4 py-2.5 text-sm font-semibold transition duration-200 active:translate-y-px disabled:cursor-not-allowed disabled:opacity-45;
   }
 
   .btn-primary {
-    @apply btn border-accent bg-accent text-white shadow-raised hover:bg-blue-700;
+    @apply btn border-accent bg-accent text-white shadow-none hover:bg-[#003ecc];
   }
 
   .btn-secondary {
-    @apply btn border-line bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50;
+    @apply btn border-line bg-white text-slate-700 shadow-none hover:border-blue-200 hover:bg-[#f8fbff] hover:text-coal;
   }
 
   .btn-danger {
-    @apply btn border-red-200 bg-red-50 text-red-700 hover:bg-red-100;
+    @apply btn border-red-200 bg-white text-red-700 hover:bg-red-50;
   }
 
   .btn-compact {
@@ -111,11 +110,11 @@ input[type="number"]::-webkit-outer-spin-button {
   }
 
   .chip {
-    @apply inline-flex items-center gap-2 whitespace-nowrap rounded-md border px-2.5 py-1 text-xs font-medium;
+    @apply inline-flex items-center gap-2 whitespace-nowrap rounded-md border px-2.5 py-1 text-xs font-semibold;
   }
 
   .table-shell {
-    @apply overflow-x-auto rounded-lg border border-line bg-white;
+    @apply overflow-x-auto rounded-lg border border-line bg-white shadow-none;
   }
 
   .table-row {
@@ -129,10 +128,48 @@ input[type="number"]::-webkit-outer-spin-button {
   .label {
     @apply text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500;
   }
+
+  .page-titlebar {
+    @apply flex min-h-[88px] items-center border-b border-line bg-white px-5 md:px-8;
+  }
+
+  .toolbar {
+    @apply rounded-lg border border-line bg-white p-3 shadow-none;
+  }
+
+  .log-console {
+    @apply overflow-hidden rounded-lg border border-slate-800 bg-[#0b1220] text-slate-200 shadow-none;
+  }
+
+  .log-line {
+    @apply border-b border-slate-800/80 px-5 py-3 font-mono text-xs leading-6 text-slate-300 last:border-b-0;
+  }
+}
+
+.tracking-tight {
+  letter-spacing: 0 !important;
+}
+
+.table-shell thead {
+  background: #f8fbff;
+  color: #64748b;
+}
+
+.table-shell tbody tr {
+  transition: background-color 160ms ease;
+}
+
+.table-shell tbody tr:hover {
+  background: #f8fbff;
+}
+
+.table-shell th {
+  font-size: 13px;
+  font-weight: 700;
 }
 
 .skeleton {
-  background: linear-gradient(90deg, #e6ebf2 20%, #fbfcfd 40%, #e6ebf2 63%);
+  background: linear-gradient(90deg, #e5edf8 20%, #fbfdff 40%, #e5edf8 63%);
   background-size: 400% 100%;
   animation: shimmer 1.45s ease-in-out infinite;
 }

@@ -482,7 +482,7 @@ function ParticleWordmark({ wordmark }: { wordmark: string }) {
         context.fill();
 
         context.globalAlpha = particle.opacity;
-        context.fillStyle = "#2563eb";
+        context.fillStyle = "#0052ff";
         context.beginPath();
         context.arc(particle.currentX, particle.currentY, particle.size * pulse, 0, Math.PI * 2);
         context.fill();
@@ -700,7 +700,7 @@ function BrandParticleTile({ className }: { className?: string }) {
         if (velocity > maxVelocity) maxVelocity = velocity;
 
         context.globalAlpha = particle.opacity;
-        context.fillStyle = particle.seed > 0.62 ? "#1d4ed8" : "#2563eb";
+        context.fillStyle = particle.seed > 0.62 ? "#003ecc" : "#0052ff";
         context.beginPath();
         context.arc(particle.currentX, particle.currentY, particle.size, 0, Math.PI * 2);
         context.fill();
@@ -995,7 +995,7 @@ function App() {
   }
 
   return (
-    <div className="min-h-[100dvh] bg-white text-ink">
+    <div className="min-h-[100dvh] bg-mist text-ink">
       <NoticeToastViewport>
         {serviceUnavailable && (
           <NoticeToast
@@ -1023,8 +1023,8 @@ function App() {
       </NoticeToastViewport>
       <div className="page-shell">
         <div className="grid min-h-[100dvh] overflow-hidden border-x border-line/70 bg-white lg:grid-cols-[280px_minmax(0,1fr)]">
-          <aside className="flex h-fit flex-col border-b border-line/80 pb-3 lg:sticky lg:top-0 lg:min-h-[100dvh] lg:border-b-0 lg:border-r">
-            <div className="flex h-[101px] items-center justify-center border-b border-line/80 px-5">
+          <aside className="flex h-fit flex-col border-b border-line/80 bg-white pb-3 lg:sticky lg:top-0 lg:min-h-[100dvh] lg:border-b-0 lg:border-r">
+            <div className="flex h-[92px] items-center justify-start border-b border-line/80 px-5">
               <BrandParticleTile />
             </div>
 
@@ -1038,8 +1038,8 @@ function App() {
                     className={cx(
                       "flex min-h-12 items-center justify-start gap-3 rounded-lg px-4 py-3 text-left text-sm font-medium transition",
                       navPage(page) === item.id
-                        ? "border border-blue-100 bg-blue-50 text-accent shadow-[inset_4px_0_0_#2563eb]"
-                        : "border border-transparent text-slate-600 hover:border-line hover:bg-slate-50 hover:text-coal"
+                        ? "border border-accent bg-accent text-white shadow-none"
+                        : "border border-transparent text-slate-600 hover:border-blue-100 hover:bg-blue-50 hover:text-accent"
                     )}
                   >
                     <Icon size={18} />
@@ -1058,9 +1058,9 @@ function App() {
 
           <main className="min-w-0">
             {page !== "channels" && page !== "channelDetail" && page !== "channelCreate" && page !== "datasources" && page !== "nodes" && page !== "datasourceCreate" && page !== "datasourceEdit" && (
-              <div className="flex h-[101px] flex-col justify-center gap-1 border-b border-line px-5 md:px-8 xl:flex-row xl:items-center xl:justify-between">
+              <div className="flex min-h-[88px] flex-col justify-center gap-1 border-b border-line bg-white px-5 md:px-8 xl:flex-row xl:items-center xl:justify-between">
                 <div>
-                  <h1 className="text-3xl font-semibold tracking-tight text-coal">
+                  <h1 className="text-2xl font-semibold text-coal md:text-3xl">
                     {pageTitle(page)}
                   </h1>
                   {pageDescription(page) && (
@@ -1089,6 +1089,7 @@ function App() {
                 canManage={canManage}
                 onChanged={refresh}
                 onCreate={openChannelCreate}
+                onCreateDatasource={openDatasourceCreate}
                 onOpenChannel={openChannelDetail}
                 pushNotice={pushNotice}
               />
@@ -1181,6 +1182,7 @@ function ChannelsPage({
   canManage,
   onChanged,
   onCreate,
+  onCreateDatasource,
   onOpenChannel,
   pushNotice
 }: {
@@ -1189,6 +1191,7 @@ function ChannelsPage({
   canManage: boolean;
   onChanged: (quiet?: boolean) => Promise<void>;
   onCreate: () => void;
+  onCreateDatasource: () => void;
   onOpenChannel: (channelId: string) => void;
   pushNotice: (notice: Notice) => void;
 }) {
@@ -1295,8 +1298,8 @@ function ChannelsPage({
   return (
     <>
       <section className="min-w-0 overflow-hidden">
-        <div className="flex h-[101px] items-center border-b border-line px-5 md:px-8">
-          <h1 className="text-3xl font-semibold tracking-tight text-coal">Canal</h1>
+        <div className="page-titlebar">
+          <h1 className="text-2xl font-semibold text-coal md:text-3xl">Canal</h1>
         </div>
 
         <div className="px-5 py-6 md:px-8">
@@ -1342,7 +1345,7 @@ function ChannelsPage({
             </Button>
           </div>
 
-          <div className="overflow-x-auto rounded-lg border border-line bg-white">
+          <div className="table-shell">
             <table className="w-full min-w-[1020px] table-fixed border-collapse text-left">
               <colgroup>
                 <col className="w-[250px]" />
@@ -1369,12 +1372,23 @@ function ChannelsPage({
                   <tr>
                     <td colSpan={7} className="px-6 py-16">
                       <div className="mx-auto flex max-w-sm flex-col items-center text-center">
-                        <div className="text-base font-semibold text-coal">{channels.length === 0 ? "暂无 Canal" : "无匹配"}</div>
+                        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-lg border border-blue-100 bg-blue-50 text-accent">
+                          <Database size={20} />
+                        </div>
+                        <div className="mt-4 text-base font-semibold text-coal">{channels.length === 0 ? datasources.length === 0 ? "先加数据源" : "暂无 Canal" : "无匹配"}</div>
                         {canManage && channels.length === 0 && (
-                          <Button type="button" onClick={openCreate} className="btn-primary mt-5">
-                            <Plus size={16} />
-                            新增
-                          </Button>
+                          <div className="mt-5 flex flex-wrap justify-center gap-3">
+                            {datasources.length === 0 && (
+                              <Button type="button" onClick={onCreateDatasource} className="btn-primary">
+                                <Database size={16} />
+                                添加数据源
+                              </Button>
+                            )}
+                            <Button type="button" onClick={openCreate} className={datasources.length === 0 ? "btn-secondary" : "btn-primary"}>
+                              <Plus size={16} />
+                              创建 Canal
+                            </Button>
+                          </div>
                         )}
                       </div>
                     </td>
@@ -2257,9 +2271,9 @@ function ChannelCreateWizardPage({
   return (
     <>
       <section className="flex min-h-[100dvh] min-w-0 flex-col overflow-hidden lg:h-[100dvh] lg:min-h-0">
-      <div className="flex h-[101px] shrink-0 items-center justify-between border-b border-line px-5 md:px-8">
+      <div className="page-titlebar shrink-0 justify-between">
         <div className="min-w-0">
-          <h1 className="truncate text-3xl font-semibold tracking-tight text-coal">新增 Canal</h1>
+          <h1 className="truncate text-2xl font-semibold text-coal md:text-3xl">新增 Canal</h1>
         </div>
         <Button type="button" onClick={onBack} className="btn-secondary h-11 px-4">
           <ArrowRight size={16} className="rotate-180" />
@@ -2272,7 +2286,7 @@ function ChannelCreateWizardPage({
           <PermissionNotice description="当前账号不能创建 Canal。" />
         ) : (
           <div className="grid gap-6 lg:h-full lg:min-h-0 lg:grid-rows-[auto_minmax(0,1fr)]">
-            <nav className="overflow-x-auto rounded-lg border border-line bg-white p-3" aria-label="Canal 创建步骤">
+            <nav className="toolbar overflow-x-auto" aria-label="Canal 创建步骤">
               <div className="grid min-w-[680px] grid-cols-4 gap-3">
                 {channelWizardSteps.map((wizardStep, index) => (
                   <Button
@@ -2283,14 +2297,14 @@ function ChannelCreateWizardPage({
                     className={cx(
                       "flex min-h-14 items-center justify-center gap-3 rounded-lg px-4 text-sm font-semibold transition",
                       step === wizardStep
-                        ? "border border-blue-100 bg-blue-50 text-accent"
-                        : "border border-transparent bg-white text-slate-600 hover:border-line hover:bg-slate-50",
+                        ? "border border-accent bg-accent text-white"
+                        : "border border-transparent bg-white text-slate-600 hover:border-blue-100 hover:bg-blue-50 hover:text-accent",
                       index > maxReachableStepIndex && "cursor-not-allowed opacity-45"
                     )}
                   >
                     <span className={cx(
                       "flex h-7 w-7 shrink-0 items-center justify-center rounded-md border text-xs",
-                      step === wizardStep ? "border-blue-200 bg-white" : "border-line bg-slate-50"
+                      step === wizardStep ? "border-white/40 bg-white/15 text-white" : "border-line bg-slate-50"
                     )}>
                       {index + 1}
                     </span>
@@ -2300,7 +2314,7 @@ function ChannelCreateWizardPage({
               </div>
             </nav>
 
-            <div className="flex min-w-0 flex-col rounded-lg border border-line bg-white lg:min-h-0">
+            <div className="surface flex min-w-0 flex-col lg:min-h-0">
               <div className="min-h-0 lg:flex-1 lg:overflow-auto">
               {step === "connections" && (
                 <div className="grid gap-6 p-5">
@@ -2463,7 +2477,7 @@ function ChannelCreateWizardPage({
                               <div
                                 id="schema-migration-info"
                                 role="tooltip"
-                                className="absolute right-10 top-1/2 z-20 w-[min(520px,calc(100vw-112px))] -translate-y-1/2 rounded-lg border border-blue-100 bg-white px-3 py-2 text-sm font-medium leading-5 text-slate-700 shadow-[0_18px_54px_-24px_rgba(37,99,235,0.36)]"
+                                className="absolute right-10 top-1/2 z-20 w-[min(520px,calc(100vw-112px))] -translate-y-1/2 rounded-lg border border-blue-100 bg-white px-3 py-2 text-sm font-medium leading-5 text-slate-700 shadow-panel"
                               >
                                 系统根据实际选择的表判断是否需要结构迁移任务；有待创建的表时自动添加结构迁移任务，没有待创建的表时不会添加。
                               </div>
@@ -2860,8 +2874,8 @@ function ChannelDetailPage({
   if (!channelId || !channel) {
     return (
       <section>
-        <div className="flex h-[101px] items-center justify-between gap-4 border-b border-line px-5 md:px-8">
-          <h1 className="text-3xl font-semibold tracking-tight text-coal">Canal</h1>
+        <div className="page-titlebar justify-between gap-4">
+          <h1 className="text-2xl font-semibold text-coal md:text-3xl">Canal</h1>
           <Button type="button" onClick={onBack} className="btn-secondary">
             <ArrowRight size={14} className="rotate-180" />
             返回
@@ -2978,10 +2992,10 @@ function ChannelDetailPage({
 
   return (
     <section className="min-w-0 overflow-hidden">
-      <div className="flex min-h-[101px] flex-col justify-center gap-3 border-b border-line px-5 py-4 md:px-8 xl:flex-row xl:items-center xl:justify-between">
+      <div className="flex min-h-[88px] flex-col justify-center gap-3 border-b border-line bg-white px-5 py-4 md:px-8 xl:flex-row xl:items-center xl:justify-between">
         <div className="min-w-0">
           <div className="flex min-w-0 flex-wrap items-center gap-3">
-            <h1 className="truncate text-3xl font-semibold tracking-tight text-coal">{channel.name}</h1>
+            <h1 className="truncate text-2xl font-semibold text-coal md:text-3xl">{channel.name}</h1>
             <ChannelStatusBadge status={channel.status} />
           </div>
           <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-slate-500">
@@ -3092,7 +3106,7 @@ function ChannelOverview({
     <div className="grid gap-5 pt-5 xl:grid-cols-[0.9fr_1.1fr]">
       <div className="grid gap-4">
         <SectionHeader title="链路" />
-        <div className="rounded-lg border border-line bg-white p-4">
+        <div className="surface p-4">
           <div className="grid gap-3 text-sm">
             <OverviewRow label="源端" value={source ? `${source.name} · ${source.host}:${source.port}` : "-"} />
             <OverviewRow label="目标端" value={target ? `${target.name} · ${target.host}:${target.port}` : "-"} />
@@ -3111,7 +3125,7 @@ function ChannelOverview({
         {precheck ? (
           <div className="grid gap-3">
             {precheck.items.map((item) => (
-              <div key={item.key} className="flex items-center justify-between gap-3 rounded-lg border border-line bg-white px-4 py-3">
+              <div key={item.key} className="flex items-center justify-between gap-3 rounded-lg border border-line bg-white px-4 py-3 shadow-none">
                 <div>
                   <div className="font-medium text-coal">{item.label}</div>
                   <div className="mt-1 text-sm text-slate-500">{item.message}</div>
@@ -3151,7 +3165,7 @@ function ChannelDetailSummaryTile({
   detail: string;
 }) {
   return (
-    <div className="rounded-lg border border-line bg-white p-4">
+    <div className="surface p-4">
       <div className="flex items-center justify-between gap-3">
         <div className="text-sm font-medium text-slate-500">{label}</div>
         <Badge tone={tone}>{value}</Badge>
@@ -3241,7 +3255,7 @@ function ChannelMappingsEditor({
             </Button>
           ) : undefined} />
         ) : draft.map((table, tableIndex) => (
-          <div key={table.localId} className="rounded-lg border border-line bg-white p-4">
+          <div key={table.localId} className="surface p-4">
             <div className="grid gap-3 md:grid-cols-[1fr_1fr_1fr_1fr_1fr_auto]">
               <TextInput className="input" placeholder="源库" disabled={!canManage} value={table.sourceSchema || ""} onChange={(event) => updateTable(tableIndex, { sourceSchema: event.target.value })} />
               <TextInput className="input" placeholder="源表" disabled={!canManage} value={table.sourceTable} onChange={(event) => updateTable(tableIndex, { sourceTable: event.target.value })} />
@@ -3336,7 +3350,7 @@ function ChannelTasksPanel({
           新增
         </Button>
       </form>
-      <div className="mt-5 overflow-x-auto rounded-lg border border-line bg-white">
+      <div className="mt-5 table-shell">
         <table className="w-full min-w-[840px] table-fixed text-left">
           <colgroup>
             <col className="w-[220px]" />
@@ -3397,7 +3411,7 @@ function ChannelRunsPanel({ runs, tasks }: { runs: TaskRun[]; tasks: ChannelTask
   return (
     <div className="pt-5">
       <SectionHeader title="运行" />
-      <div className="mt-5 overflow-x-auto rounded-lg border border-line bg-white">
+      <div className="mt-5 table-shell">
         <table className="w-full min-w-[1110px] table-fixed text-left">
           <colgroup>
             <col className="w-[200px]" />
@@ -3494,16 +3508,16 @@ function ChannelLogsPanel({
         <DropdownSelect value={filters.runId} ariaLabel="日志 Run" className="w-[160px]" options={runOptions} showSelectedDescription={false} onChange={(runId) => onFiltersChange({ ...filters, runId })} />
         <DropdownSelect value={filters.level} ariaLabel="日志级别" className="w-[140px]" options={levelOptions} showSelectedDescription={false} onChange={(level) => onFiltersChange({ ...filters, level: level as ChannelLogFilters["level"] })} />
       </div>
-      <div className="mt-4 overflow-hidden rounded-lg border border-line bg-white">
+      <div className="mt-4 log-console">
         {logs.length === 0 ? (
-          <div className="px-5 py-12 text-center text-sm text-slate-500">暂无日志</div>
+          <div className="px-5 py-12 text-center font-mono text-sm text-slate-400">暂无日志</div>
         ) : logs.map((log) => (
-          <div key={log.id} className="border-b border-line px-5 py-3 font-mono text-xs text-slate-700 last:border-b-0">
+          <div key={log.id} className="log-line">
             <div className="flex flex-wrap items-start justify-between gap-3">
-              <span className={cx("min-w-0 break-all", log.level === "error" && "text-red-600", log.level === "warn" && "text-amber-700")}>
+              <span className={cx("min-w-0 break-all", log.level === "error" && "text-red-300", log.level === "warn" && "text-amber-300", log.level === "info" && "text-blue-100")}>
                 [{formatDateTime(log.createdAt)}][{log.level}][{log.thread}]{log.message}
               </span>
-              <span className="shrink-0 font-sans text-[11px] text-slate-400">
+              <span className="shrink-0 font-sans text-[11px] text-slate-500">
                 {tasks.find((task) => task.id === log.taskId)?.name || log.taskId || "-"} · {log.runId ? log.runId.slice(0, 8) : "-"}
               </span>
             </div>
@@ -3526,7 +3540,7 @@ function ChannelDiffsPanel({
   return (
     <div className="pt-5">
       <SectionHeader title="差异" />
-      <div className="mt-5 overflow-x-auto rounded-lg border border-line bg-white">
+      <div className="mt-5 table-shell">
         <table className="w-full min-w-[1200px] table-fixed text-left">
           <colgroup>
             <col className="w-[180px]" />
@@ -3586,7 +3600,7 @@ function DatasourceEndpointLabel({ datasource, fallback }: { datasource?: Dataso
 
 function MetricTile({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-lg border border-line bg-white p-4">
+    <div className="surface p-4">
       <div className="text-sm font-medium text-slate-500">{label}</div>
       <div className="mt-2 truncate text-2xl font-semibold text-coal">{value}</div>
     </div>
@@ -3786,8 +3800,8 @@ function DatasourcePage({
   return (
     <>
       <section className="min-w-0 overflow-hidden">
-        <div className="flex h-[101px] items-center border-b border-line px-5 md:px-8">
-          <h1 className="text-3xl font-semibold tracking-tight text-coal">数据源</h1>
+        <div className="page-titlebar">
+          <h1 className="text-2xl font-semibold text-coal md:text-3xl">数据源</h1>
         </div>
 
         <div className="px-5 py-6 md:px-8">
@@ -3843,7 +3857,7 @@ function DatasourcePage({
             )}
           </div>
 
-          <div className="overflow-x-auto rounded-lg border border-line bg-white">
+          <div className="table-shell">
             <table className="w-full min-w-[917px] table-fixed border-collapse text-left">
               <colgroup>
                 <col className="w-[240px]" />
@@ -4244,8 +4258,8 @@ function DatasourceCreatePage({
   if (!canManage) {
     return (
       <section>
-        <div className="flex h-[101px] items-center justify-between gap-4 border-b border-line px-5 md:px-8">
-          <h1 className="text-3xl font-semibold tracking-tight text-coal md:text-4xl">新增数据源</h1>
+        <div className="page-titlebar justify-between gap-4">
+          <h1 className="text-2xl font-semibold text-coal md:text-3xl">新增数据源</h1>
           <Button type="button" onClick={onBack} className="btn-secondary">
             <ArrowRight size={14} className="rotate-180" />
             返回
@@ -4261,8 +4275,8 @@ function DatasourceCreatePage({
   return (
     <form onSubmit={saveDatasource}>
       <section className="overflow-hidden">
-        <div className="flex h-[101px] items-center justify-between gap-4 border-b border-line px-5 md:px-8">
-          <h1 className="truncate text-3xl font-semibold tracking-tight text-coal md:text-4xl">新增数据源</h1>
+        <div className="page-titlebar justify-between gap-4">
+          <h1 className="truncate text-2xl font-semibold text-coal md:text-3xl">新增数据源</h1>
           <Button type="button" onClick={requestBack} className="btn-secondary">
             <ArrowRight size={14} className="rotate-180" />
             返回
@@ -4284,8 +4298,8 @@ function DatasourceCreatePage({
                     className={cx(
                       "flex min-h-[64px] items-center gap-3 rounded-lg border bg-white p-3 text-left transition active:translate-y-px",
                       selected
-                        ? "border-blue-300 bg-blue-50 shadow-[inset_3px_0_0_#2563eb]"
-                        : "border-line hover:border-blue-200 hover:bg-slate-50"
+                        ? "border-accent bg-blue-50 text-accent shadow-none"
+                        : "border-line hover:border-blue-200 hover:bg-blue-50"
                     )}
                   >
                     <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-cyan-100 bg-cyan-50">
@@ -4548,8 +4562,8 @@ function DatasourceEditPage({
   if (!canManage) {
     return (
       <section>
-        <div className="flex h-[101px] items-center justify-between gap-4 border-b border-line px-5 md:px-8">
-          <h1 className="text-3xl font-semibold tracking-tight text-coal md:text-4xl">编辑数据源</h1>
+        <div className="page-titlebar justify-between gap-4">
+          <h1 className="text-2xl font-semibold text-coal md:text-3xl">编辑数据源</h1>
           <Button type="button" onClick={onBack} className="btn-secondary">
             <ArrowRight size={14} className="rotate-180" />
             返回
@@ -4565,8 +4579,8 @@ function DatasourceEditPage({
   if (!datasource) {
     return (
       <section>
-        <div className="flex h-[101px] items-center justify-between gap-4 border-b border-line px-5 md:px-8">
-          <h1 className="text-3xl font-semibold tracking-tight text-coal md:text-4xl">编辑数据源</h1>
+        <div className="page-titlebar justify-between gap-4">
+          <h1 className="text-2xl font-semibold text-coal md:text-3xl">编辑数据源</h1>
           <Button type="button" onClick={onBack} className="btn-secondary">
             <ArrowRight size={14} className="rotate-180" />
             返回
@@ -4582,9 +4596,9 @@ function DatasourceEditPage({
   return (
     <form onSubmit={saveDatasource}>
       <section className="overflow-hidden">
-        <div className="flex h-[101px] items-center justify-between gap-4 border-b border-line px-5 md:px-8">
+        <div className="page-titlebar justify-between gap-4">
           <div className="flex min-w-0 items-center gap-3">
-            <h1 className="shrink-0 text-3xl font-semibold tracking-tight text-coal md:text-4xl">编辑数据源</h1>
+            <h1 className="shrink-0 text-2xl font-semibold text-coal md:text-3xl">编辑数据源</h1>
             <span className="inline-flex min-w-0 items-center gap-2 rounded-lg border border-line bg-slate-50 px-2.5 py-1.5 text-sm font-medium text-coal">
               <DatasourceTypeLogo type={form.type} className="h-5 w-5 shrink-0" />
               <span className="truncate">{datasourceTypeLabel}</span>
@@ -5012,8 +5026,8 @@ function NodesPage({
   return (
     <>
       <section className="min-w-0 overflow-hidden">
-        <div className="flex h-[101px] items-center border-b border-line px-5 md:px-8">
-          <h1 className="text-3xl font-semibold tracking-tight text-coal">节点</h1>
+        <div className="page-titlebar">
+          <h1 className="text-2xl font-semibold text-coal md:text-3xl">节点</h1>
         </div>
 
         <div className="px-5 py-6 md:px-8">
@@ -5068,7 +5082,7 @@ function NodesPage({
             </div>
           </div>
 
-          <div className="overflow-x-auto rounded-lg border border-line bg-white">
+          <div className="table-shell">
             <table className="w-full min-w-[976px] table-fixed border-collapse text-left">
               <colgroup>
                 <col className="w-[205px]" />
@@ -5372,8 +5386,8 @@ function NodeMonitorPage({
 
   return (
     <section className="min-w-0 px-5 py-6 md:px-8">
-      <div className="rounded-lg border border-line bg-white px-5 py-4 shadow-[0_18px_48px_-42px_rgba(37,99,235,0.35)] md:px-7">
-        <h2 className="truncate text-2xl font-semibold tracking-tight text-coal md:text-3xl">{selected.name || selected.id}</h2>
+      <div className="surface px-5 py-4 md:px-7">
+        <h2 className="truncate text-2xl font-semibold text-coal md:text-3xl">{selected.name || selected.id}</h2>
         <div className="mt-3 flex flex-wrap items-center gap-x-8 gap-y-3 text-sm text-slate-600">
           <Badge tone={nodeRoleTone(selectedRole)}>{nodeRoleText(selectedRole)}</Badge>
           <NodeStatusBadge status={selected.status} />
@@ -5445,7 +5459,7 @@ type ResourceTrendPoint = {
 
 function NodeMetricPanel({ metric }: { metric: NodeMonitorMetric }) {
   return (
-    <div className="min-h-[168px] rounded-lg border border-line bg-white p-5 shadow-[0_18px_48px_-42px_rgba(37,99,235,0.28)]">
+    <div className="surface min-h-[168px] p-5">
       <div className="flex items-start justify-between gap-4">
         <div>
           <div className="flex items-center gap-2 text-sm font-semibold text-coal">
@@ -5523,7 +5537,7 @@ function ResourceTrendPanel({
   }, [chart.points]);
 
   return (
-    <div className="rounded-lg border border-line bg-white p-5 shadow-[0_18px_48px_-42px_rgba(37,99,235,0.25)]">
+    <div className="surface p-5">
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div className="flex items-center gap-3">
           <h3 className="text-lg font-semibold tracking-tight text-coal">资源监控</h3>
@@ -5539,7 +5553,7 @@ function ResourceTrendPanel({
         />
       </div>
       <div className="mt-4 flex flex-wrap justify-center gap-8 text-sm font-medium text-slate-600">
-        <TrendLegend color="#2563eb" label="CPU 使用率 (%)" />
+        <TrendLegend color="#0052ff" label="CPU 使用率 (%)" />
         <TrendLegend color="#10b981" label="内存使用率 (%)" />
         <TrendLegend color="#f97316" label="磁盘使用率 (%)" />
       </div>
@@ -5559,13 +5573,13 @@ function ResourceTrendPanel({
           })}
           <line x1="58" x2="738" y1={chart.yFor(0)} y2={chart.yFor(0)} stroke="#cad9ea" />
           <line x1="58" x2="58" y1="22" y2={chart.yFor(0)} stroke="#dbe7f6" />
-          <path d={chart.cpuPath} fill="none" stroke="#2563eb" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.6" />
+          <path d={chart.cpuPath} fill="none" stroke="#0052ff" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.6" />
           <path d={chart.memoryPath} fill="none" stroke="#10b981" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.6" />
           <path d={chart.diskPath} fill="none" stroke="#f97316" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.6" />
           {hoverPoint && (
             <g pointerEvents="none">
               <line x1={hoverPoint.x} x2={hoverPoint.x} y1="22" y2={chart.yFor(0)} stroke="#94a3b8" strokeDasharray="3 4" />
-              <circle cx={hoverPoint.x} cy={hoverPoint.cpuY} r="4" fill="#2563eb" stroke="#ffffff" strokeWidth="2" />
+              <circle cx={hoverPoint.x} cy={hoverPoint.cpuY} r="4" fill="#0052ff" stroke="#ffffff" strokeWidth="2" />
               <circle cx={hoverPoint.x} cy={hoverPoint.memoryY} r="4" fill="#10b981" stroke="#ffffff" strokeWidth="2" />
               <circle cx={hoverPoint.x} cy={hoverPoint.diskY} r="4" fill="#f97316" stroke="#ffffff" strokeWidth="2" />
             </g>
@@ -5602,7 +5616,7 @@ function ResourceTrendPanel({
         })}
         {hoverPoint && (
           <div
-            className="pointer-events-none absolute z-10 w-48 rounded-lg border border-line bg-white/95 px-3 py-2 text-xs text-slate-600 shadow-[0_20px_56px_-28px_rgba(37,99,235,0.46)]"
+            className="pointer-events-none absolute z-10 w-48 rounded-lg border border-line bg-white/95 px-3 py-2 text-xs text-slate-600 shadow-panel"
             style={{
               left: `${resourceTrendPercent(hoverPoint.x, resourceTrendViewBox.width)}%`,
               top: `${resourceTrendPercent(Math.max(48, Math.min(hoverPoint.cpuY, hoverPoint.memoryY, hoverPoint.diskY) - 18), resourceTrendViewBox.height)}%`,
@@ -5610,7 +5624,7 @@ function ResourceTrendPanel({
             }}
           >
             <div className="mb-2 font-mono text-[11px] font-semibold text-coal">{formatTrendTooltipTime(hoverPoint.time)}</div>
-            <TrendTooltipRow color="#2563eb" label="CPU" value={`${formatMetricValue(hoverPoint.cpu)}%`} />
+            <TrendTooltipRow color="#0052ff" label="CPU" value={`${formatMetricValue(hoverPoint.cpu)}%`} />
             <TrendTooltipRow color="#10b981" label="内存" value={`${formatMetricValue(hoverPoint.memory)}%`} />
             <TrendTooltipRow color="#f97316" label="磁盘" value={`${formatMetricValue(hoverPoint.disk)}%`} />
           </div>
@@ -5683,7 +5697,7 @@ function buildNodeMonitorData(
         label: "CPU 使用率",
         value: cpuValue,
         unit: "%",
-        color: "#2563eb",
+        color: "#0052ff",
         ringValue: cpuValue
       },
       {
@@ -5691,7 +5705,7 @@ function buildNodeMonitorData(
         label: "内存使用率",
         value: memoryValue,
         unit: "%",
-        color: "#2563eb",
+        color: "#0052ff",
         ringValue: memoryValue
       },
       {
@@ -5699,7 +5713,7 @@ function buildNodeMonitorData(
         label: "磁盘使用率",
         value: diskValue,
         unit: "%",
-        color: "#2563eb",
+        color: "#0052ff",
         ringValue: diskValue
       }
     ],
@@ -6080,7 +6094,7 @@ function LoginScreen({ onLogin }: { onLogin: (username: string, password: string
   };
 
   return (
-    <div className="relative min-h-[100dvh] overflow-hidden bg-[linear-gradient(135deg,#f8fbff_0%,#eff6ff_46%,#dbeafe_100%)] text-ink">
+    <div className="relative min-h-[100dvh] overflow-hidden bg-mist text-ink">
       <ParticleWordmark wordmark="Canal Plus" />
       <div className="pointer-events-none relative grid min-h-[100dvh] max-w-[1400px] items-center gap-8 px-5 py-6 md:px-8 lg:mx-auto lg:grid-cols-[1.2fr_0.8fr] lg:gap-10">
         <section aria-hidden="true" className="order-2 min-h-[340px] py-8 md:min-h-[480px] lg:order-1 lg:min-h-[640px]" />
@@ -6092,7 +6106,7 @@ function LoginScreen({ onLogin }: { onLogin: (username: string, password: string
             </div>
             <h2
               style={{ fontFamily: "var(--font-display)" }}
-              className="mt-10 text-3xl font-semibold tracking-tight text-coal"
+              className="mt-10 text-3xl font-semibold text-coal"
             >
               登录
             </h2>
@@ -6361,7 +6375,7 @@ function BackendUnavailableScreen({
 
 function Badge({ tone, children }: { tone: BadgeTone; children: ReactNode }) {
   const className = tone === "blue"
-    ? "border-blue-200 bg-blue-50 text-blue-700"
+    ? "border-blue-200 bg-blue-50 text-accent"
     : tone === "green"
       ? "border-emerald-200 bg-emerald-50 text-emerald-700"
       : tone === "yellow"
@@ -6369,7 +6383,7 @@ function Badge({ tone, children }: { tone: BadgeTone; children: ReactNode }) {
         : tone === "red"
           ? "border-red-200 bg-red-50 text-red-700"
           : tone === "purple"
-            ? "border-violet-200 bg-violet-50 text-violet-700"
+            ? "border-slate-200 bg-slate-50 text-slate-700"
             : "border-slate-200 bg-slate-50 text-slate-600";
   return <span className={cx("chip", className)}>{children}</span>;
 }
@@ -6478,11 +6492,11 @@ function Modal({
         aria-labelledby={titleId}
         aria-describedby={description ? descriptionId : undefined}
         tabIndex={-1}
-        className={cx("max-h-[90dvh] w-full overflow-auto rounded-lg border border-line bg-white p-6 shadow-raised outline-none md:p-8", sizeClass)}
+        className={cx("max-h-[90dvh] w-full overflow-auto rounded-lg border border-line bg-white p-6 shadow-panel outline-none md:p-8", sizeClass)}
       >
         <div className="flex items-start justify-between gap-4">
           <div>
-            <h3 id={titleId} className="text-2xl font-semibold tracking-tight text-coal">{title}</h3>
+            <h3 id={titleId} className="text-2xl font-semibold text-coal">{title}</h3>
             {description && <p id={descriptionId} className="mt-2 text-sm text-slate-500">{description}</p>}
           </div>
           <Button onClick={onClose} className="btn-compact px-2.5" aria-label="关闭">
@@ -6581,7 +6595,7 @@ function UserProfileMenu({
       {open && (
         <div
           role="menu"
-          className="absolute bottom-[calc(100%+0.75rem)] left-0 z-30 w-full min-w-[14rem] overflow-hidden rounded-lg border border-line bg-white p-2 shadow-raised"
+          className="absolute bottom-[calc(100%+0.75rem)] left-0 z-30 w-full min-w-[14rem] overflow-hidden rounded-lg border border-line bg-white p-2 shadow-panel"
         >
           {menuItems.map((item) => {
             const Icon = item.icon;
@@ -6614,7 +6628,7 @@ function UserProfileMenu({
         aria-expanded={open}
         onClick={() => setOpen((current) => !current)}
         className={cx(
-          "flex w-full items-center justify-start gap-3 rounded-lg border border-line bg-slate-50/80 px-3 py-3 text-left transition hover:border-blue-200 hover:bg-white",
+          "flex w-full items-center justify-start gap-3 rounded-lg border border-line bg-[#f8fbff] px-3 py-3 text-left transition hover:border-blue-200 hover:bg-white",
           open && "border-blue-200 bg-white"
         )}
       >

@@ -8,16 +8,16 @@ export default {
         mono: ["JetBrains Mono", "SFMono-Regular", "ui-monospace", "monospace"]
       },
       colors: {
-        coal: "#141820",
-        mist: "#f5f8ff",
-        line: "#d7e5f7",
-        ink: "#1d2430",
-        muted: "#667085",
-        accent: "#2563eb"
+        coal: "#0b1220",
+        mist: "#f6f9ff",
+        line: "#d8e2f0",
+        ink: "#172033",
+        muted: "#64748b",
+        accent: "#0052ff"
       },
       boxShadow: {
-        panel: "0 24px 64px -42px rgba(37, 99, 235, 0.20)",
-        raised: "0 18px 46px -34px rgba(37, 99, 235, 0.44)"
+        panel: "0 1px 2px rgba(11, 18, 32, 0.04), 0 18px 42px -38px rgba(0, 82, 255, 0.28)",
+        raised: "0 10px 24px -20px rgba(0, 82, 255, 0.48)"
       }
     }
   },

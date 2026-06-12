@@ -59,7 +59,7 @@ export const TextareaInput = forwardRef<HTMLTextAreaElement, TextareaInputProps>
 });
 
 export const CheckboxInput = forwardRef<HTMLInputElement, CheckboxInputProps>(function CheckboxInput({ className, ...props }, ref) {
-  return <input ref={ref} type="checkbox" className={cx("h-4 w-4 rounded border-line text-accent focus:ring-blue-100", className)} {...props} />;
+  return <input ref={ref} type="checkbox" className={cx("h-4 w-4 rounded border-line text-accent focus:ring-4 focus:ring-blue-100", className)} {...props} />;
 });
 
 export function DropdownSelect({
@@ -191,7 +191,7 @@ export function DropdownSelect({
         onKeyDown={handleKeyDown}
         className={cx(
           "input flex min-h-[46px] items-center justify-between gap-3 text-left",
-          open && "border-blue-300 ring-4 ring-blue-100",
+          open && "border-accent ring-4 ring-blue-100",
           className
         )}
       >
@@ -212,7 +212,7 @@ export function DropdownSelect({
           id={listboxId}
           role="listbox"
           aria-label={ariaLabel}
-          className="fixed z-[80] overflow-hidden rounded-lg border border-slate-200 bg-white p-1.5 shadow-[0_18px_54px_-22px_rgba(20,24,32,0.45)]"
+          className="fixed z-[80] overflow-hidden rounded-lg border border-line bg-white p-1.5 shadow-[0_16px_36px_-28px_rgba(0,82,255,0.42)]"
           style={menuStyle}
         >
           {options.map((option, index) => {
@@ -229,7 +229,7 @@ export function DropdownSelect({
                 onClick={() => selectOption(option)}
                 className={cx(
                   "flex w-full items-center gap-2 rounded-md px-3 py-2.5 text-left text-sm font-medium transition",
-                  highlighted ? "bg-blue-500 text-white" : "text-slate-700 hover:bg-blue-50 hover:text-accent",
+                  highlighted ? "bg-accent text-white" : "text-slate-700 hover:bg-blue-50 hover:text-accent",
                   selected && !highlighted && "text-coal",
                   option.disabled && "cursor-not-allowed opacity-45"
                 )}
