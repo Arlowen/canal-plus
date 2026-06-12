@@ -2379,7 +2379,7 @@ function ChannelCreateWizardPage({
             </nav>
 
             <div className="surface flex min-w-0 flex-col lg:min-h-0">
-              <div className="min-h-0 lg:flex-1 lg:overflow-auto">
+              <div className="scrollbar-none min-h-0 lg:flex-1 lg:overflow-auto">
               {step === "connections" && (
                 <div className="grid gap-6 p-5">
                   <div className="grid gap-4">
