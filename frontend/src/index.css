@@ -77,15 +77,6 @@ input[type="number"]::-webkit-outer-spin-button {
     @apply mx-auto min-h-[100dvh] w-full max-w-[1728px] px-0 py-0;
   }
 
-  .scrollbar-none {
-    -ms-overflow-style: none;
-    scrollbar-width: none;
-  }
-
-  .scrollbar-none::-webkit-scrollbar {
-    display: none;
-  }
-
   .input {
     @apply w-full rounded-lg border border-line bg-white px-3.5 py-2.5 text-sm text-ink outline-none transition placeholder:text-slate-400 focus:border-accent focus:ring-4 focus:ring-blue-100 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400;
   }

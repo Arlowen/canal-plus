@@ -2334,7 +2334,7 @@ function ChannelCreateWizardPage({
 
   return (
     <>
-      <section className="flex min-h-[100dvh] min-w-0 flex-col overflow-hidden lg:h-[100dvh] lg:min-h-0">
+      <section className="flex min-h-[100dvh] min-w-0 flex-col">
       <div className="page-titlebar shrink-0 justify-between">
         <div className="min-w-0">
           <h1 className="truncate text-2xl font-semibold text-coal md:text-3xl">新增 Canal</h1>
@@ -2345,11 +2345,11 @@ function ChannelCreateWizardPage({
         </Button>
       </div>
 
-      <div className="min-h-0 px-5 py-6 md:px-8 lg:flex-1 lg:overflow-hidden">
+      <div className="px-5 py-6 md:px-8">
         {!canManage ? (
           <PermissionNotice description="当前账号不能创建 Canal。" />
         ) : (
-          <div className="grid gap-6 lg:h-full lg:min-h-0 lg:grid-rows-[auto_minmax(0,1fr)]">
+          <div className="grid gap-6">
             <nav className="toolbar overflow-x-auto" aria-label="Canal 创建步骤">
               <div className="grid min-w-[860px] grid-cols-5 gap-3">
                 {channelWizardSteps.map((wizardStep, index) => (
@@ -2378,8 +2378,8 @@ function ChannelCreateWizardPage({
               </div>
             </nav>
 
-            <div className="surface flex min-w-0 flex-col lg:min-h-0">
-              <div className="scrollbar-none min-h-0 lg:flex-1 lg:overflow-auto">
+            <div className="surface min-w-0">
+              <div className="min-w-0">
               {step === "connections" && (
                 <div className="grid gap-6 p-5">
                   <div className="grid gap-4">
