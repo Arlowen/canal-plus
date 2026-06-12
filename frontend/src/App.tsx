@@ -983,10 +983,6 @@ function App() {
     navigateToPage("channelCreate");
   };
 
-  const closeChannelCreate = () => {
-    navigateToPage("channels", "replace");
-  };
-
   if (!tokenState) {
     if (serviceUnavailable) {
       return <BackendUnavailableScreen retrying={serviceRecoveryPending} onRetry={retryServiceConnection} />;
@@ -1098,7 +1094,6 @@ function App() {
                 datasources={datasources}
                 cluster={cluster}
                 canManage={canManage}
-                onBack={closeChannelCreate}
                 onOpenChannel={openChannelDetail}
                 onChanged={refresh}
                 pushNotice={pushNotice}
@@ -1549,7 +1544,6 @@ function ChannelCreateWizardPage({
   datasources,
   cluster,
   canManage,
-  onBack,
   onOpenChannel,
   onChanged,
   pushNotice
@@ -1557,7 +1551,6 @@ function ChannelCreateWizardPage({
   datasources: Datasource[];
   cluster: ClusterSnapshot | null;
   canManage: boolean;
-  onBack: () => void;
   onOpenChannel: (channelId: string) => void;
   onChanged: (quiet?: boolean) => Promise<void>;
   pushNotice: (notice: Notice) => void;
@@ -2335,17 +2328,7 @@ function ChannelCreateWizardPage({
   return (
     <>
       <section className="flex min-h-[100dvh] min-w-0 flex-col">
-      <div className="page-titlebar shrink-0 justify-between">
-        <div className="min-w-0">
-          <h1 className="truncate text-2xl font-semibold text-coal md:text-3xl">新增 Canal</h1>
-        </div>
-        <Button type="button" onClick={onBack} className="btn-secondary h-11 px-4">
-          <ArrowRight size={16} className="rotate-180" />
-          返回
-        </Button>
-      </div>
-
-      <div className="px-5 py-6 md:px-8">
+        <div className="px-5 py-6 md:px-8">
         {!canManage ? (
           <PermissionNotice description="当前账号不能创建 Canal。" />
         ) : (
