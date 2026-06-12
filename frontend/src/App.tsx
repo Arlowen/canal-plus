@@ -2649,7 +2649,7 @@ function ChannelCreateWizardPage({
                           </tbody>
                         </table>
                       </div>
-                      <div className="flex flex-col gap-3 border-t border-line px-4 py-3 text-sm text-slate-600 lg:flex-row lg:items-center lg:justify-between">
+                      <div className="sticky bottom-[81px] z-10 flex flex-col gap-3 border-t border-line bg-white px-4 py-3 text-sm text-slate-600 lg:flex-row lg:items-center lg:justify-between">
                         <div>共 {tableTotalItems} 条</div>
                         <div className="flex flex-wrap items-center gap-2 lg:justify-end">
                           <PaginationButton label="上一页" disabled={tableCurrentPage <= 1} onClick={() => goToTablePage(tableCurrentPage - 1)}>
@@ -2795,7 +2795,7 @@ function ChannelCreateWizardPage({
                           </tbody>
                         </table>
                       </div>
-                      <div className="flex flex-col gap-3 border-t border-line px-4 py-3 text-sm text-slate-600 lg:flex-row lg:items-center lg:justify-between">
+                      <div className="sticky bottom-[81px] z-10 flex flex-col gap-3 border-t border-line bg-white px-4 py-3 text-sm text-slate-600 lg:flex-row lg:items-center lg:justify-between">
                         <div>共 {targetTableTotalItems} 条</div>
                         <div className="flex flex-wrap items-center gap-2 lg:justify-end">
                           <PaginationButton label="上一页" disabled={targetTableCurrentPage <= 1} onClick={() => goToTargetTablePage(targetTableCurrentPage - 1)}>
