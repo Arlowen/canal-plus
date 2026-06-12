@@ -39,6 +39,14 @@ textarea {
   font: inherit;
 }
 
+button:not(:disabled) {
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+}
+
 input[type="number"] {
   appearance: textfield;
   -moz-appearance: textfield;
