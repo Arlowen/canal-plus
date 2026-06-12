@@ -1054,7 +1054,7 @@ function App() {
 
           <main className="min-w-0">
             {page !== "channels" && page !== "channelDetail" && page !== "channelCreate" && page !== "datasources" && page !== "nodes" && page !== "datasourceCreate" && page !== "datasourceEdit" && (
-              <div className="flex min-h-[88px] flex-col justify-center gap-1 border-b border-line bg-white px-5 md:px-8 xl:flex-row xl:items-center xl:justify-between">
+              <div className="flex min-h-[92px] flex-col justify-center gap-1 border-b border-line bg-white px-5 md:px-8 xl:flex-row xl:items-center xl:justify-between">
                 <div>
                   <h1 className="text-2xl font-semibold text-coal md:text-3xl">
                     {pageTitle(page)}
@@ -3166,7 +3166,7 @@ function ChannelDetailPage({
 
   return (
     <section className="min-w-0 overflow-hidden">
-      <div className="flex min-h-[88px] flex-col justify-center gap-3 border-b border-line bg-white px-5 py-4 md:px-8 xl:flex-row xl:items-center xl:justify-between">
+      <div className="flex min-h-[92px] flex-col justify-center gap-3 border-b border-line bg-white px-5 py-4 md:px-8 xl:flex-row xl:items-center xl:justify-between">
         <div className="min-w-0">
           <div className="flex min-w-0 flex-wrap items-center gap-3">
             <h1 className="truncate text-2xl font-semibold text-coal md:text-3xl">{channel.name}</h1>
