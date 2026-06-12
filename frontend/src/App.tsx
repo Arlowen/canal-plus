@@ -2748,7 +2748,7 @@ function ChannelCreateWizardPage({
               )}
               </div>
 
-              <div className={cx("flex shrink-0 items-center gap-3 border-t border-line p-5", stepIndex === 0 ? "justify-end" : "justify-between")}>
+              <div className="flex shrink-0 items-center justify-center gap-3 border-t border-line p-5">
                 {stepIndex > 0 && (
                   <Button type="button" onClick={goPrevious} disabled={submitting} className="btn-secondary">
                     <CaretLeft size={16} />
