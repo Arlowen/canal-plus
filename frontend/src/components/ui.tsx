@@ -176,6 +176,7 @@ export function DropdownSelect({
   const menuStyle: CSSProperties | undefined = position
     ? { left: position.left, top: position.top, width: position.width }
     : undefined;
+  const showDescription = Boolean(showSelectedDescription && selectedOption?.description);
 
   return (
     <>
@@ -190,7 +191,8 @@ export function DropdownSelect({
         onClick={() => setOpen((current) => !current)}
         onKeyDown={handleKeyDown}
         className={cx(
-          "input flex min-h-[46px] items-center justify-between gap-3 text-left",
+          "input flex items-center justify-between gap-3 text-left",
+          showDescription ? "min-h-[46px]" : "h-10 min-h-10 py-2",
           open && "border-accent ring-4 ring-blue-100",
           className
         )}
@@ -199,8 +201,8 @@ export function DropdownSelect({
           {selectedOption?.icon && <span className="shrink-0 text-slate-500">{selectedOption.icon}</span>}
           <span className="min-w-0">
             <span className="block truncate">{selectedOption?.label ?? "-"}</span>
-            {showSelectedDescription && selectedOption?.description && (
-              <span className="mt-0.5 block truncate text-xs font-medium text-slate-500">{selectedOption.description}</span>
+            {showDescription && (
+              <span className="mt-0.5 block truncate text-xs font-medium text-slate-500">{selectedOption?.description}</span>
             )}
           </span>
         </span>

@@ -2328,11 +2328,11 @@ function ChannelCreateWizardPage({
   return (
     <>
       <section className="flex min-h-[100dvh] min-w-0 flex-col">
-        <div className="px-5 py-6 md:px-8">
-        {!canManage ? (
-          <PermissionNotice description="当前账号不能创建 Canal。" />
-        ) : (
-          <div className="grid gap-6">
+        <div className="flex flex-1 flex-col px-5 py-6 md:px-8">
+          {!canManage ? (
+            <PermissionNotice description="当前账号不能创建 Canal。" />
+          ) : (
+            <div className="flex flex-1 flex-col gap-6">
             <nav className="toolbar overflow-x-auto" aria-label="Canal 创建步骤">
               <div className="grid min-w-[860px] grid-cols-5 gap-3">
                 {channelWizardSteps.map((wizardStep, index) => (
@@ -2361,8 +2361,8 @@ function ChannelCreateWizardPage({
               </div>
             </nav>
 
-            <div className="surface min-w-0">
-              <div className="min-w-0">
+            <div className="surface flex min-w-0 flex-1 flex-col">
+              <div className="min-w-0 flex-1">
               {step === "connections" && (
                 <div className="grid gap-6 p-5">
                   <div className="grid gap-4">
@@ -2922,7 +2922,7 @@ function ChannelCreateWizardPage({
               )}
               </div>
 
-              <div className="flex shrink-0 items-center justify-center gap-3 border-t border-line p-5">
+              <div className="sticky bottom-0 z-10 mt-auto flex shrink-0 items-center justify-center gap-3 border-t border-line bg-white p-5">
                 {stepIndex > 0 && (
                   <Button type="button" onClick={goPrevious} disabled={submitting} className="btn-secondary">
                     <CaretLeft size={16} />
