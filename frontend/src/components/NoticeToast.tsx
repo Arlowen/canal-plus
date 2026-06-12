@@ -113,11 +113,11 @@ export function NoticeToast({
         "shadow-[0_24px_70px_-32px_rgba(37,99,235,0.34)]"
       )}
     >
-      <div className="relative flex min-w-0 items-start gap-3">
-        <span className={cx("mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md border", style.iconWrap)}>
+      <div className="relative flex min-w-0 items-center gap-3">
+        <span className={cx("flex h-8 w-8 shrink-0 items-center justify-center rounded-md border", style.iconWrap)}>
           <Icon size={18} weight="fill" />
         </span>
-        <div className="min-w-0 flex-1 pt-1 text-sm font-medium leading-5">
+        <div className="min-w-0 flex-1 text-sm font-medium leading-5">
           {children}
         </div>
         {action && <div className="shrink-0 pl-2">{action}</div>}
@@ -126,7 +126,7 @@ export function NoticeToast({
             type="button"
             aria-label="关闭提示"
             onClick={requestClose}
-            className={cx("mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-transparent bg-white transition active:translate-y-px", style.closeButton)}
+            className={cx("flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-transparent bg-white transition active:translate-y-px", style.closeButton)}
           >
             <X size={16} />
           </Button>
